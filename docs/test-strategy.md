@@ -31,6 +31,33 @@
 - C# `TestClient`：連線 → 收 getHello（未加密）→ 解析 version/recvIv/sendIv → 建鏡像 cipher（client.recv = server.send 參數）→ 送 `LOGIN_PASSWORD` → 收 `LOGIN_STATUS` 解密 → 斷言 reason。
 - L2 已保證 cipher 正確 → L3 用我方 cipher 可信，專注驗證**接線**（framing/session/握手/opcode 路由/回應）。
 
+## L4 真客戶端自動化（偵察後設計）
+
+**偵察結論（v113_Client/）**：
+- `登入器.bat` = `start MapleStory.exe 127.0.0.1 8484` → **客戶端直接吃 `<ip> <port>` 參數，不用 patch**。
+- `SolusTech.ini`：`Windowed=1`（原生視窗化）、`V5=0`（V5 反作弊關）。
+- `HShield/` 空資料夾 → HShield 未啟用。
+- dxwnd.ini 路徑失效 → 不依賴 dxwnd，靠 SolusTech 原生視窗化。
+
+**核心理念**：判定在「我們自己的 server 端」，不讀客戶端畫面。客戶端＝流量產生器，server＝裁判。
+
+**L4a 握手 smoke（完全自動、零 GUI）**：
+```
+啟動 MapleStory.exe 127.0.0.1 <port>
+  → server log：TCP 連線 + 送 getHello + 客戶端未斷線（接受我方加密握手）
+  → N 秒內「連線+握手+未斷」= PASS → 殺 MapleStory.exe + 清 .dmp
+```
+驗證「真客戶端接受我方握手」，不需操作 GUI（客戶端啟動即自動連線握手）。
+
+**L4b 登入 E2E（最終確認、定期跑）**：
+- 讓客戶端送出加密 `LOGIN_PASSWORD`：優先用 `單人測試登入器.exe`（若會自動登入）；否則影像式 GUI 自動化（AutoHotkey/截圖比對，因 DX8 自繪無標準控制項）。
+- 判定：**server 成功解密到 `LOGIN_PASSWORD`** = cipher+握手+framing 全對。
+- 因 L2/L3 已鎖正確性，L4b 為定期確認，非每 commit（降低 GUI 自動化脆弱性）。
+
+**風險對策**：GUI 脆弱→優先 server 端觀察＋自動登入器；崩潰殘留→腳本殺乾淨+清 dmp；需 server 先支援握手→等 M1-5。
+
+**實作物（待 M1-5 後）**：`scripts/run-client-smoke.ps1`（起 server→launch client→輪詢 server log 的握手信號→timeout→殺 client→回傳 exit code）。server 端需在各階段印明確 log 行（連線/送握手/解密封包/收到登入）供腳本判讀。
+
 ## 驗收（M1 完成定義）
 - L1+L2+L3 全綠 = M1「管線打通」全自動達標。
-- L4 真客戶端連線 = 最終人工確認一次（非 CI 必要）。
+- L4a 真客戶端握手 smoke 自動通過；L4b 真客戶端登入 = 最終人工/定期確認。
