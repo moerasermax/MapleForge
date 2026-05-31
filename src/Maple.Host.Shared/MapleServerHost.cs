@@ -57,6 +57,9 @@ public static class MapleServerHost
         });
         builder.Services.AddSingleton<MapService>();
 
+        // M3-7：地圖 session 登記表（thread-safe process 單例）。
+        builder.Services.AddSingleton<IMapSessionRegistry, InMemoryMapSessionRegistry>();
+
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>
         {
