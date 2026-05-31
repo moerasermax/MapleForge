@@ -115,6 +115,113 @@ public class LoginPipelineIntegrationTests
     }
 
     [Fact]
+    public async Task Loopback_AfterLogin_ServerlistRequest_ReturnsServerlistAndEnd()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var auth = new AuthService(new FakeAccountRepository(), new BcryptPasswordHasher());
+        var handler = new V113LoginConnectionHandler(
+            NullLogger<V113LoginConnectionHandler>.Instance, auth,
+            new V113LoginOptions(AutoRegister: true, WorldName: "TestWorld", ChannelCount: 2));
+
+        var serverTask = Task.Run(async () =>
+        {
+            var sock = await listener.AcceptSocketAsync(cts.Token);
+            var session = new MapleSession(sock, NullLogger<MapleSession>.Instance);
+            await using (session)
+                await handler.HandleConnectionAsync(session, cts.Token);
+        }, cts.Token);
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port, cts.Token);
+        var stream = client.GetStream();
+
+        // 1) 讀 getHello，取 IV
+        var lenBuf = new byte[2];
+        await stream.ReadExactlyAsync(lenBuf, cts.Token);
+        var payload = new byte[lenBuf[0] | (lenBuf[1] << 8)];
+        await stream.ReadExactlyAsync(payload, cts.Token);
+
+        int pos = 2; // skip version
+        int patchLen = payload[pos] | (payload[pos + 1] << 8); pos += 2 + patchLen;
+        var recvIv = payload.AsSpan(pos, 4).ToArray(); pos += 4;
+        var sendIv = payload.AsSpan(pos, 4).ToArray();
+
+        var clientSend = new MapleAesOfb(recvIv, 113);
+        var clientRecv = new MapleAesOfb(sendIv, unchecked((short)(0xFFFF - 113)));
+
+        // 2) 送 LOGIN_PASSWORD（autoRegister 建帳）
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(32)
+                .WriteShort(V113RecvOp.LoginPassword)
+                .WriteMapleString("worlduser")
+                .WriteMapleString("worldpass")
+                .ToArray(), cts.Token);
+
+        // 3) 讀 AuthSuccess，丟棄
+        await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+
+        // 4) 送 SERVERLIST_REQUEST
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(2).WriteShort(V113RecvOp.ServerlistRequest).ToArray(), cts.Token);
+
+        // 5) 讀回 SERVERLIST（world entry）
+        var slPkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        Assert.Equal((short)V113SendOp.Serverlist, (short)(slPkt[0] | (slPkt[1] << 8)));
+        Assert.Equal(0, slPkt[2]); // world id 0
+        Assert.NotEqual(0xFF, slPkt[2]); // 不是結束標記
+
+        // 6) 讀回 EndOfServerList（0xFF 結束）
+        var eolPkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        Assert.Equal((short)V113SendOp.Serverlist, (short)(eolPkt[0] | (eolPkt[1] << 8)));
+        Assert.Equal(0xFF, eolPkt[2]); // end marker
+
+        // 7) 送 CHARLIST_REQUEST
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(4)
+                .WriteShort(V113RecvOp.CharlistRequest)
+                .WriteByte(0)   // world id
+                .WriteByte(0)   // channel id
+                .ToArray(), cts.Token);
+
+        // 8) 讀回 CHARLIST
+        var clPkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        Assert.Equal((short)V113SendOp.Charlist, (short)(clPkt[0] | (clPkt[1] << 8)));
+        Assert.Equal(0, clPkt[7]); // character count = 0
+
+        client.Close();
+        await serverTask;
+    }
+
+    // ── 測試輔助 ──────────────────────────────────────────────────────────────
+
+    private static async Task SendEncryptedAsync(
+        NetworkStream stream, MapleAesOfb cipher, byte[] body, CancellationToken ct)
+    {
+        var frame = new byte[body.Length + 4];
+        cipher.WriteHeader(frame.AsSpan(0, 4), body.Length);
+        cipher.Crypt(body);
+        body.CopyTo(frame.AsSpan(4));
+        await stream.WriteAsync(frame, ct);
+        await stream.FlushAsync(ct);
+    }
+
+    private static async Task<byte[]> ReadDecryptedAsync(
+        NetworkStream stream, MapleAesOfb cipher, CancellationToken ct)
+    {
+        var header = new byte[4];
+        await stream.ReadExactlyAsync(header, ct);
+        int len = cipher.ReadLength(header);
+        var body = new byte[len];
+        await stream.ReadExactlyAsync(body, ct);
+        cipher.Crypt(body);
+        return body;
+    }
+
+    [Fact]
     public void V113ReceiveVersion_IsCorrect()
     {
         // 防呆：確保 send/recv 版本常數沒被改動

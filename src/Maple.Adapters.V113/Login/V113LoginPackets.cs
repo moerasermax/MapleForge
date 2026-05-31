@@ -3,7 +3,7 @@ using Maple.Core.IO;
 
 namespace Maple.Adapters.V113.Login;
 
-/// <summary>v113 登入相關封包建構（對照舊 <c>LoginPacket</c>）。</summary>
+/// <summary>v113 登入相關封包建構（對照舊 LoginPacket / MaplePacketCreator）。</summary>
 internal static class V113LoginPackets
 {
     /// <summary>
@@ -55,5 +55,61 @@ internal static class V113LoginPackets
             .WriteLong(0)                  // 禁言期限
             .WriteByte(0)
             .WriteLong(0)
+            .ToArray();
+
+    /// <summary>
+    /// getServerList：世界 + 頻道清單（對照舊 LoginPacket.getServerList）。
+    /// worldId 0=Aquilla, 1=Bootes, 2=Cass, 3=Delphinus；私服通常只有一個世界。
+    /// </summary>
+    public static byte[] ServerList(string worldName, int channelCount, int worldId = 0)
+    {
+        var w = new PacketWriter(64)
+            .WriteShort(V113SendOp.Serverlist)
+            .WriteByte(worldId)
+            .WriteMapleString(worldName)
+            .WriteByte(0)           // flag：0=normal, 1=hot, 2=new
+            .WriteMapleString("")   // event message
+            .WriteShort(100)        // max load x2（原碼兩個 100）
+            .WriteShort(100)
+            .WriteByte(channelCount);
+
+        for (int i = 1; i <= channelCount; i++)
+        {
+            w.WriteMapleString($"{worldName}-{i}")
+             .WriteInt(0)           // load（玩家數）
+             .WriteByte(worldId)
+             .WriteShort(i - 1);   // channel index（0-based）
+        }
+
+        w.WriteShort(0); // balloon count（廣告板，私服通常 0）
+        return w.ToArray();
+    }
+
+    /// <summary>getEndOfServerList：0xFF 結束標記（對照舊 LoginPacket.getEndOfServerList）。</summary>
+    public static byte[] EndOfServerList()
+        => new PacketWriter(3)
+            .WriteShort(V113SendOp.Serverlist)
+            .WriteByte(0xFF)
+            .ToArray();
+
+    /// <summary>getServerStatus：0=正常, 1=高度填滿, 2=爆滿（對照舊 LoginPacket.getServerStatus）。</summary>
+    public static byte[] ServerStatus(int status = 0)
+        => new PacketWriter(4)
+            .WriteShort(V113SendOp.Serverstatus)
+            .WriteShort(status)
+            .ToArray();
+
+    /// <summary>
+    /// getCharList（M2-4 stub）：0 個角色，讓客戶端進角色選單。
+    /// 真實角色列表在 M2-5 實作（需 CharStats + CharLook 序列化）。
+    /// </summary>
+    public static byte[] CharList(int charSlots = 3)
+        => new PacketWriter(10)
+            .WriteShort(V113SendOp.Charlist)
+            .WriteByte(0)
+            .WriteInt(1000000)  // 對照 Java: 40 42 0F 00（固定值）
+            .WriteByte(0)       // 角色數（0）
+            .WriteShort(3)      // second password request（3=不需要）
+            .WriteInt(charSlots)
             .ToArray();
 }

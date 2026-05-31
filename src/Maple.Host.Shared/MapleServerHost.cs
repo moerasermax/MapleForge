@@ -43,11 +43,11 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         builder.Services.AddSingleton<AuthService>();
 
-        // v113 登入選項（autoRegister 由實例設定投影）。
+        // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>
         {
             var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
-            return new V113LoginOptions(o.AutoRegister);
+            return new V113LoginOptions(o.AutoRegister, o.Name);
         });
 
         // v113 連線處理（握手 + 帳密驗證 + 登入成功/失敗）。版本抽象接縫延到 M3。

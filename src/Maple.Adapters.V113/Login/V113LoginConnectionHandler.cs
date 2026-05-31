@@ -8,7 +8,11 @@ using Microsoft.Extensions.Logging;
 namespace Maple.Adapters.V113.Login;
 
 /// <summary>v113 登入連線的選項（由 Host 從實例設定投影）。</summary>
-public sealed record V113LoginOptions(bool AutoRegister);
+public sealed record V113LoginOptions(
+    bool AutoRegister,
+    string WorldName = "Scania",
+    int ChannelCount = 1,
+    int CharSlots = 3);
 
 /// <summary>
 /// M2 的 v113 登入連線處理：送握手 → 啟用 cipher → 收 LOGIN_PASSWORD → 驗證帳密 → 回登入成功/失敗。
@@ -58,11 +62,44 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
                 await HandleLoginAsync(reader, session, ct);
                 break;
 
+            case V113RecvOp.ServerlistRequest:
+                await HandleServerlistRequestAsync(session, ct);
+                break;
+
+            case V113RecvOp.ServerStatusRequest:
+                await session.SendAsync(V113LoginPackets.ServerStatus(0), ct);
+                break;
+
+            case V113RecvOp.CharlistRequest:
+                await HandleCharlistRequestAsync(session, ct);
+                break;
+
+            case V113RecvOp.Pong:
+                break;
+
             default:
                 _log.LogInformation("[v113] 收到 opcode=0x{Op:X2} len={Len}（尚未處理）{Remote}",
                     opcode, body.Length, session.Remote);
                 break;
         }
+    }
+
+    private async Task HandleServerlistRequestAsync(MapleSession session, CancellationToken ct)
+    {
+        _log.LogInformation("[v113] → SERVERLIST_REQUEST {Remote}", session.Remote);
+        await session.SendAsync(
+            V113LoginPackets.ServerList(_options.WorldName, _options.ChannelCount), ct);
+        await session.SendAsync(V113LoginPackets.EndOfServerList(), ct);
+        _log.LogInformation("[v113] ← SERVERLIST 送出（world={World} ch={Ch}）{Remote}",
+            _options.WorldName, _options.ChannelCount, session.Remote);
+    }
+
+    private async Task HandleCharlistRequestAsync(MapleSession session, CancellationToken ct)
+    {
+        _log.LogInformation("[v113] → CHARLIST_REQUEST {Remote}", session.Remote);
+        await session.SendAsync(V113LoginPackets.CharList(_options.CharSlots), ct);
+        _log.LogInformation("[v113] ← CHARLIST 送出（slots={Slots}）{Remote}",
+            _options.CharSlots, session.Remote);
     }
 
     private async Task HandleLoginAsync(PacketReader reader, MapleSession session, CancellationToken ct)
