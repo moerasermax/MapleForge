@@ -35,6 +35,15 @@ public sealed class AuthServiceTests
             return Task.CompletedTask;
         }
 
+        public Task<bool> TryAddAsync(Account account, CancellationToken cancellationToken = default)
+        {
+            if (_store.ContainsKey(account.AccountName))
+                return Task.FromResult(false);
+            account.Id = _nextId++;
+            _store[account.AccountName] = account;
+            return Task.FromResult(true);
+        }
+
         public Task UpdateAsync(Account account, CancellationToken cancellationToken = default)
         {
             _store[account.AccountName] = account;
@@ -63,15 +72,16 @@ public sealed class AuthServiceTests
     public async Task Authenticate_帳號不存在且autoRegister為true_自動建立並回傳Success()
     {
         var svc = BuildService(out var repo);
+        // AuthService 會正規化帳號名（trim+lowercase），"newUser" → "newuser"
         var result = await svc.AuthenticateAsync("newUser", "myPass", autoRegister: true);
 
         Assert.Equal(AuthStatus.Success, result.Status);
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Account);
-        Assert.Equal("newUser", result.Account.AccountName);
+        Assert.Equal("newuser", result.Account.AccountName);   // normalized
 
-        // 確認帳號已寫入 repo
-        var saved = await repo.FindByNameAsync("newUser");
+        // 正規化後以小寫查詢
+        var saved = await repo.FindByNameAsync("newuser");
         Assert.NotNull(saved);
         Assert.Equal("hash:myPass", saved.PasswordHash);
     }

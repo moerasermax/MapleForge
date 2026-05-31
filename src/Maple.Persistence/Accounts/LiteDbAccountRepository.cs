@@ -1,5 +1,6 @@
 using LiteDB;
 using Maple.Core.Accounts;
+using System;
 
 namespace Maple.Persistence.Accounts;
 
@@ -31,6 +32,20 @@ public sealed class LiteDbAccountRepository : IAccountRepository
     {
         _collection.Insert(account);
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> TryAddAsync(Account account, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _collection.Insert(account);
+            return Task.FromResult(true);
+        }
+        catch (LiteException ex) when (ex.ErrorCode == LiteException.INDEX_DUPLICATE_KEY)
+        {
+            return Task.FromResult(false);
+        }
     }
 
     /// <inheritdoc/>

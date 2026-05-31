@@ -36,6 +36,15 @@ public class LoginPipelineIntegrationTests
             return Task.CompletedTask;
         }
 
+        public Task<bool> TryAddAsync(Account account, CancellationToken ct = default)
+        {
+            if (_byName.ContainsKey(account.AccountName))
+                return Task.FromResult(false);
+            account.Id = _nextId++;
+            _byName[account.AccountName] = account;
+            return Task.FromResult(true);
+        }
+
         public Task UpdateAsync(Account account, CancellationToken ct = default)
         {
             _byName[account.AccountName] = account;

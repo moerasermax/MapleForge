@@ -35,22 +35,32 @@ public sealed class AuthService
         bool autoRegister = false,
         CancellationToken cancellationToken = default)
     {
-        var account = await _accounts.FindByNameAsync(accountName, cancellationToken);
+        // ④ 正規化：去頭尾空白 + 小寫（帳號不分大小寫）
+        var normalizedName = accountName.Trim().ToLowerInvariant();
+
+        var account = await _accounts.FindByNameAsync(normalizedName, cancellationToken);
 
         if (account is null)
         {
             if (!autoRegister)
-                // 帳號不存在且不自動建立：統一回 InvalidPassword（不洩漏帳號是否存在）
                 return new AuthResult(AuthStatus.InvalidPassword, null);
 
-            account = new Account
+            var newAccount = new Account
             {
-                AccountName = accountName,
+                AccountName = normalizedName,
                 PasswordHash = _hasher.Hash(password),
                 CreatedAt = DateTime.UtcNow,
             };
-            await _accounts.AddAsync(account, cancellationToken);
-            return new AuthResult(AuthStatus.Success, account);
+
+            // ① race-safe：TryAddAsync 在並發撞名時回 false
+            bool created = await _accounts.TryAddAsync(newAccount, cancellationToken);
+            if (created)
+                return new AuthResult(AuthStatus.Success, newAccount);
+
+            // 並發建帳失敗：另一請求搶先，重新查詢並驗密
+            account = await _accounts.FindByNameAsync(normalizedName, cancellationToken);
+            if (account is null)
+                return new AuthResult(AuthStatus.InvalidPassword, null);
         }
 
         if (account.IsBanned)
@@ -59,7 +69,6 @@ public sealed class AuthService
         if (!_hasher.Verify(password, account.PasswordHash))
             return new AuthResult(AuthStatus.InvalidPassword, null);
 
-        // 更新最後登入時間後存回 DB
         account.LastLoginAt = DateTime.UtcNow;
         await _accounts.UpdateAsync(account, cancellationToken);
 
