@@ -6,4 +6,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- MF0001：守護 Core 零 static 可變狀態（多實例架構的硬限制）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\MapleForge.Analyzers\MapleForge.Analyzers.csproj"
+                      ReferenceOutputAssembly="false"
+                      OutputItemType="Analyzer"
+                      SetTargetFramework="TargetFramework=netstandard2.0" />
+  </ItemGroup>
+
 </Project>
