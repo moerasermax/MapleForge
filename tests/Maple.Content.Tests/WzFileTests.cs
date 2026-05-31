@@ -1,4 +1,5 @@
 using Maple.Content.Wz;
+using Maple.Core.Data;
 
 namespace Maple.Content.Tests;
 
@@ -47,5 +48,45 @@ public sealed class WzFileTests
     {
         using var wz = WzFile.Open(StringWzPath);
         Assert.Equal(113, wz.Version);
+    }
+}
+
+public sealed class WzDataProviderTests : IDisposable
+{
+    private const string WzDir = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
+    private readonly WzDataProvider _provider = new(WzDir);
+
+    public void Dispose() => _provider.Dispose();
+
+    [Fact]
+    public void GetRoot_Returns_String_Root_With_Children()
+    {
+        var root = _provider.GetRoot("String");
+        Assert.NotNull(root);
+        Assert.NotEmpty(root.Children);
+    }
+
+    [Fact]
+    public void GetAt_Traverses_Path_To_Known_Value()
+    {
+        // Eqp.img / Eqp / Cap / 1000000 / name = "藍色毛帽"
+        var node = _provider.GetAt("String", "Eqp.img/Eqp/Cap/1000000/name");
+        Assert.NotNull(node);
+        Assert.Equal("藍色毛帽", node.Value);
+    }
+
+    [Fact]
+    public void GetAt_Returns_Null_For_Missing_Path()
+    {
+        var node = _provider.GetAt("String", "Eqp.img/DoesNotExist/Nope");
+        Assert.Null(node);
+    }
+
+    [Fact]
+    public void GetRoot_Same_File_Returns_Cached_Instance()
+    {
+        var root1 = _provider.GetRoot("String");
+        var root2 = _provider.GetRoot("String");
+        Assert.Same(root1, root2);
     }
 }
