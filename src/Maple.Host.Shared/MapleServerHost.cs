@@ -1,3 +1,4 @@
+using Maple.Adapters.V113.Channel;
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
 using Maple.Application.Characters;
@@ -49,13 +50,27 @@ public static class MapleServerHost
         builder.Services.AddSingleton(sp =>
         {
             var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
-            return new V113LoginOptions(o.AutoRegister, o.Name);
+            var ip = System.Net.IPAddress.Parse(o.ChannelIp).GetAddressBytes();
+            return new V113LoginOptions(o.AutoRegister, o.Name, ChannelIp: ip, ChannelPort: o.ChannelPort);
         });
 
         // v113 連線處理（握手 + 帳密驗證 + 世界/頻道列表 + 角色列表 + 建角/選角）。
         builder.Services.AddSingleton<IConnectionHandler, V113LoginConnectionHandler>();
-
         builder.Services.AddHostedService<TcpLoginListener>();
+
+        // Channel 監聽器設定。
+        builder.Services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new ChannelListenerSettings(o.Name, o.ListenIp, o.ChannelPort);
+        });
+
+        // v113 Channel 選項。
+        builder.Services.AddSingleton(new V113ChannelOptions(ChannelIndex: 0));
+
+        // v113 Channel 連線處理。
+        builder.Services.AddSingleton<IChannelConnectionHandler, V113ChannelConnectionHandler>();
+        builder.Services.AddHostedService<TcpChannelListener>();
 
         return builder;
     }

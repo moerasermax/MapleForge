@@ -18,6 +18,12 @@ public sealed class ServerInstanceOptions
 
     public int LoginPort { get; set; } = 8484;
 
+    /// <summary>頻道伺服器 IP（告知客戶端連哪裡；localhost 私服用 127.0.0.1）。</summary>
+    public string ChannelIp { get; set; } = "127.0.0.1";
+
+    /// <summary>頻道伺服器監聽 port（對照舊 8585）。</summary>
+    public int ChannelPort { get; set; } = 8585;
+
     /// <summary>LiteDB 資料目錄；每實例一個 `<Name>.db` 檔（見設計書 §4.4 文件模型 + LiteDB）。</summary>
     public string DataDirectory { get; set; } = "data";
 
