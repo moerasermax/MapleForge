@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Maple.Application\Maple.Application.csproj" />
     <ProjectReference Include="..\..\src\Maple.Core\Maple.Core.csproj" />
+    <ProjectReference Include="..\..\src\Maple.Content\Maple.Content.csproj" />
   </ItemGroup>
 
 </Project>

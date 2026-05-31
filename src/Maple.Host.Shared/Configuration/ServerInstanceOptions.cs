@@ -27,6 +27,9 @@ public sealed class ServerInstanceOptions
     /// <summary>LiteDB 資料目錄；每實例一個 `<Name>.db` 檔（見設計書 §4.4 文件模型 + LiteDB）。</summary>
     public string DataDirectory { get; set; } = "data";
 
+    /// <summary>WZ 遊戲資料目錄（含 Map.wz/Mob.wz/String.wz 等，對照 v113_Client 目錄）。</summary>
+    public string WzDirectory { get; set; } = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
+
     /// <summary>帳號不存在時自動建帳（對照舊 settings.ini autoRegister；私服常開）。</summary>
     public bool AutoRegister { get; set; } = true;
 

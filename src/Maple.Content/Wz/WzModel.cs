@@ -221,6 +221,10 @@ public sealed class WzFile : IDisposable
     private void ReadDirectoryEntries(WzDirectory directory)
     {
         var count = ReadCompressedInt(_reader);
+        // Collect subdirectory offsets for two-pass reading
+        // (subdirectory contents come later in the stream, not inline)
+        var subdirOffsets = new List<(WzDirectory Dir, int Offset)>();
+
         for (var i = 0; i < count; i++)
         {
             var type = _reader.ReadByte();
@@ -262,11 +266,19 @@ public sealed class WzFile : IDisposable
             {
                 var child = new WzDirectory(name);
                 directory.AddChild(child);
+                subdirOffsets.Add((child, offset));
             }
             else
             {
                 throw new InvalidDataException($"Unknown resolved directory entry type: {type}.");
             }
+        }
+
+        // Pass 2: recursively read subdirectory contents
+        foreach (var (subdir, dirOffset) in subdirOffsets)
+        {
+            _stream.Position = dirOffset;
+            ReadDirectoryEntries(subdir);
         }
     }
 

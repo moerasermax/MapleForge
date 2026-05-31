@@ -2,7 +2,10 @@ using Maple.Adapters.V113.Channel;
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
 using Maple.Application.Characters;
+using Maple.Application.Maps;
 using Maple.Application.Security;
+using Maple.Content.Wz;
+using Maple.Core.Data;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
 using Maple.Persistence;
@@ -45,6 +48,14 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         builder.Services.AddSingleton<AuthService>();
         builder.Services.AddSingleton<CharacterService>();
+
+        // M3-4/M3-6：WZ 資料提供者（process 級快取）+ 地圖服務。
+        builder.Services.AddSingleton<IDataProvider>(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new WzDataProvider(o.WzDirectory);
+        });
+        builder.Services.AddSingleton<MapService>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>
