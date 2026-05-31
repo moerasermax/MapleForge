@@ -14,5 +14,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Maple.Adapters.V113.Tests/Maple.Adapters.V113.Tests.csproj" />
+    <Project Path="tests/Maple.Application.Tests/Maple.Application.Tests.csproj" />
   </Folder>
 </Solution>
