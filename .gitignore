@@ -1,0 +1,32 @@
+# .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.user
+*.suo
+
+# Rider / VS / VS Code
+.vs/
+.idea/
+.vscode/
+*.DotSettings.user
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+coverage*/
+*.trx
+
+# Logs & local data
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local-only config (keep appsettings.json, ignore overrides)
+appsettings.*.local.json
+secrets.json
