@@ -12,4 +12,7 @@
     <Project Path="src/Maple.Scripting/Maple.Scripting.csproj" />
     <Project Path="src/Maple.Versioning/Maple.Versioning.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Maple.Adapters.V113.Tests/Maple.Adapters.V113.Tests.csproj" />
+  </Folder>
 </Solution>

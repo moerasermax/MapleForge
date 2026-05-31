@@ -5,6 +5,10 @@
     <ProjectReference Include="..\Maple.Versioning\Maple.Versioning.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Maple.Adapters.V113.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
