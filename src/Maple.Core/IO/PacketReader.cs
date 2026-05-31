@@ -19,10 +19,17 @@ public sealed class PacketReader
 
     public int Remaining => _buf.Length - _pos;
 
-    public byte ReadByte() => _buf[_pos++];
+    public byte ReadByte()
+    {
+        if (_pos >= _buf.Length)
+            throw new InvalidDataException($"封包不足：需 1 byte，剩餘 {Remaining}");
+        return _buf[_pos++];
+    }
 
     public short ReadShort()
     {
+        if (Remaining < 2)
+            throw new InvalidDataException($"封包不足：需 2 bytes，剩餘 {Remaining}");
         short v = (short)(_buf[_pos] | (_buf[_pos + 1] << 8));
         _pos += 2;
         return v;
@@ -30,6 +37,8 @@ public sealed class PacketReader
 
     public int ReadInt()
     {
+        if (Remaining < 4)
+            throw new InvalidDataException($"封包不足：需 4 bytes，剩餘 {Remaining}");
         int v = _buf[_pos] | (_buf[_pos + 1] << 8) | (_buf[_pos + 2] << 16) | (_buf[_pos + 3] << 24);
         _pos += 4;
         return v;

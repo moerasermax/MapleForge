@@ -3,8 +3,10 @@ using System.Net.Sockets;
 using Maple.Adapters.V113.Crypto;
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
+using Maple.Application.Characters;
 using Maple.Application.Security;
 using Maple.Core.Accounts;
+using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Net;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -41,6 +43,52 @@ public class LoginPipelineIntegrationTests
         }
     }
 
+    /// <summary>測試用記憶體角色庫。</summary>
+    private sealed class FakeCharacterRepository : ICharacterRepository
+    {
+        private readonly Dictionary<int, Character> _byId = new();
+        private readonly Dictionary<string, Character> _byName = new(StringComparer.OrdinalIgnoreCase);
+        private int _nextId = 1;
+
+        public Task<IReadOnlyList<Character>> GetByAccountAsync(int accountId, CancellationToken ct = default)
+        {
+            IReadOnlyList<Character> list = _byId.Values.Where(c => c.AccountId == accountId).ToList();
+            return Task.FromResult(list);
+        }
+
+        public Task<Character?> FindByIdAsync(int characterId, CancellationToken ct = default)
+            => Task.FromResult(_byId.TryGetValue(characterId, out var c) ? c : null);
+
+        public Task<Character?> FindByNameAsync(string name, CancellationToken ct = default)
+            => Task.FromResult(_byName.TryGetValue(name, out var c) ? c : null);
+
+        public Task AddAsync(Character character, CancellationToken ct = default)
+        {
+            character.Id = _nextId++;
+            _byId[character.Id] = character;
+            _byName[character.Name] = character;
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(Character character, CancellationToken ct = default)
+        {
+            _byId[character.Id] = character;
+            _byName[character.Name] = character;
+            return Task.CompletedTask;
+        }
+    }
+
+    private static V113LoginConnectionHandler BuildHandler(
+        AuthService auth,
+        CharacterService? charService = null,
+        V113LoginOptions? opts = null)
+    {
+        charService ??= new CharacterService(new FakeCharacterRepository());
+        opts ??= new V113LoginOptions(AutoRegister: true);
+        return new V113LoginConnectionHandler(
+            NullLogger<V113LoginConnectionHandler>.Instance, auth, charService, opts);
+    }
+
     [Fact]
     public async Task Loopback_Handshake_Login_AutoRegister_ReturnsAuthSuccess()
     {
@@ -50,8 +98,7 @@ public class LoginPipelineIntegrationTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var auth = new AuthService(new FakeAccountRepository(), new BcryptPasswordHasher());
-        var handler = new V113LoginConnectionHandler(
-            NullLogger<V113LoginConnectionHandler>.Instance, auth, new V113LoginOptions(AutoRegister: true));
+        var handler = BuildHandler(auth);
 
         var serverTask = Task.Run(async () =>
         {
@@ -123,9 +170,8 @@ public class LoginPipelineIntegrationTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var auth = new AuthService(new FakeAccountRepository(), new BcryptPasswordHasher());
-        var handler = new V113LoginConnectionHandler(
-            NullLogger<V113LoginConnectionHandler>.Instance, auth,
-            new V113LoginOptions(AutoRegister: true, WorldName: "TestWorld", ChannelCount: 2));
+        var handler = BuildHandler(auth, opts: new V113LoginOptions(
+            AutoRegister: true, WorldName: "TestWorld", ChannelCount: 2));
 
         var serverTask = Task.Run(async () =>
         {
@@ -179,12 +225,13 @@ public class LoginPipelineIntegrationTests
         Assert.Equal((short)V113SendOp.Serverlist, (short)(eolPkt[0] | (eolPkt[1] << 8)));
         Assert.Equal(0xFF, eolPkt[2]); // end marker
 
-        // 7) 送 CHARLIST_REQUEST
+        // 7) 送 CHARLIST_REQUEST：[opcode][byte unknown][byte world][byte channel]
         await SendEncryptedAsync(stream, clientSend,
-            new PacketWriter(4)
+            new PacketWriter(5)
                 .WriteShort(V113RecvOp.CharlistRequest)
+                .WriteByte(0)   // unknown
                 .WriteByte(0)   // world id
-                .WriteByte(0)   // channel id
+                .WriteByte(0)   // channel id (0→ selectedChannel=1)
                 .ToArray(), cts.Token);
 
         // 8) 讀回 CHARLIST
@@ -219,6 +266,91 @@ public class LoginPipelineIntegrationTests
         await stream.ReadExactlyAsync(body, ct);
         cipher.Crypt(body);
         return body;
+    }
+
+    [Fact]
+    public async Task Loopback_CreateChar_CharNameCheck_CreateSuccess_CharlistShowsChar()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var charRepo = new FakeCharacterRepository();
+        var auth = new AuthService(new FakeAccountRepository(), new BcryptPasswordHasher());
+        var charService = new CharacterService(charRepo);
+        var handler = BuildHandler(auth, charService);
+
+        var serverTask = Task.Run(async () =>
+        {
+            var sock = await listener.AcceptSocketAsync(cts.Token);
+            var session = new MapleSession(sock, NullLogger<MapleSession>.Instance);
+            await using (session)
+                await handler.HandleConnectionAsync(session, cts.Token);
+        }, cts.Token);
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port, cts.Token);
+        var stream = client.GetStream();
+
+        // 1) 握手 + 取 IV
+        var lenBuf = new byte[2];
+        await stream.ReadExactlyAsync(lenBuf, cts.Token);
+        var hpayload = new byte[lenBuf[0] | (lenBuf[1] << 8)];
+        await stream.ReadExactlyAsync(hpayload, cts.Token);
+        int hpos = 2;
+        int plen = hpayload[hpos] | (hpayload[hpos + 1] << 8); hpos += 2 + plen;
+        var recvIv = hpayload.AsSpan(hpos, 4).ToArray(); hpos += 4;
+        var sendIv = hpayload.AsSpan(hpos, 4).ToArray();
+        var clientSend = new MapleAesOfb(recvIv, 113);
+        var clientRecv = new MapleAesOfb(sendIv, unchecked((short)(0xFFFF - 113)));
+
+        // 2) LOGIN_PASSWORD（autoRegister）
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(32).WriteShort(0x01).WriteMapleString("charuser").WriteMapleString("charpass").ToArray(), cts.Token);
+        var authPkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        Assert.Equal((short)0x00, (short)(authPkt[0] | (authPkt[1] << 8)));
+        Assert.Equal(0, authPkt[2]); // success
+
+        // 3) CHECK_CHAR_NAME（名稱可用）
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(16).WriteShort(V113RecvOp.CheckCharName).WriteMapleString("TestChar").ToArray(), cts.Token);
+        var namePkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        Assert.Equal((short)V113SendOp.CharNameResponse, (short)(namePkt[0] | (namePkt[1] << 8)));
+        Assert.Equal(0, namePkt[namePkt.Length - 1]); // 0=available
+
+        // 4) CREATE_CHAR（Explorer job=1）
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(64)
+                .WriteShort(V113RecvOp.CreateChar)
+                .WriteMapleString("TestChar")
+                .WriteInt(1)       // Explorer
+                .WriteInt(20100)   // face
+                .WriteInt(30030)   // hair
+                .WriteInt(1040002) // top
+                .WriteInt(1060002) // bottom
+                .WriteInt(1072001) // shoes
+                .WriteInt(1302000) // weapon
+                .ToArray(), cts.Token);
+        var newCharPkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        Assert.Equal((short)V113SendOp.AddNewCharEntry, (short)(newCharPkt[0] | (newCharPkt[1] << 8)));
+        Assert.Equal(0, newCharPkt[2]); // 0=success
+
+        // 5) SERVERLIST_REQUEST → 世界選單
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(2).WriteShort(V113RecvOp.ServerlistRequest).ToArray(), cts.Token);
+        await ReadDecryptedAsync(stream, clientRecv, cts.Token); // SERVERLIST
+        await ReadDecryptedAsync(stream, clientRecv, cts.Token); // EndOfServerList
+
+        // 6) CHARLIST_REQUEST → 角色列表（應有 1 個角色）
+        await SendEncryptedAsync(stream, clientSend,
+            new PacketWriter(5).WriteShort(V113RecvOp.CharlistRequest).WriteByte(0).WriteByte(0).WriteByte(0).ToArray(), cts.Token);
+        var charlistPkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        Assert.Equal((short)V113SendOp.Charlist, (short)(charlistPkt[0] | (charlistPkt[1] << 8)));
+        Assert.Equal(1, charlistPkt[7]); // 1 個角色
+
+        client.Close();
+        await serverTask;
     }
 
     [Fact]

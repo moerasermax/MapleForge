@@ -1,6 +1,8 @@
 using LiteDB;
 using Maple.Core.Accounts;
+using Maple.Core.Characters;
 using Maple.Persistence.Accounts;
+using Maple.Persistence.Characters;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Maple.Persistence;
@@ -32,6 +34,7 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<IAccountRepository, LiteDbAccountRepository>();
+        services.AddSingleton<ICharacterRepository, LiteDbCharacterRepository>();
 
         return services;
     }

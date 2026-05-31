@@ -1,5 +1,7 @@
 using Maple.Adapters.V113.Crypto;
 using Maple.Application.Accounts;
+using Maple.Application.Characters;
+using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Net;
 using Maple.Versioning;
@@ -12,25 +14,30 @@ public sealed record V113LoginOptions(
     bool AutoRegister,
     string WorldName = "Scania",
     int ChannelCount = 1,
-    int CharSlots = 3);
+    int CharSlots = 3,
+    byte[] ChannelIp = null!,
+    int ChannelPort = 8585);
 
 /// <summary>
-/// M2 的 v113 登入連線處理：送握手 → 啟用 cipher → 收 LOGIN_PASSWORD → 驗證帳密 → 回登入成功/失敗。
+/// v113 登入連線處理：握手 → 帳密驗證 → 世界/頻道列表 → 角色列表 → 建角/選角。
 /// </summary>
 public sealed class V113LoginConnectionHandler : IConnectionHandler
 {
     private readonly IVersionCipherFactory _ciphers = new V113CipherFactory();
     private readonly ILogger<V113LoginConnectionHandler> _log;
     private readonly AuthService _auth;
+    private readonly CharacterService _charService;
     private readonly V113LoginOptions _options;
 
     public V113LoginConnectionHandler(
         ILogger<V113LoginConnectionHandler> log,
         AuthService auth,
+        CharacterService charService,
         V113LoginOptions options)
     {
         _log = log;
         _auth = auth;
+        _charService = charService;
         _options = options;
     }
 
@@ -39,17 +46,20 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
         byte[] recvIv = { 0x46, 0x72, 0x7A, (byte)Random.Shared.Next(256) };
         byte[] sendIv = { 0x52, 0x30, 0x78, (byte)Random.Shared.Next(256) };
 
-        var hello = V113LoginPackets.Hello(recvIv, sendIv);
-        await session.SendRawAsync(hello, ct);
+        await session.SendRawAsync(V113LoginPackets.Hello(recvIv, sendIv), ct);
 
         var (recv, send) = _ciphers.CreateSessionPair(recvIv, sendIv);
         session.SetCiphers(recv, send);
         _log.LogInformation("[v113] 握手送出，cipher 啟用 {Remote}", session.Remote);
 
-        await session.RunAsync(OnPacketAsync, ct);
+        // 每個連線獨立的登入狀態
+        var ctx = new LoginContext();
+        await session.RunAsync((body, s, token) => OnPacketAsync(body, s, ctx, token), ct);
     }
 
-    private async Task OnPacketAsync(byte[] body, MapleSession session, CancellationToken ct)
+    // ── 主路由 ────────────────────────────────────────────────────────────────
+
+    private async Task OnPacketAsync(byte[] body, MapleSession session, LoginContext ctx, CancellationToken ct)
     {
         if (body.Length < 2) return;
 
@@ -59,11 +69,11 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
         switch (opcode)
         {
             case V113RecvOp.LoginPassword:
-                await HandleLoginAsync(reader, session, ct);
+                await HandleLoginAsync(reader, session, ctx, ct);
                 break;
 
             case V113RecvOp.ServerlistRequest:
-                await HandleServerlistRequestAsync(session, ct);
+                await HandleServerlistRequestAsync(session, ctx, ct);
                 break;
 
             case V113RecvOp.ServerStatusRequest:
@@ -71,7 +81,19 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
                 break;
 
             case V113RecvOp.CharlistRequest:
-                await HandleCharlistRequestAsync(session, ct);
+                await HandleCharlistRequestAsync(reader, session, ctx, ct);
+                break;
+
+            case V113RecvOp.CheckCharName:
+                await HandleCheckCharNameAsync(reader, session, ct);
+                break;
+
+            case V113RecvOp.CreateChar:
+                await HandleCreateCharAsync(reader, session, ctx, ct);
+                break;
+
+            case V113RecvOp.CharSelect:
+                await HandleCharSelectAsync(reader, session, ctx, ct);
                 break;
 
             case V113RecvOp.Pong:
@@ -84,25 +106,9 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
         }
     }
 
-    private async Task HandleServerlistRequestAsync(MapleSession session, CancellationToken ct)
-    {
-        _log.LogInformation("[v113] → SERVERLIST_REQUEST {Remote}", session.Remote);
-        await session.SendAsync(
-            V113LoginPackets.ServerList(_options.WorldName, _options.ChannelCount), ct);
-        await session.SendAsync(V113LoginPackets.EndOfServerList(), ct);
-        _log.LogInformation("[v113] ← SERVERLIST 送出（world={World} ch={Ch}）{Remote}",
-            _options.WorldName, _options.ChannelCount, session.Remote);
-    }
+    // ── 個別 handler ─────────────────────────────────────────────────────────
 
-    private async Task HandleCharlistRequestAsync(MapleSession session, CancellationToken ct)
-    {
-        _log.LogInformation("[v113] → CHARLIST_REQUEST {Remote}", session.Remote);
-        await session.SendAsync(V113LoginPackets.CharList(_options.CharSlots), ct);
-        _log.LogInformation("[v113] ← CHARLIST 送出（slots={Slots}）{Remote}",
-            _options.CharSlots, session.Remote);
-    }
-
-    private async Task HandleLoginAsync(PacketReader reader, MapleSession session, CancellationToken ct)
+    private async Task HandleLoginAsync(PacketReader reader, MapleSession session, LoginContext ctx, CancellationToken ct)
     {
         string account, password;
         try
@@ -121,10 +127,13 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
         switch (result.Status)
         {
             case AuthStatus.Success:
+                ctx.AccountId   = result.Account!.Id;
+                ctx.AccountName = result.Account.AccountName;
+                ctx.Gender      = 0; // gender 尚未收集，預設男；M2-5+ 再擴充
                 _log.LogInformation("[v113] ✓ 登入成功 account='{Account}' (id={Id}) {Remote}",
-                    account, result.Account!.Id, session.Remote);
+                    account, ctx.AccountId, session.Remote);
                 await session.SendAsync(
-                    V113LoginPackets.AuthSuccess(result.Account.Id, result.Account.AccountName), ct);
+                    V113LoginPackets.AuthSuccess(ctx.AccountId, ctx.AccountName), ct);
                 break;
 
             case AuthStatus.AccountBanned:
@@ -138,5 +147,125 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
                 await session.SendAsync(V113LoginPackets.LoginFailed(4), ct);
                 break;
         }
+    }
+
+    private async Task HandleServerlistRequestAsync(MapleSession session, LoginContext ctx, CancellationToken ct)
+    {
+        if (!ctx.IsLoggedIn) return;
+        await session.SendAsync(
+            V113LoginPackets.ServerList(_options.WorldName, _options.ChannelCount), ct);
+        await session.SendAsync(V113LoginPackets.EndOfServerList(), ct);
+        _log.LogInformation("[v113] ← SERVERLIST world={World} ch={Ch} {Remote}",
+            _options.WorldName, _options.ChannelCount, session.Remote);
+    }
+
+    private async Task HandleCharlistRequestAsync(PacketReader reader, MapleSession session, LoginContext ctx, CancellationToken ct)
+    {
+        if (!ctx.IsLoggedIn) return;
+        try
+        {
+            reader.ReadByte();                      // unknown
+            reader.ReadByte();                      // world id
+            ctx.SelectedChannel = reader.ReadByte() + 1;
+        }
+        catch (InvalidDataException) { /* 不完整封包，沿用預設 channel */ }
+
+        var chars = await _charService.GetCharactersAsync(ctx.AccountId, ct);
+        await session.SendAsync(V113LoginPackets.CharList(chars, _options.CharSlots), ct);
+        _log.LogInformation("[v113] ← CHARLIST {Count} 角色 slot={Slots} {Remote}",
+            chars.Count, _options.CharSlots, session.Remote);
+    }
+
+    private async Task HandleCheckCharNameAsync(PacketReader reader, MapleSession session, CancellationToken ct)
+    {
+        string name;
+        try { name = reader.ReadMapleString(); }
+        catch (InvalidDataException) { return; }
+
+        bool available = await _charService.IsNameAvailableAsync(name, ct);
+        await session.SendAsync(
+            V113CharacterPackets.CharNameResponse(name, nameUsed: !available), ct);
+        _log.LogInformation("[v113] ← CHAR_NAME_RESPONSE name='{Name}' available={A} {Remote}",
+            name, available, session.Remote);
+    }
+
+    private async Task HandleCreateCharAsync(PacketReader reader, MapleSession session, LoginContext ctx, CancellationToken ct)
+    {
+        if (!ctx.IsLoggedIn) return;
+        string name;
+        int jobType, face, hair, top, bottom, shoes, weapon;
+        try
+        {
+            name    = reader.ReadMapleString();
+            jobType = reader.ReadInt();
+            face    = reader.ReadInt();
+            hair    = reader.ReadInt();
+            top     = reader.ReadInt();
+            bottom  = reader.ReadInt();
+            shoes   = reader.ReadInt();
+            weapon  = reader.ReadInt();
+        }
+        catch (InvalidDataException)
+        {
+            _log.LogWarning("[v113] CREATE_CHAR 封包格式異常 {Remote}", session.Remote);
+            return;
+        }
+
+        // 初始裝備（位置對照舊 Java：-5=Top, -6=Bottom, -7=Shoes, -11=Weapon）
+        var equips = new List<EquipEntry>();
+        if (top     > 0) equips.Add(new EquipEntry { Position = -5,  ItemId = top });
+        if (bottom  > 0) equips.Add(new EquipEntry { Position = -6,  ItemId = bottom });
+        if (shoes   > 0) equips.Add(new EquipEntry { Position = -7,  ItemId = shoes });
+        if (weapon  > 0) equips.Add(new EquipEntry { Position = -11, ItemId = weapon });
+
+        var chr = await _charService.CreateCharacterAsync(
+            ctx.AccountId, ctx.Gender, name, jobType, face, hair, equips, ct);
+
+        bool success = chr is not null;
+        var fallback = chr ?? new Character
+        {
+            Id = 0, AccountId = ctx.AccountId, Name = name,
+            Gender = ctx.Gender, Face = face, Hair = hair,
+            Equips = equips,
+        };
+
+        await session.SendAsync(V113CharacterPackets.AddNewCharEntry(fallback, success), ct);
+        _log.LogInformation("[v113] ← ADD_NEW_CHAR_ENTRY name='{Name}' success={S} {Remote}",
+            name, success, session.Remote);
+    }
+
+    private async Task HandleCharSelectAsync(PacketReader reader, MapleSession session, LoginContext ctx, CancellationToken ct)
+    {
+        if (!ctx.IsLoggedIn) return;
+        int charId;
+        try { charId = reader.ReadInt(); }
+        catch (InvalidDataException) { return; }
+
+        // 驗證角色屬於此帳號
+        var chr = await _charService.GetByIdAsync(charId, ct);
+        if (chr is null || chr.AccountId != ctx.AccountId)
+        {
+            _log.LogWarning("[v113] CHAR_SELECT 非法角色 id={Id} account={Acc} {Remote}",
+                charId, ctx.AccountId, session.Remote);
+            return;
+        }
+
+        var ip   = _options.ChannelIp ?? new byte[] { 127, 0, 0, 1 };
+        var port = _options.ChannelPort;
+        await session.SendAsync(V113LoginPackets.ServerIp(ip, port, charId), ct);
+        _log.LogInformation("[v113] ← SERVER_IP charId={Id} {Ip}:{Port} {Remote}",
+            charId, string.Join(".", ip), port, session.Remote);
+    }
+
+    // ── 連線狀態（per-connection）───────────────────────────────────────────
+
+    private sealed class LoginContext
+    {
+        public int AccountId { get; set; }
+        public string AccountName { get; set; } = "";
+        public byte Gender { get; set; }
+        public int SelectedChannel { get; set; } = 1;
+
+        public bool IsLoggedIn => AccountId > 0;
     }
 }

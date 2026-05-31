@@ -1,4 +1,5 @@
 using Maple.Adapters.V113.Crypto;
+using Maple.Core.Characters;
 using Maple.Core.IO;
 
 namespace Maple.Adapters.V113.Login;
@@ -100,16 +101,34 @@ internal static class V113LoginPackets
             .ToArray();
 
     /// <summary>
-    /// getCharList（M2-4 stub）：0 個角色，讓客戶端進角色選單。
-    /// 真實角色列表在 M2-5 實作（需 CharStats + CharLook 序列化）。
+    /// getCharList：角色列表封包（對照舊 LoginPacket.getCharList）。
     /// </summary>
-    public static byte[] CharList(int charSlots = 3)
-        => new PacketWriter(10)
+    public static byte[] CharList(IReadOnlyList<Character> chars, int charSlots = 3)
+    {
+        var w = new PacketWriter(256)
             .WriteShort(V113SendOp.Charlist)
             .WriteByte(0)
-            .WriteInt(1000000)  // 對照 Java: 40 42 0F 00（固定值）
-            .WriteByte(0)       // 角色數（0）
-            .WriteShort(3)      // second password request（3=不需要）
-            .WriteInt(charSlots)
+            .WriteInt(1000000)      // 對照 Java: 40 42 0F 00（固定值）
+            .WriteByte(chars.Count);
+
+        foreach (var chr in chars)
+            V113CharacterPackets.WriteCharEntry(w, chr, ranking: false);
+
+        w.WriteShort(3)             // second password（3=不需要）
+         .WriteInt(charSlots);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// getServerIP (0x04)：登入成功後把客戶端導向頻道伺服器（對照舊 MaplePacketCreator.getServerIP）。
+    /// </summary>
+    public static byte[] ServerIp(byte[] ip, int port, int charId)
+        => new PacketWriter(16)
+            .WriteShort(V113SendOp.ServerIp)
+            .WriteShort(0)
+            .WriteBytes(ip)         // 4 bytes IP
+            .WriteShort(port)
+            .WriteInt(charId)
+            .WriteZeroBytes(5)
             .ToArray();
 }

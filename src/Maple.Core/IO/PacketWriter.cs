@@ -74,5 +74,25 @@ public sealed class PacketWriter
         return this;
     }
 
+    /// <summary>固定長度 ASCII 字串：寫入 len bytes，不足補 0（對照舊 writeAsciiString(name, 15)）。</summary>
+    public PacketWriter WriteFixedAsciiString(string s, int len)
+    {
+        Ensure(len);
+        int i = 0;
+        for (; i < s.Length && i < len; i++)
+            _buf[_len++] = (byte)s[i];
+        for (; i < len; i++)
+            _buf[_len++] = 0;
+        return this;
+    }
+
+    public PacketWriter WriteZeroBytes(int count)
+    {
+        Ensure(count);
+        for (int i = 0; i < count; i++)
+            _buf[_len++] = 0;
+        return this;
+    }
+
     public byte[] ToArray() => _buf.AsSpan(0, _len).ToArray();
 }

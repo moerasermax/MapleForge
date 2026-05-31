@@ -1,5 +1,6 @@
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
+using Maple.Application.Characters;
 using Maple.Application.Security;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
@@ -39,9 +40,10 @@ public static class MapleServerHost
             return new MapleDatabaseOptions { DataDirectory = o.DataDirectory, InstanceName = o.Name };
         });
 
-        // M2：帳密驗證（BCrypt + AuthService）。
+        // M2：帳密驗證 + 角色服務。
         builder.Services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         builder.Services.AddSingleton<AuthService>();
+        builder.Services.AddSingleton<CharacterService>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>
@@ -50,7 +52,7 @@ public static class MapleServerHost
             return new V113LoginOptions(o.AutoRegister, o.Name);
         });
 
-        // v113 連線處理（握手 + 帳密驗證 + 登入成功/失敗）。版本抽象接縫延到 M3。
+        // v113 連線處理（握手 + 帳密驗證 + 世界/頻道列表 + 角色列表 + 建角/選角）。
         builder.Services.AddSingleton<IConnectionHandler, V113LoginConnectionHandler>();
 
         builder.Services.AddHostedService<TcpLoginListener>();

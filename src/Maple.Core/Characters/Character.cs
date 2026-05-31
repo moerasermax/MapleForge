@@ -1,0 +1,49 @@
+namespace Maple.Core.Characters;
+
+/// <summary>
+/// 角色文件模型（LiteDB 集合根文件）。
+/// 採文件模型：一份文件代表一個角色的完整狀態，Load/Save 原子單元。
+/// </summary>
+public sealed class Character
+{
+    /// <summary>LiteDB 自動遞增主鍵。</summary>
+    public int Id { get; set; }
+
+    public int AccountId { get; set; }
+
+    /// <summary>角色名稱（全 DB 唯一索引）。</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>0=男, 1=女。</summary>
+    public byte Gender { get; set; }
+
+    public byte SkinColor { get; set; }
+
+    public int Face { get; set; }
+
+    public int Hair { get; set; }
+
+    public byte Level { get; set; } = 1;
+
+    /// <summary>職業 ID：0=初心者, 1000=皇家騎士, 2000=狂狼勇士。</summary>
+    public short Job { get; set; }
+
+    public CharacterStats Stats { get; set; } = new();
+
+    public short RemainingAp { get; set; }
+
+    public short RemainingSp { get; set; }
+
+    public int Exp { get; set; }
+
+    public short Fame { get; set; }
+
+    public int GachExp { get; set; }
+
+    public int MapId { get; set; }
+
+    public byte SpawnPoint { get; set; }
+
+    /// <summary>穿戴中的裝備清單（對照 EQUIPPED 槽）。</summary>
+    public List<EquipEntry> Equips { get; set; } = new();
+}
