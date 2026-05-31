@@ -1,0 +1,70 @@
+namespace Maple.Core.IO;
+
+/// <summary>
+/// 純 little-endian 封包寫入器（對照舊 <c>MaplePacketLittleEndianWriter</c>）。
+/// 無 I/O、無版本相依，可放在 Core。
+/// </summary>
+public sealed class PacketWriter
+{
+    private byte[] _buf;
+    private int _len;
+
+    public PacketWriter(int capacity = 32)
+    {
+        _buf = new byte[Math.Max(capacity, 16)];
+        _len = 0;
+    }
+
+    private void Ensure(int extra)
+    {
+        if (_len + extra <= _buf.Length) return;
+        int cap = _buf.Length * 2;
+        while (cap < _len + extra) cap *= 2;
+        Array.Resize(ref _buf, cap);
+    }
+
+    public PacketWriter WriteByte(int value)
+    {
+        Ensure(1);
+        _buf[_len++] = (byte)value;
+        return this;
+    }
+
+    public PacketWriter WriteShort(int value)
+    {
+        Ensure(2);
+        _buf[_len++] = (byte)(value & 0xFF);
+        _buf[_len++] = (byte)((value >> 8) & 0xFF);
+        return this;
+    }
+
+    public PacketWriter WriteInt(int value)
+    {
+        Ensure(4);
+        _buf[_len++] = (byte)(value & 0xFF);
+        _buf[_len++] = (byte)((value >> 8) & 0xFF);
+        _buf[_len++] = (byte)((value >> 16) & 0xFF);
+        _buf[_len++] = (byte)((value >> 24) & 0xFF);
+        return this;
+    }
+
+    public PacketWriter WriteBytes(ReadOnlySpan<byte> bytes)
+    {
+        Ensure(bytes.Length);
+        bytes.CopyTo(_buf.AsSpan(_len));
+        _len += bytes.Length;
+        return this;
+    }
+
+    /// <summary>MapleAsciiString：[short 長度][ASCII bytes]。</summary>
+    public PacketWriter WriteMapleString(string s)
+    {
+        WriteShort(s.Length);
+        Ensure(s.Length);
+        for (int i = 0; i < s.Length; i++)
+            _buf[_len++] = (byte)s[i];
+        return this;
+    }
+
+    public byte[] ToArray() => _buf.AsSpan(0, _len).ToArray();
+}

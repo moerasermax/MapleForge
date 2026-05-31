@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Maple.Core\Maple.Core.csproj" />
     <ProjectReference Include="..\Maple.Application\Maple.Application.csproj" />
+    <ProjectReference Include="..\Maple.Versioning\Maple.Versioning.csproj" />
   </ItemGroup>
 
   <ItemGroup>

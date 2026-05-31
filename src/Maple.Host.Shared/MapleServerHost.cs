@@ -1,3 +1,4 @@
+using Maple.Adapters.V113.Login;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,9 @@ public static class MapleServerHost
             var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
             return new LoginListenerSettings(o.Name, o.ListenIp, o.LoginPort);
         });
+
+        // M1：v113 連線處理（握手 + 登入失敗）。版本抽象接縫延到 M3。
+        builder.Services.AddSingleton<IConnectionHandler, V113LoginConnectionHandler>();
 
         builder.Services.AddHostedService<TcpLoginListener>();
 

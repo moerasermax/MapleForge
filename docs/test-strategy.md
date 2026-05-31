@@ -13,7 +13,7 @@
 |---|---|---|---|
 | **L1 單元** | cipher round-trip / 結構自洽（15 項） | `dotnet test` | ✅ |
 | **L2 黃金真值** | 舊 Java 預言機產 byte 級向量，C# 逐 byte 比對（5 項） | `dotnet test`（向量已烤入） | ✅ |
-| **L3 合成客戶端整合** | 測試內開 server + C# 假客戶端，跑完整握手→登入→登入失敗 | `dotnet test` | ⏳ 待 Net pipeline（M1-1/5/6/7）後建 |
+| **L3 合成客戶端整合** | 真 loopback socket，C# 假客戶端跑完整握手→登入→登入失敗 | `dotnet test` | ✅ `LoginPipelineIntegrationTests` |
 | **L4 真封包**（選配） | 真客戶端抓一次封包存 fixture，replay 比對 | 半自動一次 | ⏳ 選配，最終確認 |
 
 ## L2 預言機操作（如何重生黃金向量）

@@ -6,18 +6,26 @@ using Microsoft.Extensions.Logging;
 namespace Maple.Net;
 
 /// <summary>
-/// M0 階段的 Login 監聽 stub：綁定設定的 loginPort、接受連線、記 log，
-/// <b>不做任何封包解碼</b>。M1 會接上 Session + cipher 管線。
+/// Login 監聽器：綁定 loginPort，接受連線後建立 <see cref="MapleSession"/> 交給
+/// <see cref="IConnectionHandler"/>（M1 = v113 握手 + 登入失敗）。
 /// </summary>
 public sealed class TcpLoginListener : BackgroundService
 {
     private readonly ILogger<TcpLoginListener> _log;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly LoginListenerSettings _settings;
+    private readonly IConnectionHandler _handler;
 
-    public TcpLoginListener(ILogger<TcpLoginListener> log, LoginListenerSettings settings)
+    public TcpLoginListener(
+        ILogger<TcpLoginListener> log,
+        ILoggerFactory loggerFactory,
+        LoginListenerSettings settings,
+        IConnectionHandler handler)
     {
         _log = log;
+        _loggerFactory = loggerFactory;
         _settings = settings;
+        _handler = handler;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -25,21 +33,15 @@ public sealed class TcpLoginListener : BackgroundService
         var endpoint = new IPEndPoint(IPAddress.Parse(_settings.ListenIp), _settings.LoginPort);
         var listener = new TcpListener(endpoint);
         listener.Start();
-        _log.LogInformation(
-            "[{Instance}] Login 監聽啟動於 {Endpoint}（M0 stub：只接受並記錄，不解碼）",
-            _settings.InstanceName, endpoint);
+        _log.LogInformation("[{Instance}] Login 監聽啟動於 {Endpoint}", _settings.InstanceName, endpoint);
 
         try
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                var client = await listener.AcceptTcpClientAsync(stoppingToken);
-                _log.LogInformation(
-                    "[{Instance}] 接受連線 {Remote}",
-                    _settings.InstanceName, client.Client.RemoteEndPoint);
-
-                // M0：不做後續處理。M1 在此掛上 Session、握手與 cipher 管線。
-                _ = HandleStubAsync(client, stoppingToken);
+                var socket = await listener.AcceptSocketAsync(stoppingToken);
+                _log.LogInformation("[{Instance}] 接受連線 {Remote}", _settings.InstanceName, socket.RemoteEndPoint);
+                _ = HandleAsync(socket, stoppingToken);
             }
         }
         catch (OperationCanceledException)
@@ -53,17 +55,21 @@ public sealed class TcpLoginListener : BackgroundService
         }
     }
 
-    private static async Task HandleStubAsync(TcpClient client, CancellationToken ct)
+    private async Task HandleAsync(Socket socket, CancellationToken ct)
     {
-        using (client)
+        var session = new MapleSession(socket, _loggerFactory.CreateLogger<MapleSession>());
+        await using (session)
         {
             try
             {
-                // M0 stub：短暫保留連線後關閉。真正的握手在 M1 實作。
-                await Task.Delay(100, ct);
+                await _handler.HandleConnectionAsync(session, ct);
             }
             catch (OperationCanceledException)
             {
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "[{Instance}] 連線處理例外 {Remote}", _settings.InstanceName, session.Remote);
             }
         }
     }
