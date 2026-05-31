@@ -95,13 +95,19 @@ internal sealed class MapleAesOfb : IPacketCipher, IDisposable
             && ((header[1] ^ _iv[3]) & 0xFF) == versionLow;
     }
 
+    /// <summary>測試掛鉤：目前 IV 的副本（對照 Java getIv()）。</summary>
+    internal byte[] CurrentIv => (byte[])_iv.Clone();
+
     /// <summary>updateIv → getNewIv：用 funnyShit 從舊 IV 推導新 IV。</summary>
-    private void NextIv()
+    private void NextIv() => ComputeNextIv(_iv).CopyTo(_iv.AsSpan());
+
+    /// <summary>getNewIv：純函式版（供黃金測試直接比對 Java 預言機）。</summary>
+    internal static byte[] ComputeNextIv(ReadOnlySpan<byte> oldIv)
     {
         Span<byte> result = stackalloc byte[4] { 0xF2, 0x53, 0x50, 0xC6 }; // magic
         for (int i = 0; i < 4; i++)
-            FunnyShit(_iv[i], result);
-        result.CopyTo(_iv);
+            FunnyShit(oldIv[i], result);
+        return result.ToArray();
     }
 
     /// <summary>移植自 MapleAESOFB.funnyShit（276–308 行）。嚴格保留 Java 的 byte 截斷語意。</summary>

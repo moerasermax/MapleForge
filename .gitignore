@@ -23,6 +23,9 @@ coverage*/
 logs/
 *.log
 
+# Java oracle compiled output (regenerate via GoldenVectors.java)
+*.class
+
 # OS
 .DS_Store
 Thumbs.db
