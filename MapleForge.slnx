@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Maple.Adapters.V113/Maple.Adapters.V113.csproj" />
+    <Project Path="src/Maple.Application/Maple.Application.csproj" />
+    <Project Path="src/Maple.Content/Maple.Content.csproj" />
+    <Project Path="src/Maple.Core/Maple.Core.csproj" />
+    <Project Path="src/Maple.Host.Channel/Maple.Host.Channel.csproj" />
+    <Project Path="src/Maple.Host.Login/Maple.Host.Login.csproj" />
+    <Project Path="src/Maple.Host.Shared/Maple.Host.Shared.csproj" />
+    <Project Path="src/Maple.Net/Maple.Net.csproj" />
+    <Project Path="src/Maple.Persistence/Maple.Persistence.csproj" />
+    <Project Path="src/Maple.Scripting/Maple.Scripting.csproj" />
+    <Project Path="src/Maple.Versioning/Maple.Versioning.csproj" />
+  </Folder>
+</Solution>
