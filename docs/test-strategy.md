@@ -56,6 +56,13 @@
 
 **風險對策**：GUI 脆弱→優先 server 端觀察＋自動登入器；崩潰殘留→腳本殺乾淨+清 dmp；需 server 先支援握手→等 M1-5。
 
+**⚠️ 實測發現（2026-05-31）：客戶端被 Themida 保護殼包裝。**
+AI/腳本啟動 `MapleStory.exe 127.0.0.1 8484` 後，視窗卡在 `Themida - http://www.oreans.com` 對話框、**從未嘗試連線**（CPU≈0、零 TCP）。Themida 是商業反調試/反竄改殼，會偵測自動化/沙箱環境並彈出阻擋框。
+→ **結論：AI 無法可靠地自動啟動真客戶端**（會撞 Themida）。修正分工：
+- **例行驗證**：L1+L2+L3（全自動、不需客戶端、已綠）擔綱。
+- **L4 真客戶端**：改為**使用者手動啟動**（互動式啟動通常不觸發 Themida 阻擋，因為這客戶端對使用者本來就能跑），**機器只負責 server 端觀察/斷言**。可提供 `watch-server.ps1`：使用者啟動客戶端，腳本輪詢 server log 的「接受連線/握手送出/解密 LOGIN_PASSWORD」並判定 PASS。
+- 不嘗試繞過 Themida（反竄改規避，風險高且非目標）。
+
 **實作物（待 M1-5 後）**：`scripts/run-client-smoke.ps1`（起 server→launch client→輪詢 server log 的握手信號→timeout→殺 client→回傳 exit code）。server 端需在各階段印明確 log 行（連線/送握手/解密封包/收到登入）供腳本判讀。
 
 ## 驗收（M1 完成定義）
