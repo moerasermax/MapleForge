@@ -26,11 +26,34 @@ internal static class V113LoginPackets
             .ToArray();
     }
 
-    /// <summary>getLoginFailed：<c>[short LOGIN_STATUS=0][byte reason][short 0]</c>。reason 5 = 未註冊帳號。</summary>
+    /// <summary>getLoginFailed：<c>[short LOGIN_STATUS=0][byte reason][short 0]</c>。reason 4=密碼錯誤, 5=未註冊, 3=封鎖。</summary>
     public static byte[] LoginFailed(int reason)
         => new PacketWriter(8)
             .WriteShort(V113SendOp.LoginStatus)
             .WriteByte(reason)
             .WriteShort(0)
+            .ToArray();
+
+    /// <summary>
+    /// getAuthSuccess（登入成功）：對照舊 <c>LoginPacket.getAuthSuccessRequest</c>。
+    /// 送出後客戶端離開登入畫面、進入選伺服器流程。
+    /// </summary>
+    public static byte[] AuthSuccess(int accountId, string accountName, bool isGm = false)
+        => new PacketWriter(32)
+            .WriteShort(V113SendOp.LoginStatus)
+            .WriteByte(0)                  // type（0=成功）
+            .WriteInt(accountId)
+            .WriteByte(0)                  // gender（0=男；尚未設定可後續處理）
+            .WriteByte(isGm ? 1 : 0)       // admin byte
+            .WriteByte(0)
+            .WriteInt(0)
+            .WriteMapleString(accountName)
+            .WriteInt(0)
+            .WriteByte(0)
+            .WriteByte(0)
+            .WriteByte(0)                  // !canTalk（0=可說話）
+            .WriteLong(0)                  // 禁言期限
+            .WriteByte(0)
+            .WriteLong(0)
             .ToArray();
 }

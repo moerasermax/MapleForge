@@ -18,7 +18,11 @@ public sealed class ServerInstanceOptions
 
     public int LoginPort { get; set; } = 8484;
 
-    public string Database { get; set; } = "maple_v113";
+    /// <summary>LiteDB 資料目錄；每實例一個 `<Name>.db` 檔（見設計書 §4.4 文件模型 + LiteDB）。</summary>
+    public string DataDirectory { get; set; } = "data";
+
+    /// <summary>帳號不存在時自動建帳（對照舊 settings.ini autoRegister；私服常開）。</summary>
+    public bool AutoRegister { get; set; } = true;
 
     public ServerRates Rates { get; set; } = new();
 }

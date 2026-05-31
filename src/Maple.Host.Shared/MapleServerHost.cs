@@ -1,6 +1,9 @@
 using Maple.Adapters.V113.Login;
+using Maple.Application.Accounts;
+using Maple.Application.Security;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
+using Maple.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -29,7 +32,25 @@ public static class MapleServerHost
             return new LoginListenerSettings(o.Name, o.ListenIp, o.LoginPort);
         });
 
-        // M1：v113 連線處理（握手 + 登入失敗）。版本抽象接縫延到 M3。
+        // M2：LiteDB 持久層（每實例一個 .db 檔，見設計書 §4.4）。
+        builder.Services.AddMaplePersistence(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new MapleDatabaseOptions { DataDirectory = o.DataDirectory, InstanceName = o.Name };
+        });
+
+        // M2：帳密驗證（BCrypt + AuthService）。
+        builder.Services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
+        builder.Services.AddSingleton<AuthService>();
+
+        // v113 登入選項（autoRegister 由實例設定投影）。
+        builder.Services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new V113LoginOptions(o.AutoRegister);
+        });
+
+        // v113 連線處理（握手 + 帳密驗證 + 登入成功/失敗）。版本抽象接縫延到 M3。
         builder.Services.AddSingleton<IConnectionHandler, V113LoginConnectionHandler>();
 
         builder.Services.AddHostedService<TcpLoginListener>();

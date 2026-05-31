@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Maple.Core\Maple.Core.csproj" />
     <ProjectReference Include="..\Maple.Versioning\Maple.Versioning.csproj" />
     <ProjectReference Include="..\Maple.Net\Maple.Net.csproj" />
+    <ProjectReference Include="..\Maple.Application\Maple.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

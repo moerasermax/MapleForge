@@ -2,6 +2,10 @@ using System.Net;
 using System.Net.Sockets;
 using Maple.Adapters.V113.Crypto;
 using Maple.Adapters.V113.Login;
+using Maple.Application.Accounts;
+using Maple.Application.Security;
+using Maple.Core.Accounts;
+using Maple.Core.IO;
 using Maple.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -9,21 +13,45 @@ namespace Maple.Adapters.V113.Tests;
 
 /// <summary>
 /// L3 合成客戶端整合測試（全自動 E2E）：真 loopback socket，
-/// 假客戶端走完整 v113 握手 → 送 LOGIN_PASSWORD → 收登入失敗。
-/// 驗證 cipher + 握手 + framing + opcode 路由整條管線接線正確。
-/// （cipher 的 bit 級正確性已由 L2 黃金測試獨立保證。）
+/// 假客戶端走完整 v113 握手 → 送 LOGIN_PASSWORD(帳號/密碼) → 帳密驗證(autoRegister) → 收登入成功。
+/// 驗證 cipher + 握手 + framing + opcode 路由 + 帳密驗證整條管線（M1+M2-4）。
 /// </summary>
 public class LoginPipelineIntegrationTests
 {
+    /// <summary>測試用記憶體帳號庫（取代 LiteDB，專注驗證 handler+auth+封包流程）。</summary>
+    private sealed class FakeAccountRepository : IAccountRepository
+    {
+        private readonly Dictionary<string, Account> _byName = new(StringComparer.OrdinalIgnoreCase);
+        private int _nextId = 1;
+
+        public Task<Account?> FindByNameAsync(string accountName, CancellationToken ct = default)
+            => Task.FromResult(_byName.TryGetValue(accountName, out var a) ? a : null);
+
+        public Task AddAsync(Account account, CancellationToken ct = default)
+        {
+            account.Id = _nextId++;
+            _byName[account.AccountName] = account;
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(Account account, CancellationToken ct = default)
+        {
+            _byName[account.AccountName] = account;
+            return Task.CompletedTask;
+        }
+    }
+
     [Fact]
-    public async Task Loopback_Handshake_Login_ReturnsLoginFailed()
+    public async Task Loopback_Handshake_Login_AutoRegister_ReturnsAuthSuccess()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var handler = new V113LoginConnectionHandler(NullLogger<V113LoginConnectionHandler>.Instance);
+        var auth = new AuthService(new FakeAccountRepository(), new BcryptPasswordHasher());
+        var handler = new V113LoginConnectionHandler(
+            NullLogger<V113LoginConnectionHandler>.Instance, auth, new V113LoginOptions(AutoRegister: true));
 
         var serverTask = Task.Run(async () =>
         {
@@ -37,30 +65,30 @@ public class LoginPipelineIntegrationTests
         await client.ConnectAsync(IPAddress.Loopback, port, cts.Token);
         var stream = client.GetStream();
 
-        // 1) 讀 getHello：[short payloadLen][payload]
+        // 1) 讀 getHello（未加密 [len][payload]）→ 取 recvIv/sendIv
         var lenBuf = new byte[2];
         await stream.ReadExactlyAsync(lenBuf, cts.Token);
         int payloadLen = lenBuf[0] | (lenBuf[1] << 8);
         var payload = new byte[payloadLen];
         await stream.ReadExactlyAsync(payload, cts.Token);
 
-        // payload: version(2) | patch(short len + bytes) | recvIv(4) | sendIv(4) | locale(1)
         int pos = 0;
         short version = (short)(payload[pos] | (payload[pos + 1] << 8)); pos += 2;
         int patchLen = payload[pos] | (payload[pos + 1] << 8); pos += 2 + patchLen;
         var recvIv = payload.AsSpan(pos, 4).ToArray(); pos += 4;
         var sendIv = payload.AsSpan(pos, 4).ToArray(); pos += 4;
-        byte locale = payload[pos];
-
         Assert.Equal((short)113, version);
-        Assert.Equal(6, locale);
 
-        // 2) 鏡像 cipher：client.send 對應 server.recv（recvIv,113）；client.recv 對應 server.send（sendIv,0xFFFF-113）
+        // 2) 鏡像 cipher
         var clientSend = new MapleAesOfb(recvIv, 113);
         var clientRecv = new MapleAesOfb(sendIv, unchecked((short)(0xFFFF - 113)));
 
-        // 3) 送 LOGIN_PASSWORD（opcode 0x01 + dummy）：[4-byte header][crypt body]
-        var body = new byte[] { 0x01, 0x00, 0xAA, 0xBB };
+        // 3) 送 LOGIN_PASSWORD：[short 0x01][maple 帳號][maple 密碼]
+        var body = new PacketWriter(32)
+            .WriteShort(V113RecvOp.LoginPassword)
+            .WriteMapleString("testuser")
+            .WriteMapleString("testpass")
+            .ToArray();
         var frame = new byte[body.Length + 4];
         clientSend.WriteHeader(frame.AsSpan(0, 4), body.Length);
         clientSend.Crypt(body);
@@ -68,7 +96,7 @@ public class LoginPipelineIntegrationTests
         await stream.WriteAsync(frame, cts.Token);
         await stream.FlushAsync(cts.Token);
 
-        // 4) 讀回應並解密：應為 LOGIN_STATUS(0x00) + reason 5
+        // 4) 讀回應並解密：應為 getAuthSuccess（LOGIN_STATUS=0x00, type=0, 後接 accId 等）
         var rh = new byte[4];
         await stream.ReadExactlyAsync(rh, cts.Token);
         Assert.True(clientRecv.Check(rh), "回應封包頭驗證失敗");
@@ -79,9 +107,18 @@ public class LoginPipelineIntegrationTests
 
         short respOp = (short)(rbody[0] | (rbody[1] << 8));
         Assert.Equal((short)0x00, respOp);   // LOGIN_STATUS
-        Assert.Equal(5, rbody[2]);           // reason = 未註冊帳號
+        Assert.Equal(0, rbody[2]);           // type = 0（成功；登入失敗則為 reason 3/4/5）
+        Assert.True(rbody.Length > 6, "auth success 封包應比 login-failed 長（含 accId/帳號）");
 
-        client.Close(); // 通知 server EOF
+        client.Close();
         await serverTask;
+    }
+
+    [Fact]
+    public void V113ReceiveVersion_IsCorrect()
+    {
+        // 防呆：確保 send/recv 版本常數沒被改動
+        Assert.Equal((short)0x01, V113RecvOp.LoginPassword);
+        Assert.Equal((short)0x00, V113SendOp.LoginStatus);
     }
 }

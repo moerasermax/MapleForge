@@ -48,6 +48,14 @@ public sealed class PacketWriter
         return this;
     }
 
+    public PacketWriter WriteLong(long value)
+    {
+        Ensure(8);
+        for (int i = 0; i < 8; i++)
+            _buf[_len++] = (byte)((value >> (i * 8)) & 0xFF);
+        return this;
+    }
+
     public PacketWriter WriteBytes(ReadOnlySpan<byte> bytes)
     {
         Ensure(bytes.Length);
