@@ -2721,6 +2721,153 @@ static bool SendMappedCharacterInput(wchar_t ch, UINT* totalEvents)
     return sentTotal == expected;
 }
 
+typedef HANDLE HIMC_LOCAL;
+typedef HIMC_LOCAL (WINAPI* ImmAssociateContext_t)(HWND, HIMC_LOCAL);
+typedef HIMC_LOCAL (WINAPI* ImmGetContext_t)(HWND);
+typedef BOOL (WINAPI* ImmReleaseContext_t)(HWND, HIMC_LOCAL);
+typedef BOOL (WINAPI* ImmGetConversionStatus_t)(HIMC_LOCAL, LPDWORD, LPDWORD);
+typedef BOOL (WINAPI* ImmSetConversionStatus_t)(HIMC_LOCAL, DWORD, DWORD);
+
+typedef struct ImeNeutralizeState {
+    HMODULE imm32;
+    HWND hwnd;
+    DWORD targetThread;
+    HIMC_LOCAL oldContext;
+    DWORD oldConversion;
+    DWORD oldSentence;
+    bool hasImm;
+    bool associatedNull;
+    bool hasConversion;
+    ImmAssociateContext_t pImmAssociateContext;
+    ImmGetContext_t pImmGetContext;
+    ImmReleaseContext_t pImmReleaseContext;
+    ImmGetConversionStatus_t pImmGetConversionStatus;
+    ImmSetConversionStatus_t pImmSetConversionStatus;
+} ImeNeutralizeState;
+
+static bool BeginImeNeutralize(HWND hwnd, DWORD targetThread, ImeNeutralizeState* state)
+{
+    if (!state)
+        return false;
+    memset(state, 0, sizeof(*state));
+    state->hwnd = hwnd;
+    state->targetThread = targetThread;
+
+    if (!HwndBelongsToCurrentProcess(hwnd))
+    {
+        WriteLog("[Windower] IME neutralize skipped invalid hwnd=%p thread=%lu",
+            (void*)hwnd, (unsigned long)targetThread);
+        return false;
+    }
+
+    HMODULE imm32 = GetModuleHandleA("imm32.dll");
+    if (!imm32)
+        imm32 = LoadLibraryA("imm32.dll");
+    if (!imm32)
+    {
+        WriteLog("[Windower] IME neutralize skipped imm32 missing err=%lu", (unsigned long)GetLastError());
+        return false;
+    }
+
+    state->imm32 = imm32;
+    state->pImmAssociateContext = (ImmAssociateContext_t)GetProcAddress(imm32, "ImmAssociateContext");
+    state->pImmGetContext = (ImmGetContext_t)GetProcAddress(imm32, "ImmGetContext");
+    state->pImmReleaseContext = (ImmReleaseContext_t)GetProcAddress(imm32, "ImmReleaseContext");
+    state->pImmGetConversionStatus = (ImmGetConversionStatus_t)GetProcAddress(imm32, "ImmGetConversionStatus");
+    state->pImmSetConversionStatus = (ImmSetConversionStatus_t)GetProcAddress(imm32, "ImmSetConversionStatus");
+    state->hasImm = state->pImmAssociateContext != nullptr;
+
+    WriteLog("[Windower] IME neutralize begin hwnd=%p thread=%lu imm32=%p associate=%p get=%p setStatus=%p",
+        (void*)hwnd,
+        (unsigned long)targetThread,
+        (void*)imm32,
+        (void*)state->pImmAssociateContext,
+        (void*)state->pImmGetContext,
+        (void*)state->pImmSetConversionStatus);
+
+    if (state->pImmGetContext && state->pImmReleaseContext &&
+        state->pImmGetConversionStatus && state->pImmSetConversionStatus)
+    {
+        HIMC_LOCAL imc = state->pImmGetContext(hwnd);
+        if (imc)
+        {
+            DWORD conv = 0;
+            DWORD sent = 0;
+            BOOL got = state->pImmGetConversionStatus(imc, &conv, &sent);
+            if (got)
+            {
+                state->oldConversion = conv;
+                state->oldSentence = sent;
+                state->hasConversion = true;
+                SetLastError(0);
+                BOOL setOk = state->pImmSetConversionStatus(imc, 0, sent);
+                WriteLog("[Windower] IME conversion before hwnd=%p imc=%p conv=0x%08lX sentence=0x%08lX setAlpha=%d err=%lu",
+                    (void*)hwnd, (void*)imc, (unsigned long)conv, (unsigned long)sent,
+                    setOk ? 1 : 0, (unsigned long)GetLastError());
+            }
+            else
+            {
+                WriteLog("[Windower] IME conversion get failed hwnd=%p imc=%p err=%lu",
+                    (void*)hwnd, (void*)imc, (unsigned long)GetLastError());
+            }
+            state->pImmReleaseContext(hwnd, imc);
+        }
+        else
+        {
+            WriteLog("[Windower] IME GetContext returned NULL hwnd=%p err=%lu",
+                (void*)hwnd, (unsigned long)GetLastError());
+        }
+    }
+
+    if (state->pImmAssociateContext)
+    {
+        SetLastError(0);
+        state->oldContext = state->pImmAssociateContext(hwnd, nullptr);
+        state->associatedNull = true;
+        WriteLog("[Windower] IME associate-null hwnd=%p oldContext=%p err=%lu",
+            (void*)hwnd, (void*)state->oldContext, (unsigned long)GetLastError());
+    }
+
+    return state->associatedNull || state->hasConversion;
+}
+
+static void EndImeNeutralize(ImeNeutralizeState* state)
+{
+    if (!state || !state->hwnd)
+        return;
+
+    if (state->associatedNull && state->pImmAssociateContext)
+    {
+        SetLastError(0);
+        HIMC_LOCAL prev = state->pImmAssociateContext(state->hwnd, state->oldContext);
+        WriteLog("[Windower] IME associate-restore hwnd=%p restored=%p previous=%p err=%lu",
+            (void*)state->hwnd, (void*)state->oldContext, (void*)prev, (unsigned long)GetLastError());
+    }
+
+    if (state->hasConversion &&
+        state->pImmGetContext && state->pImmReleaseContext && state->pImmSetConversionStatus)
+    {
+        HIMC_LOCAL imc = state->pImmGetContext(state->hwnd);
+        if (imc)
+        {
+            SetLastError(0);
+            BOOL ok = state->pImmSetConversionStatus(imc, state->oldConversion, state->oldSentence);
+            WriteLog("[Windower] IME conversion restore hwnd=%p imc=%p conv=0x%08lX sentence=0x%08lX ok=%d err=%lu",
+                (void*)state->hwnd, (void*)imc,
+                (unsigned long)state->oldConversion,
+                (unsigned long)state->oldSentence,
+                ok ? 1 : 0,
+                (unsigned long)GetLastError());
+            state->pImmReleaseContext(state->hwnd, imc);
+        }
+        else
+        {
+            WriteLog("[Windower] IME conversion restore skipped GetContext NULL hwnd=%p err=%lu",
+                (void*)state->hwnd, (unsigned long)GetLastError());
+        }
+    }
+}
+
 static bool TryAttachThreadInputSendText(const char* text, DWORD len)
 {
     if (!text || len == 0)
@@ -2770,6 +2917,9 @@ static bool TryAttachThreadInputSendText(const char* text, DWORD len)
         return false;
     }
 
+    ImeNeutralizeState imeState = {};
+    BeginImeNeutralize(focus, targetThread, &imeState);
+
     UINT totalEvents = 0;
     for (int i = 0; i < wideLen; ++i)
     {
@@ -2781,6 +2931,8 @@ static bool TryAttachThreadInputSendText(const char* text, DWORD len)
         }
         Sleep(4);
     }
+
+    EndImeNeutralize(&imeState);
 
     if (attached)
     {
