@@ -39,3 +39,7 @@ Thumbs.db
 # Local-only config (keep appsettings.json, ignore overrides)
 appsettings.*.local.json
 secrets.json
+
+# 診斷暫存
+client-shot*.png
+*.obj

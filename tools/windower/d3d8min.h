@@ -53,10 +53,36 @@ typedef struct IDirect3D8Vtbl {
     void* CreateDevice;            // 15  ← 我們要 hook 的
 } IDirect3D8Vtbl;
 
+// IDirect3DDevice8 vtable（我們只需要 Reset=14, Present=15）
+typedef struct IDirect3DDevice8Vtbl {
+    // IUnknown
+    void* QueryInterface;   // 0
+    void* AddRef;           // 1
+    void* Release;          // 2
+    // IDirect3DDevice8
+    void* TestCooperativeLevel;        // 3
+    void* GetAvailableTextureMem;      // 4
+    void* ResourceManagerDiscardBytes; // 5
+    void* GetDirect3D;                 // 6
+    void* GetDeviceCaps;               // 7
+    void* GetDisplayMode;              // 8
+    void* GetCreationParameters;       // 9
+    void* SetCursorProperties;         // 10
+    void* SetCursorPosition;           // 11
+    void* ShowCursor;                  // 12
+    void* CreateAdditionalSwapChain;   // 13
+    void* Reset;                       // 14
+    void* Present;                     // 15
+} IDirect3DDevice8Vtbl;
+
 struct IDirect3D8 {
     IDirect3D8Vtbl* lpVtbl;
     ULONG WINAPI AddRef()  { return ((ULONG(WINAPI*)(IDirect3D8*))lpVtbl->AddRef)(this); }
     ULONG WINAPI Release() { return ((ULONG(WINAPI*)(IDirect3D8*))lpVtbl->Release)(this); }
+};
+
+struct IDirect3DDevice8 {
+    IDirect3DDevice8Vtbl* lpVtbl;
 };
 
 typedef IDirect3D8* (WINAPI* Direct3DCreate8_t)(UINT SDKVersion);
@@ -66,3 +92,14 @@ typedef HRESULT (WINAPI* CreateDevice_t)(
     UINT, D3DDEVTYPE, HWND, DWORD,
     D3DPRESENT_PARAMETERS*,
     IDirect3DDevice8**);
+
+typedef HRESULT (WINAPI* DeviceReset_t)(
+    IDirect3DDevice8*,
+    D3DPRESENT_PARAMETERS*);
+
+typedef HRESULT (WINAPI* DevicePresent_t)(
+    IDirect3DDevice8*,
+    const RECT*,
+    const RECT*,
+    HWND,
+    const RGNDATA*);
