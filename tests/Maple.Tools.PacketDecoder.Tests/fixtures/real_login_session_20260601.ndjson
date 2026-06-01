@@ -1,0 +1,6 @@
+{"type":"session","pid":9688,"socket":2284,"ts_start":42150796}
+{"type":"chunk","seq":1,"dir":"s2c","ts":42150796,"raw_hex":"0e00","api":"recv","ret":2}
+{"type":"chunk","seq":2,"dir":"s2c","ts":42150796,"raw_hex":"710001003146727a70523078f106","api":"recv","ret":14}
+{"type":"chunk","seq":3,"dir":"c2s","ts":42166156,"raw_hex":"0b700970db2b","api":"send","ret":6}
+{"type":"chunk","seq":4,"dir":"c2s","ts":42202500,"raw_hex":"310a1d0a3e4f67ec905b9e0c7efa05ad7ceb82e873f8ae6bdf3b92fb97ff459d7c249f7107ee49c75a127bb5ace05e22","api":"send","ret":48}
+{"type":"chunk","seq":5,"dir":"s2c","ts":42203046,"raw_hex":"f60ec60e79f01f3a21cf03f58f20af5962ac765ae16b4de64467a5d6b7ef79902e27e09f430ef442b9e4375c6df5100667ad2056","api":"recv","ret":52}
