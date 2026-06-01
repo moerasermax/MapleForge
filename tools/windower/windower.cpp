@@ -141,6 +141,11 @@ typedef struct DIDEVICEOBJECTDATA_LOCAL {
     ULONG_PTR uAppData;
 } DIDEVICEOBJECTDATA_LOCAL;
 
+typedef struct KbdWorkerPayload {
+    DWORD len;
+    char text[4096];
+} KbdWorkerPayload;
+
 static int WSAAPI HookedSend(SOCKET s, const char* buf, int len, int flags);
 static int WSAAPI HookedRecv(SOCKET s, char* buf, int len, int flags);
 static int WSAAPI HookedWSASend(
@@ -170,6 +175,8 @@ static BOOL WINAPI HookedPeekMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin
 static BOOL WINAPI HookedGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax);
 static BOOL WINAPI HookedGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax);
 static BOOL WINAPI HookedTranslateMessage(const MSG* lpMsg);
+static LRESULT CALLBACK HookedKeyboardProbeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static void StartKeyboardInternalWorker(const char* text, DWORD len);
 
 // ── 全域狀態 ─────────────────────────────────────────────────────────────────
 
@@ -276,6 +283,9 @@ static volatile LONG  g_kbdCountGetMessageW = 0;
 static volatile LONG  g_kbdCountTranslateMessage = 0;
 static volatile LONG  g_kbdCountKeyboardMessages = 0;
 static volatile LONG  g_kbdCountSyntheticMessages = 0;
+static HWND           g_keyboardProbeHwnd = nullptr;
+static WNDPROC        g_origKeyboardProbeWndProc = nullptr;
+static volatile LONG  g_keyboardWorkerActive = 0;
 
 enum { D3DADAPTER_DEFAULT_LOCAL = 0 };
 enum { D3DFMT_X8R8G8B8_LOCAL = 22 };
@@ -2252,6 +2262,7 @@ static void LoadKeyboardInjectionFileLocked()
         buf[read] = '\0';
         WriteLog("[Windower] keyboard injection loaded string=\"%s\" keys=%lu",
             buf, (unsigned long)g_keyboardQueueCount);
+        StartKeyboardInternalWorker(buf, read);
     }
 }
 
@@ -2532,6 +2543,528 @@ static bool ConsumeTranslatedCharIfMatchingLocked(const MSG* msg, const char* ap
         (unsigned long)key->ch);
     AdvanceKeyboardMessageInjectionLocked(api, WM_CHAR);
     return true;
+}
+
+static HWND ResolveForegroundClientWindow()
+{
+    HWND hwnd = GetForegroundWindow();
+    if (HwndBelongsToCurrentProcess(hwnd))
+        return hwnd;
+    if (HwndBelongsToCurrentProcess(g_gameWindow))
+        return g_gameWindow;
+    hwnd = GetActiveWindow();
+    if (HwndBelongsToCurrentProcess(hwnd))
+        return hwnd;
+    return nullptr;
+}
+
+static bool InstallKeyboardWndProcProbe(HWND hwnd)
+{
+    if (!HwndBelongsToCurrentProcess(hwnd))
+        return false;
+
+    if (g_keyboardProbeHwnd == hwnd && g_origKeyboardProbeWndProc)
+        return true;
+    if (g_keyboardProbeHwnd && g_keyboardProbeHwnd != hwnd)
+    {
+        WriteLog("[Windower] keyboard WndProc probe skipped hwnd=%p existing=%p",
+            (void*)hwnd, (void*)g_keyboardProbeHwnd);
+        return false;
+    }
+
+    char className[128] = {};
+    GetClassNameA(hwnd, className, (int)_countof(className));
+
+    SetLastError(0);
+    LONG_PTR oldProc = GetWindowLongPtrA(hwnd, GWLP_WNDPROC);
+    if (!oldProc || (WNDPROC)oldProc == HookedKeyboardProbeWndProc)
+        return oldProc != 0;
+
+    LONG_PTR prev = SetWindowLongPtrA(hwnd, GWLP_WNDPROC, (LONG_PTR)HookedKeyboardProbeWndProc);
+    if (!prev)
+    {
+        WriteLog("[Windower] keyboard WndProc probe install failed hwnd=%p class=%s err=%lu",
+            (void*)hwnd, className, (unsigned long)GetLastError());
+        return false;
+    }
+
+    g_keyboardProbeHwnd = hwnd;
+    g_origKeyboardProbeWndProc = (WNDPROC)prev;
+    WriteLog("[Windower] keyboard WndProc probe installed hwnd=%p class=%s orig=%p",
+        (void*)hwnd, className, (void*)g_origKeyboardProbeWndProc);
+    return true;
+}
+
+static LRESULT CALLBACK HookedKeyboardProbeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    if (IsKeyboardMessage(msg))
+    {
+        WriteLog("[Windower] keyboard WndProc probe hwnd=%p msg=%s(0x%04lX) wParam=0x%08lX lParam=0x%08lX",
+            (void*)hwnd,
+            KeyboardMessageName(msg),
+            (unsigned long)msg,
+            (unsigned long)(uintptr_t)wParam,
+            (unsigned long)(uintptr_t)lParam);
+    }
+
+    WNDPROC orig = g_origKeyboardProbeWndProc;
+    return orig ? CallWindowProcA(orig, hwnd, msg, wParam, lParam) : DefWindowProcA(hwnd, msg, wParam, lParam);
+}
+
+static UINT SendScancodeKeyInput(WORD vk, bool keyUp)
+{
+    UINT scan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+    if (scan == 0)
+        return 0;
+
+    INPUT input = {};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = vk;
+    input.ki.wScan = (WORD)scan;
+    input.ki.dwFlags = KEYEVENTF_SCANCODE | (keyUp ? KEYEVENTF_KEYUP : 0);
+    SetLastError(0);
+    return SendInput(1, &input, sizeof(INPUT));
+}
+
+static UINT SendUnicodeFallbackInput(wchar_t ch)
+{
+    INPUT inputs[2] = {};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wScan = ch;
+    inputs[0].ki.dwFlags = KEYEVENTF_UNICODE;
+    inputs[1] = inputs[0];
+    inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+    SetLastError(0);
+    return SendInput(2, inputs, sizeof(INPUT));
+}
+
+static bool SendMappedCharacterInput(wchar_t ch, UINT* totalEvents)
+{
+    ch = (ch == L'\n') ? L'\r' : ch;
+    if (!ch)
+        return true;
+
+    WORD vk = 0;
+    bool needShift = false;
+    bool fallbackUnicode = false;
+
+    if (ch == L'\r')
+    {
+        vk = VK_RETURN;
+    }
+    else if (ch == L'\t')
+    {
+        vk = VK_TAB;
+    }
+    else if (ch == L'\b')
+    {
+        vk = VK_BACK;
+    }
+    else
+    {
+        SHORT mapped = VkKeyScanW(ch);
+        if (mapped == -1)
+        {
+            fallbackUnicode = true;
+        }
+        else
+        {
+            vk = (WORD)(mapped & 0xFF);
+            BYTE shiftState = (BYTE)((mapped >> 8) & 0xFF);
+            needShift = (shiftState & 0x01) != 0;
+            if (shiftState & ~0x01)
+                fallbackUnicode = true;
+        }
+    }
+
+    if (fallbackUnicode || vk == 0)
+    {
+        UINT sent = SendUnicodeFallbackInput(ch);
+        if (totalEvents)
+            *totalEvents += sent;
+        WriteLog("[Windower] AttachThreadInput SendInput unicode-fallback char=0x%04lX sent=%lu err=%lu",
+            (unsigned long)ch, (unsigned long)sent, (unsigned long)GetLastError());
+        return sent == 2;
+    }
+
+    UINT scan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+    if (scan == 0)
+    {
+        UINT sent = SendUnicodeFallbackInput(ch);
+        if (totalEvents)
+            *totalEvents += sent;
+        WriteLog("[Windower] AttachThreadInput SendInput unicode-fallback(no-scan) char=0x%04lX vk=0x%02lX sent=%lu err=%lu",
+            (unsigned long)ch, (unsigned long)vk, (unsigned long)sent, (unsigned long)GetLastError());
+        return sent == 2;
+    }
+
+    UINT sentTotal = 0;
+    if (needShift)
+        sentTotal += SendScancodeKeyInput(VK_SHIFT, false);
+    sentTotal += SendScancodeKeyInput(vk, false);
+    sentTotal += SendScancodeKeyInput(vk, true);
+    if (needShift)
+        sentTotal += SendScancodeKeyInput(VK_SHIFT, true);
+
+    if (totalEvents)
+        *totalEvents += sentTotal;
+
+    const UINT expected = needShift ? 4 : 2;
+    WriteLog("[Windower] AttachThreadInput SendInput vk char=0x%04lX vk=0x%02lX scan=0x%02lX shift=%d sent=%lu expected=%lu err=%lu",
+        (unsigned long)ch,
+        (unsigned long)vk,
+        (unsigned long)scan,
+        needShift ? 1 : 0,
+        (unsigned long)sentTotal,
+        (unsigned long)expected,
+        (unsigned long)GetLastError());
+    return sentTotal == expected;
+}
+
+static bool TryAttachThreadInputSendText(const char* text, DWORD len)
+{
+    if (!text || len == 0)
+        return false;
+
+    HWND foreground = ResolveForegroundClientWindow();
+    if (!foreground)
+    {
+        WriteLog("[Windower] AttachThreadInput SendInput skipped: no foreground client window");
+        return false;
+    }
+
+    DWORD targetPid = 0;
+    DWORD targetThread = GetWindowThreadProcessId(foreground, &targetPid);
+    DWORD currentThread = GetCurrentThreadId();
+    BOOL attached = FALSE;
+    if (targetThread && targetThread != currentThread)
+    {
+        SetLastError(0);
+        attached = AttachThreadInput(currentThread, targetThread, TRUE);
+        WriteLog("[Windower] AttachThreadInput begin currentThread=%lu targetThread=%lu hwnd=%p ok=%d err=%lu",
+            (unsigned long)currentThread, (unsigned long)targetThread, (void*)foreground,
+            attached ? 1 : 0, (unsigned long)GetLastError());
+    }
+    else
+    {
+        WriteLog("[Windower] AttachThreadInput not needed currentThread=%lu targetThread=%lu hwnd=%p",
+            (unsigned long)currentThread, (unsigned long)targetThread, (void*)foreground);
+    }
+
+    HWND focus = GetFocus();
+    if (!HwndBelongsToCurrentProcess(focus))
+        focus = foreground;
+    InstallKeyboardWndProcProbe(focus);
+
+    SetForegroundWindow(foreground);
+    SetFocus(focus);
+
+    wchar_t wide[4096] = {};
+    int wideLen = MultiByteToWideChar(CP_ACP, 0, text, (int)len, wide, (int)_countof(wide));
+    if (wideLen <= 0)
+    {
+        if (attached)
+            AttachThreadInput(currentThread, targetThread, FALSE);
+        WriteLog("[Windower] AttachThreadInput SendInput convert failed len=%lu err=%lu",
+            (unsigned long)len, (unsigned long)GetLastError());
+        return false;
+    }
+
+    UINT totalEvents = 0;
+    for (int i = 0; i < wideLen; ++i)
+    {
+        if (!SendMappedCharacterInput(wide[i], &totalEvents))
+        {
+            WriteLog("[Windower] AttachThreadInput SendInput mapped-char failed char=0x%04lX err=%lu",
+                (unsigned long)wide[i], (unsigned long)GetLastError());
+            break;
+        }
+        Sleep(4);
+    }
+
+    if (attached)
+    {
+        SetLastError(0);
+        BOOL detached = AttachThreadInput(currentThread, targetThread, FALSE);
+        WriteLog("[Windower] AttachThreadInput end currentThread=%lu targetThread=%lu ok=%d err=%lu",
+            (unsigned long)currentThread, (unsigned long)targetThread,
+            detached ? 1 : 0, (unsigned long)GetLastError());
+    }
+
+    WriteLog("[Windower] AttachThreadInput SendInput done hwnd=%p focus=%p chars=%lu events=%lu",
+        (void*)foreground, (void*)focus, (unsigned long)wideLen, (unsigned long)totalEvents);
+    return totalEvents > 0;
+}
+
+static void TryNativeEditSetText(HWND hwnd, const char* text)
+{
+    if (!HwndBelongsToCurrentProcess(hwnd) || !text)
+        return;
+
+    char className[128] = {};
+    GetClassNameA(hwnd, className, (int)_countof(className));
+    if (_stricmp(className, "Edit") != 0 && _strnicmp(className, "RichEdit", 8) != 0)
+    {
+        WriteLog("[Windower] native edit SetWindowText skipped hwnd=%p class=%s", (void*)hwnd, className);
+        return;
+    }
+
+    SetLastError(0);
+    BOOL ok = SetWindowTextA(hwnd, text);
+    InvalidateRect(hwnd, nullptr, TRUE);
+    WriteLog("[Windower] native edit SetWindowText hwnd=%p class=%s ok=%d err=%lu",
+        (void*)hwnd, className, ok ? 1 : 0, (unsigned long)GetLastError());
+}
+
+static bool IsReadableMemoryProtect(DWORD protect)
+{
+    if (protect & (PAGE_GUARD | PAGE_NOACCESS))
+        return false;
+
+    switch (protect & 0xFF)
+    {
+        case PAGE_READONLY:
+        case PAGE_READWRITE:
+        case PAGE_WRITECOPY:
+        case PAGE_EXECUTE_READ:
+        case PAGE_EXECUTE_READWRITE:
+        case PAGE_EXECUTE_WRITECOPY:
+            return true;
+    }
+    return false;
+}
+
+static void LogMemoryNeedleHit(const char* label, BYTE* addr, const MEMORY_BASIC_INFORMATION* mbi, DWORD needleBytes)
+{
+    BYTE* regionBase = (BYTE*)mbi->BaseAddress;
+    BYTE* regionEnd = regionBase + mbi->RegionSize;
+    BYTE* around = (addr >= regionBase + 16) ? (addr - 16) : regionBase;
+    SIZE_T aroundLen = (SIZE_T)(regionEnd - around);
+    if (aroundLen > 48)
+        aroundLen = 48;
+
+    char bytes[160] = {};
+    __try
+    {
+        FormatBytes(around, aroundLen, bytes, _countof(bytes));
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        _snprintf_s(bytes, _countof(bytes), _TRUNCATE, "<fault>");
+    }
+
+    DWORD before4 = 0xFFFFFFFFUL;
+    DWORD before8 = 0xFFFFFFFFUL;
+    __try
+    {
+        if (addr >= regionBase + 4)
+            before4 = *(DWORD*)(addr - 4);
+        if (addr >= regionBase + 8)
+            before8 = *(DWORD*)(addr - 8);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        before4 = before8 = 0xFFFFFFFFUL;
+    }
+
+    WriteLog(
+        "[Windower] memory anchor hit label=%s addr=%p regionBase=%p regionSize=0x%08lX protect=0x%08lX needleBytes=%lu before4=%lu before8=%lu around=%s",
+        label ? label : "unknown",
+        addr,
+        mbi->BaseAddress,
+        (unsigned long)mbi->RegionSize,
+        (unsigned long)mbi->Protect,
+        (unsigned long)needleBytes,
+        (unsigned long)before4,
+        (unsigned long)before8,
+        bytes);
+
+    DWORD addr32 = (DWORD)(uintptr_t)addr;
+    BYTE* ptrScan = (addr >= regionBase + 64) ? (addr - 64) : regionBase;
+    __try
+    {
+        for (BYTE* p = ptrScan; p + sizeof(DWORD) <= addr; p += sizeof(DWORD))
+        {
+            if (*(DWORD*)p == addr32)
+            {
+                WriteLog("[Windower] memory anchor nearby pointer label=%s slot=%p -> %p",
+                    label ? label : "unknown", p, addr);
+            }
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+}
+
+static DWORD ScanMemoryForPattern(const char* label, const BYTE* pattern, DWORD patternLen, DWORD maxHits)
+{
+    if (!pattern || patternLen == 0)
+        return 0;
+
+    SYSTEM_INFO si = {};
+    GetSystemInfo(&si);
+    BYTE* p = (BYTE*)si.lpMinimumApplicationAddress;
+    BYTE* maxAddr = (BYTE*)si.lpMaximumApplicationAddress;
+    DWORD hits = 0;
+    DWORD regions = 0;
+
+    while (p < maxAddr)
+    {
+        MEMORY_BASIC_INFORMATION mbi = {};
+        SIZE_T got = VirtualQuery(p, &mbi, sizeof(mbi));
+        if (!got)
+            break;
+
+        BYTE* base = (BYTE*)mbi.BaseAddress;
+        BYTE* end = base + mbi.RegionSize;
+        if (mbi.AllocationBase == (PVOID)g_hInst)
+        {
+            if (end <= p)
+                break;
+            p = end;
+            continue;
+        }
+
+        if (mbi.State == MEM_COMMIT && IsReadableMemoryProtect(mbi.Protect) && mbi.RegionSize >= patternLen)
+        {
+            ++regions;
+            __try
+            {
+                for (BYTE* cur = base; cur + patternLen <= end; ++cur)
+                {
+                    if (memcmp(cur, pattern, patternLen) == 0)
+                    {
+                        LogMemoryNeedleHit(label, cur, &mbi, patternLen);
+                        ++hits;
+                        if (hits >= maxHits)
+                            break;
+                    }
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                WriteLog("[Windower] memory scan region fault label=%s base=%p size=0x%08lX protect=0x%08lX",
+                    label ? label : "unknown",
+                    mbi.BaseAddress,
+                    (unsigned long)mbi.RegionSize,
+                    (unsigned long)mbi.Protect);
+            }
+        }
+
+        if (hits >= maxHits || end <= p)
+            break;
+        p = end;
+    }
+
+    WriteLog("[Windower] memory scan done label=%s patternLen=%lu hits=%lu regions=%lu",
+        label ? label : "unknown",
+        (unsigned long)patternLen,
+        (unsigned long)hits,
+        (unsigned long)regions);
+    return hits;
+}
+
+static void ScanLoginTextAnchors(const char* injectedText, DWORD injectedLen)
+{
+    static const BYTE kTestUserAscii[] = { 't','e','s','t','u','s','e','r' };
+    static const BYTE kTestUserUtf16[] = {
+        't',0,'e',0,'s',0,'t',0,'u',0,'s',0,'e',0,'r',0
+    };
+    ScanMemoryForPattern("testuser-ascii", kTestUserAscii, (DWORD)sizeof(kTestUserAscii), 64);
+    ScanMemoryForPattern("testuser-utf16le", kTestUserUtf16, (DWORD)sizeof(kTestUserUtf16), 64);
+
+    if (injectedText && injectedLen >= 3)
+    {
+        DWORD scanLen = injectedLen;
+        while (scanLen > 0 && (injectedText[scanLen - 1] == '\r' || injectedText[scanLen - 1] == '\n'))
+            --scanLen;
+        if (scanLen > 64)
+            scanLen = 64;
+        if (scanLen >= 3)
+            ScanMemoryForPattern("kbd-file-ascii", (const BYTE*)injectedText, scanLen, 32);
+    }
+
+    WriteLog("[Windower] direct buffer write skipped: no validated login-field buffer layout yet");
+}
+
+static DWORD WINAPI KeyboardInternalWorkerProc(LPVOID param)
+{
+    KbdWorkerPayload* payload = (KbdWorkerPayload*)param;
+    if (!payload)
+    {
+        InterlockedExchange(&g_keyboardWorkerActive, 0);
+        return 0;
+    }
+
+    WriteLog("[Windower] keyboard internal worker start len=%lu", (unsigned long)payload->len);
+    Sleep(25);
+
+    HWND hwnd = ResolveForegroundClientWindow();
+    if (hwnd)
+    {
+        DWORD threadId = GetWindowThreadProcessId(hwnd, nullptr);
+        DWORD currentThread = GetCurrentThreadId();
+        BOOL attached = FALSE;
+        if (threadId && threadId != currentThread)
+            attached = AttachThreadInput(currentThread, threadId, TRUE);
+
+        HWND focus = GetFocus();
+        if (!HwndBelongsToCurrentProcess(focus))
+            focus = hwnd;
+        InstallKeyboardWndProcProbe(focus);
+        TryNativeEditSetText(focus, payload->text);
+
+        if (attached)
+            AttachThreadInput(currentThread, threadId, FALSE);
+    }
+    else
+    {
+        WriteLog("[Windower] keyboard internal worker no foreground client hwnd");
+    }
+
+    TryAttachThreadInputSendText(payload->text, payload->len);
+    ScanLoginTextAnchors(payload->text, payload->len);
+
+    WriteLog("[Windower] keyboard internal worker done len=%lu", (unsigned long)payload->len);
+    HeapFree(GetProcessHeap(), 0, payload);
+    InterlockedExchange(&g_keyboardWorkerActive, 0);
+    return 0;
+}
+
+static void StartKeyboardInternalWorker(const char* text, DWORD len)
+{
+    if (!g_keyboardInjectActive || !text || len == 0)
+        return;
+
+    if (InterlockedCompareExchange(&g_keyboardWorkerActive, 1, 0) != 0)
+    {
+        WriteLog("[Windower] keyboard internal worker skipped: previous worker active");
+        return;
+    }
+
+    KbdWorkerPayload* payload = (KbdWorkerPayload*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(KbdWorkerPayload));
+    if (!payload)
+    {
+        InterlockedExchange(&g_keyboardWorkerActive, 0);
+        WriteLog("[Windower] keyboard internal worker alloc failed");
+        return;
+    }
+
+    payload->len = (len < (DWORD)(sizeof(payload->text) - 1)) ? len : (DWORD)(sizeof(payload->text) - 1);
+    memcpy(payload->text, text, payload->len);
+    payload->text[payload->len] = '\0';
+
+    HANDLE thread = CreateThread(nullptr, 0, KeyboardInternalWorkerProc, payload, 0, nullptr);
+    if (!thread)
+    {
+        WriteLog("[Windower] keyboard internal worker CreateThread failed err=%lu", (unsigned long)GetLastError());
+        HeapFree(GetProcessHeap(), 0, payload);
+        InterlockedExchange(&g_keyboardWorkerActive, 0);
+        return;
+    }
+
+    CloseHandle(thread);
 }
 
 static void OverlayDirectInputKeyboardState(BYTE* state, DWORD cbData)
