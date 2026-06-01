@@ -22,6 +22,12 @@ coverage*/
 # Logs & local data
 logs/
 *.log
+live.log
+
+# LiteDB 資料庫（運行時產生，不入版控）
+data/
+*.db
+*.db-log
 
 # Java oracle compiled output (regenerate via GoldenVectors.java)
 *.class
