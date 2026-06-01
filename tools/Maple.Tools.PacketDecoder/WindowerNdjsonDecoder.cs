@@ -7,13 +7,16 @@ namespace Maple.Tools.PacketDecoder;
 /// <summary>
 /// windower NDJSON 雙向解碼結果。
 /// c2s：已解密，有 server 解密 log ground truth 可對照（位元級可驗證）。
-/// s2c：僅 reframe，標記 <b>unverified</b>（無 ground truth，禁止升黃金測試，不斷言解密後語意）。
+/// s2c：<see cref="S2cPackets"/> 已用 send cipher 解密；合成 round-trip 可位元級斷言。
+///       真實 server s2c 無 ground truth → 一律標 unverified，禁止斷言解密後語意。
+///       <see cref="S2cRawFrames"/> 保留供需要原始 bytes 的呼叫方（相容）。
 /// </summary>
 public sealed record WindowerDecodeResult(
     byte[] RecvIv,
     byte[] SendIv,
     IReadOnlyList<DecodedPacket> C2sPackets,
     IReadOnlyList<byte[]> S2cRawFrames,
+    IReadOnlyList<DecodedPacket> S2cPackets,
     byte[]? C2sRemainder,
     byte[]? S2cRemainder
 );
@@ -87,13 +90,16 @@ public sealed class WindowerNdjsonDecoder
         var (s2cFrames, s2cRem) = TcpStreamReframer.Reframe(s2cStream.AsSpan(helloTotalLen));
         var (c2sFrames, c2sRem) = TcpStreamReframer.Reframe(c2sStream.AsSpan());
 
-        var decoded = new PacketStreamDecoder(_factory).DecodeClientToServer(recvIv, sendIv, c2sFrames);
+        var streamDecoder = new PacketStreamDecoder(_factory);
+        var decodedC2s = streamDecoder.DecodeClientToServer(recvIv, sendIv, c2sFrames);
+        var decodedS2c = streamDecoder.DecodeServerToClient(recvIv, sendIv, s2cFrames);
 
         return new WindowerDecodeResult(
             RecvIv: recvIv,
             SendIv: sendIv,
-            C2sPackets: decoded,
+            C2sPackets: decodedC2s,
             S2cRawFrames: s2cFrames,
+            S2cPackets: decodedS2c,
             C2sRemainder: c2sRem.Length > 0 ? c2sRem : null,
             S2cRemainder: s2cRem.Length > 0 ? s2cRem : null
         );

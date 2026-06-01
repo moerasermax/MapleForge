@@ -33,6 +33,25 @@ public sealed class PacketStreamDecoder
         ReadOnlySpan<byte> recvIv, ReadOnlySpan<byte> sendIv, IReadOnlyList<byte[]> framedPackets)
     {
         var (recv, _) = _factory.CreateSessionPair(recvIv, sendIv);
+        return DecodeStream(recv, "c2s", framedPackets);
+    }
+
+    /// <summary>
+    /// 解碼 server→client 方向（server 用 send cipher 加密；windower 在客戶端錄到加密 bytes；用 send cipher 對稱解密）。
+    /// </summary>
+    /// <param name="recvIv">握手取得的 recv 方向 IV（建立 cipher pair 需要，本方向不直接用）。</param>
+    /// <param name="sendIv">握手取得的 send 方向 IV（server send cipher 的起始 IV）。</param>
+    /// <param name="framedPackets">依序的封包，每個 = [4-byte header][加密 body]，與 winsock 擷取一致。</param>
+    public IReadOnlyList<DecodedPacket> DecodeServerToClient(
+        ReadOnlySpan<byte> recvIv, ReadOnlySpan<byte> sendIv, IReadOnlyList<byte[]> framedPackets)
+    {
+        var (_, send) = _factory.CreateSessionPair(recvIv, sendIv);
+        return DecodeStream(send, "s2c", framedPackets);
+    }
+
+    private static IReadOnlyList<DecodedPacket> DecodeStream(
+        Versioning.IPacketCipher cipher, string dir, IReadOnlyList<byte[]> framedPackets)
+    {
         var result = new List<DecodedPacket>(framedPackets.Count);
 
         for (int i = 0; i < framedPackets.Count; i++)
@@ -42,19 +61,19 @@ public sealed class PacketStreamDecoder
                 throw new InvalidDataException($"封包 #{i} 過短（{framed.Length} byte，需 ≥4 byte header）");
 
             var header = framed.AsSpan(0, 4);
-            if (!recv.Check(header))
+            if (!cipher.Check(header))
                 throw new InvalidDataException($"封包 #{i} header 驗證失敗：IV 失步/漏包/版本不符（cipher 是 stream 順序，前面少一個 byte 後面全錯）");
 
-            int len = recv.ReadLength(header);
+            int len = cipher.ReadLength(header);
             int actual = framed.Length - 4;
             if (len != actual)
                 throw new InvalidDataException($"封包 #{i} 長度不符：header 宣告 {len}，實際 body {actual}");
 
             var body = framed[4..];   // 複製一份再解，不動原始擷取
-            recv.Crypt(body);
+            cipher.Crypt(body);
 
             ushort opcode = body.Length >= 2 ? (ushort)(body[0] | (body[1] << 8)) : (ushort)0;
-            result.Add(new DecodedPacket(i, "c2s", opcode, body));
+            result.Add(new DecodedPacket(i, dir, opcode, body));
         }
 
         return result;

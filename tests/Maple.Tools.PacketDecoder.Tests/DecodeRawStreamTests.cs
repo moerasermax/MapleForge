@@ -294,6 +294,49 @@ public class DecodeRawStreamTests
             yield return data[pos..];
     }
 
+    // ── DecodeRawStream s2c 解密 ──────────────────────────────────────────────
+
+    [Fact]
+    public void DecodeRawStream_s2c_decoded_bitlevel_with_tcp_fragmentation()
+    {
+        // send cipher 模擬 server 送出，recv cipher 模擬 client 送出
+        var (recvCipher, sendCipher) = Factory.CreateSessionPair(RecvIv, SendIv);
+
+        var s2cPlains = new[]
+        {
+            new byte[] { 0x0B, 0x00, 0xAA, 0xBB },
+            new byte[] { 0xC8, 0x00, 0x33, 0x44, 0x55 },
+        };
+        // s2c stream = getHello + 加密封包序列（以 send cipher 加密，模擬 server 送出）
+        byte[] s2cStream = ConcatBytes(
+            BuildHello(RecvIv, SendIv),
+            ConcatAll(s2cPlains.Select(p => Frame(sendCipher, p))));
+
+        // c2s 隨便一包（以 recv cipher 加密，模擬 client 送出）
+        byte[] c2sFrame = Frame(recvCipher, new byte[] { 0x17, 0x00 });
+
+        string ndjson = BuildNdjson(
+            s2cChunks: SplitAt(s2cStream, new[] { 7, 11 }),
+            c2sChunks: new[] { c2sFrame });
+
+        var result = new WindowerNdjsonDecoder(Factory).DecodeRawStream(ndjson);
+
+        // S2cPackets 合成 round-trip → 位元級可斷言（機制驗證）
+        Assert.Equal(s2cPlains.Length, result.S2cPackets.Count);
+        for (int i = 0; i < s2cPlains.Length; i++)
+        {
+            Assert.Equal(s2cPlains[i], result.S2cPackets[i].Payload);
+            Assert.Equal("s2c", result.S2cPackets[i].Dir);
+        }
+
+        // S2cRawFrames 仍保留（相容）
+        Assert.Equal(s2cPlains.Length, result.S2cRawFrames.Count);
+
+        // c2s 解密不受影響
+        Assert.Single(result.C2sPackets);
+        Assert.Equal(new byte[] { 0x17, 0x00 }, result.C2sPackets[0].Payload);
+    }
+
     private static string BuildNdjson(IEnumerable<byte[]> s2cChunks, IEnumerable<byte[]> c2sChunks)
     {
         var sb = new System.Text.StringBuilder();
