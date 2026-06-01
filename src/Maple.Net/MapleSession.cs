@@ -19,6 +19,7 @@ public sealed class MapleSession : IAsyncDisposable
 
     private IPacketCipher? _recv;
     private IPacketCipher? _send;
+    private PacketCaptureWriter? _capture;
 
     public MapleSession(Socket socket, ILogger log)
     {
@@ -35,6 +36,13 @@ public sealed class MapleSession : IAsyncDisposable
         _recv = recv;
         _send = send;
     }
+
+    /// <summary>
+    /// 啟用 server 端封包擷取（封包擷取模式・第二刀）。預設關閉，僅 env MAPLEFORGE_CAPTURE=1 時生效。
+    /// 須在 <see cref="SetCiphers"/> 後、握手 IV 已知時呼叫。診斷用，失敗不影響連線。
+    /// </summary>
+    public void EnableCapture(byte[] recvIv, byte[] sendIv)
+        => _capture = PacketCaptureWriter.TryCreateFromEnv(Remote, recvIv, sendIv);
 
     /// <summary>未加密原樣送出（握手 getHello 專用）。</summary>
     public async Task SendRawAsync(ReadOnlyMemory<byte> bytes, CancellationToken ct)
@@ -97,7 +105,9 @@ public sealed class MapleSession : IAsyncDisposable
 
             var body = new byte[length];
             await _stream.ReadExactlyAsync(body, ct);
+            byte[]? encryptedCopy = _capture is null ? null : (byte[])body.Clone();
             _recv.Crypt(body);
+            if (encryptedCopy is not null) _capture!.WriteRecv(header, encryptedCopy, body);
 
             await onPacket(body, this, ct);
         }
@@ -105,6 +115,7 @@ public sealed class MapleSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _capture?.Dispose();
         _sendLock.Dispose();
         await _stream.DisposeAsync();
     }

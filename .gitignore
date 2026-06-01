@@ -43,3 +43,6 @@ secrets.json
 # 診斷暫存
 client-shot*.png
 *.obj
+
+# 封包擷取執行期輸出
+captures/

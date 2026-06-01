@@ -50,6 +50,7 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
 
         var (recv, send) = _ciphers.CreateSessionPair(recvIv, sendIv);
         session.SetCiphers(recv, send);
+        session.EnableCapture(recvIv, sendIv);   // 封包擷取(env MAPLEFORGE_CAPTURE=1 才生效；診斷用)
         _log.LogInformation("[v113] 握手送出，cipher 啟用 {Remote}", session.Remote);
 
         // 每個連線獨立的登入狀態
