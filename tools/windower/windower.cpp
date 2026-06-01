@@ -9,6 +9,7 @@
  */
 
 #define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +48,39 @@ static void WriteLog(const char* fmt, ...)
     if (f) { fputs(line, f); fclose(f); }
 }
 
+typedef int (WSAAPI* Send_t)(SOCKET, const char*, int, int);
+typedef int (WSAAPI* Recv_t)(SOCKET, char*, int, int);
+typedef int (WSAAPI* WSASend_t)(
+    SOCKET, LPWSABUF, DWORD, LPDWORD, DWORD, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+typedef int (WSAAPI* WSARecv_t)(
+    SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+
+typedef struct InlineDetour {
+    const char* name;
+    void* target;
+    void* detour;
+    BYTE saved[5];
+    BYTE* trampoline;
+    bool installed;
+} InlineDetour;
+
+typedef struct PacketSession {
+    SOCKET socketValue;
+    FILE* file;
+    ULONGLONG tsStart;
+    unsigned long long seq;
+    struct PacketSession* next;
+} PacketSession;
+
+static int WSAAPI HookedSend(SOCKET s, const char* buf, int len, int flags);
+static int WSAAPI HookedRecv(SOCKET s, char* buf, int len, int flags);
+static int WSAAPI HookedWSASend(
+    SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent,
+    DWORD dwFlags, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine);
+static int WSAAPI HookedWSARecv(
+    SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd,
+    LPDWORD lpFlags, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine);
+
 // ── 全域狀態 ─────────────────────────────────────────────────────────────────
 
 static CreateDevice_t g_origCreateDevice = nullptr;
@@ -57,11 +91,22 @@ static void*          g_direct3DCreate8Addr = nullptr;
 static BYTE*          g_direct3DCreate8Trampoline = nullptr;
 static BYTE           g_direct3DCreate8Saved[5] = {};
 
+static Send_t         g_origSend = nullptr;
+static Recv_t         g_origRecv = nullptr;
+static WSASend_t      g_origWSASend = nullptr;
+static WSARecv_t      g_origWSARecv = nullptr;
+
+static InlineDetour   g_sendDetour = { "send", nullptr, (void*)HookedSend, {}, nullptr, false };
+static InlineDetour   g_recvDetour = { "recv", nullptr, (void*)HookedRecv, {}, nullptr, false };
+static InlineDetour   g_wsaSendDetour = { "WSASend", nullptr, (void*)HookedWSASend, {}, nullptr, false };
+static InlineDetour   g_wsaRecvDetour = { "WSARecv", nullptr, (void*)HookedWSARecv, {}, nullptr, false };
+
 static HHOOK          g_hHook            = nullptr;
 static HINSTANCE      g_hInst            = nullptr;
 static bool           g_d3d8EntryHooked  = false;
 static bool           g_createDeviceHooked = false;
 static bool           g_deviceVtableHooked = false;
+static bool           g_ws2HooksAttempted = false;
 static volatile LONG  g_presentLoggedOnce = 0;
 static volatile LONG  g_resetLoggedOnce   = 0;
 static HWND           g_gameWindow         = nullptr;
@@ -69,6 +114,11 @@ static UINT           g_backBufferWidth    = 800;
 static UINT           g_backBufferHeight   = 600;
 static D3DFORMAT      g_cachedDesktopFormat = D3DFMT_UNKNOWN;
 static bool           g_hasCachedDesktopFormat = false;
+static CRITICAL_SECTION g_packetLock = {};
+static bool           g_packetLockReady = false;
+static PacketSession* g_packetSessions = nullptr;
+static char           g_captureDirA[MAX_PATH] = {};
+static bool           g_captureDirReady = false;
 
 enum { D3DADAPTER_DEFAULT_LOCAL = 0 };
 enum { D3DFMT_X8R8G8B8_LOCAL = 22 };
@@ -79,6 +129,409 @@ typedef struct D3DDISPLAYMODE_LOCAL {
     UINT RefreshRate;
     D3DFORMAT Format;
 } D3DDISPLAYMODE_LOCAL;
+
+// ── inline detour / 封包擷取工具 ───────────────────────────────────────────────
+
+static bool InstallInlineDetour(InlineDetour* hook)
+{
+    if (!hook || hook->installed || !hook->target || !hook->detour)
+        return hook && hook->installed;
+
+    BYTE* target = (BYTE*)hook->target;
+    memcpy(hook->saved, target, sizeof(hook->saved));
+
+    hook->trampoline = (BYTE*)VirtualAlloc(nullptr, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!hook->trampoline)
+    {
+        WriteLog("[Windower] %s detour trampoline alloc failed err=%lu",
+            hook->name, (unsigned long)GetLastError());
+        return false;
+    }
+
+    memcpy(hook->trampoline, target, 5);
+    hook->trampoline[5] = 0xE9;
+    *(int32_t*)(hook->trampoline + 6) = (int32_t)((target + 5) - (hook->trampoline + 10));
+
+    DWORD oldProt = 0;
+    if (!VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &oldProt))
+    {
+        WriteLog("[Windower] %s detour VirtualProtect failed err=%lu",
+            hook->name, (unsigned long)GetLastError());
+        VirtualFree(hook->trampoline, 0, MEM_RELEASE);
+        hook->trampoline = nullptr;
+        return false;
+    }
+
+    target[0] = 0xE9;
+    *(int32_t*)(target + 1) = (int32_t)((BYTE*)hook->detour - (target + 5));
+    VirtualProtect(target, 5, oldProt, &oldProt);
+    FlushInstructionCache(GetCurrentProcess(), target, 5);
+
+    hook->installed = true;
+    WriteLog("[Windower] %s detour installed target=%p detour=%p",
+        hook->name, hook->target, hook->detour);
+    return true;
+}
+
+static bool IsCaptureEnabled()
+{
+    char value[16] = {};
+    DWORD n = GetEnvironmentVariableA("MAPLEFORGE_WINDOWER_CAPTURE", value, (DWORD)_countof(value));
+    return (n > 0 && n < _countof(value) && strcmp(value, "1") == 0);
+}
+
+static void EnsureDirectoryW(const wchar_t* path)
+{
+    if (!path || !path[0]) return;
+    if (!CreateDirectoryW(path, nullptr))
+    {
+        DWORD err = GetLastError();
+        if (err != ERROR_ALREADY_EXISTS)
+            WriteLog("[Windower] CreateDirectoryW failed path=%ws err=%lu", path, (unsigned long)err);
+    }
+}
+
+static void EnsureCaptureDirReady()
+{
+    if (g_captureDirReady)
+        return;
+
+    char envDir[MAX_PATH] = {};
+    DWORD envLen = GetEnvironmentVariableA(
+        "MAPLEFORGE_WINDOWER_CAPTURE_DIR", envDir, (DWORD)_countof(envDir));
+    if (envLen > 0 && envLen < _countof(envDir))
+    {
+        wchar_t envDirW[MAX_PATH] = {};
+        if (MultiByteToWideChar(CP_ACP, 0, envDir, -1, envDirW, (int)_countof(envDirW)) > 0)
+            EnsureDirectoryW(envDirW);
+        _snprintf_s(g_captureDirA, _countof(g_captureDirA), _TRUNCATE, "%s", envDir);
+        g_captureDirReady = true;
+        return;
+    }
+
+    wchar_t dllPathW[MAX_PATH] = {};
+    DWORD got = GetModuleFileNameW(g_hInst, dllPathW, (DWORD)_countof(dllPathW));
+    if (got > 0 && got < _countof(dllPathW))
+    {
+        wchar_t* slash = wcsrchr(dllPathW, L'\\');
+        if (slash) *slash = L'\0';
+
+        wchar_t capturesDirW[MAX_PATH] = {};
+        _snwprintf_s(capturesDirW, _countof(capturesDirW), _TRUNCATE, L"%s\\captures", dllPathW);
+        EnsureDirectoryW(capturesDirW);
+
+        if (WideCharToMultiByte(CP_ACP, 0, capturesDirW, -1, g_captureDirA, (int)_countof(g_captureDirA), nullptr, nullptr) > 0)
+        {
+            g_captureDirReady = true;
+            return;
+        }
+    }
+
+    g_captureDirReady = false;
+}
+
+static DWORD ExtractBytesForSend(int ret, DWORD fallbackTotal)
+{
+    if (ret > 0) return (DWORD)ret;
+    if (ret == 0) return fallbackTotal;
+    return 0;
+}
+
+static PacketSession* GetOrCreatePacketSessionLocked(SOCKET s)
+{
+    EnsureCaptureDirReady();
+    if (!g_captureDirReady || !g_captureDirA[0])
+        return nullptr;
+
+    PacketSession* cur = g_packetSessions;
+    while (cur)
+    {
+        if (cur->socketValue == s)
+            return cur;
+        cur = cur->next;
+    }
+
+    PacketSession* session = (PacketSession*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PacketSession));
+    if (!session) return nullptr;
+
+    session->socketValue = s;
+    session->tsStart = GetTickCount64();
+
+    char path[MAX_PATH] = {};
+    _snprintf_s(
+        path, _countof(path), _TRUNCATE,
+        "%s\\windower_packets_%lu_%llu.ndjson",
+        g_captureDirA,
+        (unsigned long)GetCurrentProcessId(),
+        (unsigned long long)(uintptr_t)s);
+
+    fopen_s(&session->file, path, "w");
+    if (!session->file)
+    {
+        HeapFree(GetProcessHeap(), 0, session);
+        return nullptr;
+    }
+
+    fprintf(
+        session->file,
+        "{\"type\":\"session\",\"pid\":%lu,\"socket\":%llu,\"ts_start\":%llu}\n",
+        (unsigned long)GetCurrentProcessId(),
+        (unsigned long long)(uintptr_t)s,
+        (unsigned long long)session->tsStart);
+    fflush(session->file);
+
+    session->next = g_packetSessions;
+    g_packetSessions = session;
+    return session;
+}
+
+static void WriteHexToFile(FILE* file, const unsigned char* data, DWORD len)
+{
+    static const char kHex[] = "0123456789abcdef";
+    if (!file || !data || len == 0) return;
+    for (DWORD i = 0; i < len; ++i)
+    {
+        unsigned char b = data[i];
+        fputc(kHex[b >> 4], file);
+        fputc(kHex[b & 0x0F], file);
+    }
+}
+
+static DWORD SumWSABuffers(const WSABUF* bufs, DWORD count)
+{
+    DWORD total = 0;
+    if (!bufs) return 0;
+    for (DWORD i = 0; i < count; ++i)
+        total += bufs[i].len;
+    return total;
+}
+
+static void WriteChunkSingleBuffer(
+    SOCKET s, const char* dir, const char* api, int ret, const unsigned char* data, DWORD len, bool pendingTodo)
+{
+    if (!IsCaptureEnabled() || !g_packetLockReady)
+        return;
+
+    EnterCriticalSection(&g_packetLock);
+    PacketSession* session = GetOrCreatePacketSessionLocked(s);
+    if (session && session->file)
+    {
+        const unsigned long long seq = ++session->seq;
+        const unsigned long long ts = (unsigned long long)GetTickCount64();
+        fprintf(
+            session->file,
+            "{\"type\":\"chunk\",\"seq\":%llu,\"dir\":\"%s\",\"ts\":%llu,\"raw_hex\":\"",
+            seq, dir, ts);
+        WriteHexToFile(session->file, data, len);
+        fprintf(session->file, "\",\"api\":\"%s\",\"ret\":%d", api, ret);
+        if (pendingTodo)
+            fprintf(session->file, ",\"todo\":\"overlapped_pending_not_captured\"");
+        fprintf(session->file, "}\n");
+        fflush(session->file);
+    }
+    LeaveCriticalSection(&g_packetLock);
+}
+
+static void WriteChunkWSABuffers(
+    SOCKET s, const char* dir, const char* api, int ret, const WSABUF* bufs, DWORD count, DWORD bytesToWrite, bool pendingTodo)
+{
+    if (!IsCaptureEnabled() || !g_packetLockReady)
+        return;
+
+    EnterCriticalSection(&g_packetLock);
+    PacketSession* session = GetOrCreatePacketSessionLocked(s);
+    if (session && session->file)
+    {
+        const unsigned long long seq = ++session->seq;
+        const unsigned long long ts = (unsigned long long)GetTickCount64();
+        fprintf(
+            session->file,
+            "{\"type\":\"chunk\",\"seq\":%llu,\"dir\":\"%s\",\"ts\":%llu,\"raw_hex\":\"",
+            seq, dir, ts);
+
+        DWORD remaining = bytesToWrite;
+        for (DWORD i = 0; bufs && i < count && remaining > 0; ++i)
+        {
+            const DWORD part = (bufs[i].len < remaining) ? bufs[i].len : remaining;
+            WriteHexToFile(session->file, (const unsigned char*)bufs[i].buf, part);
+            remaining -= part;
+        }
+
+        fprintf(session->file, "\",\"api\":\"%s\",\"ret\":%d", api, ret);
+        if (pendingTodo)
+            fprintf(session->file, ",\"todo\":\"overlapped_pending_not_captured\"");
+        fprintf(session->file, "}\n");
+        fflush(session->file);
+    }
+    LeaveCriticalSection(&g_packetLock);
+}
+
+static void CleanupPacketSessions()
+{
+    if (!g_packetLockReady)
+        return;
+
+    EnterCriticalSection(&g_packetLock);
+    PacketSession* cur = g_packetSessions;
+    while (cur)
+    {
+        PacketSession* next = cur->next;
+        if (cur->file) fclose(cur->file);
+        HeapFree(GetProcessHeap(), 0, cur);
+        cur = next;
+    }
+    g_packetSessions = nullptr;
+    LeaveCriticalSection(&g_packetLock);
+}
+
+static void InstallWs2Hooks()
+{
+    if (g_ws2HooksAttempted)
+        return;
+    g_ws2HooksAttempted = true;
+
+    HMODULE hWs2 = GetModuleHandleA("ws2_32.dll");
+    if (!hWs2) hWs2 = LoadLibraryA("ws2_32.dll");
+    if (!hWs2)
+    {
+        WriteLog("[Windower] ws2_32.dll not found");
+        return;
+    }
+
+    g_sendDetour.target = (void*)GetProcAddress(hWs2, "send");
+    g_recvDetour.target = (void*)GetProcAddress(hWs2, "recv");
+    g_wsaSendDetour.target = (void*)GetProcAddress(hWs2, "WSASend");
+    g_wsaRecvDetour.target = (void*)GetProcAddress(hWs2, "WSARecv");
+
+    if (g_sendDetour.target)
+    {
+        if (InstallInlineDetour(&g_sendDetour))
+            g_origSend = (Send_t)g_sendDetour.trampoline;
+        else
+            g_origSend = (Send_t)g_sendDetour.target;
+    }
+    if (g_recvDetour.target)
+    {
+        if (InstallInlineDetour(&g_recvDetour))
+            g_origRecv = (Recv_t)g_recvDetour.trampoline;
+        else
+            g_origRecv = (Recv_t)g_recvDetour.target;
+    }
+    if (g_wsaSendDetour.target)
+    {
+        if (InstallInlineDetour(&g_wsaSendDetour))
+            g_origWSASend = (WSASend_t)g_wsaSendDetour.trampoline;
+        else
+            g_origWSASend = (WSASend_t)g_wsaSendDetour.target;
+    }
+    if (g_wsaRecvDetour.target)
+    {
+        if (InstallInlineDetour(&g_wsaRecvDetour))
+            g_origWSARecv = (WSARecv_t)g_wsaRecvDetour.trampoline;
+        else
+            g_origWSARecv = (WSARecv_t)g_wsaRecvDetour.target;
+    }
+
+    WriteLog(
+        "[Windower] ws2 hooks status send=%d recv=%d WSASend=%d WSARecv=%d",
+        g_sendDetour.installed ? 1 : 0,
+        g_recvDetour.installed ? 1 : 0,
+        g_wsaSendDetour.installed ? 1 : 0,
+        g_wsaRecvDetour.installed ? 1 : 0);
+}
+
+static int WSAAPI HookedSend(SOCKET s, const char* buf, int len, int flags)
+{
+    Send_t orig = g_origSend ? g_origSend : (Send_t)g_sendDetour.target;
+    if (!orig) return SOCKET_ERROR;
+
+    int ret = orig(s, buf, len, flags);
+    DWORD fallback = (len > 0) ? (DWORD)len : 0;
+    DWORD bytes = ExtractBytesForSend(ret, fallback);
+
+    WriteChunkSingleBuffer(s, "c2s", "send", ret, (const unsigned char*)buf, bytes, false);
+    return ret;
+}
+
+static int WSAAPI HookedRecv(SOCKET s, char* buf, int len, int flags)
+{
+    Recv_t orig = g_origRecv ? g_origRecv : (Recv_t)g_recvDetour.target;
+    if (!orig) return SOCKET_ERROR;
+
+    int ret = orig(s, buf, len, flags);
+    DWORD bytes = (ret > 0) ? (DWORD)ret : 0;
+
+    WriteChunkSingleBuffer(s, "s2c", "recv", ret, (const unsigned char*)buf, bytes, false);
+    return ret;
+}
+
+static int WSAAPI HookedWSASend(
+    SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent,
+    DWORD dwFlags, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+{
+    WSASend_t orig = g_origWSASend ? g_origWSASend : (WSASend_t)g_wsaSendDetour.target;
+    if (!orig) return SOCKET_ERROR;
+
+    int ret = orig(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpOverlapped, lpCompletionRoutine);
+    bool pendingTodo = false;
+    DWORD bytes = 0;
+
+    if (ret == 0)
+    {
+        if (lpNumberOfBytesSent)
+            bytes = *lpNumberOfBytesSent;
+        else
+            bytes = SumWSABuffers(lpBuffers, dwBufferCount);
+    }
+    else if (ret == SOCKET_ERROR && lpOverlapped && WSAGetLastError() == WSA_IO_PENDING)
+    {
+        pendingTodo = true;
+    }
+
+    if (pendingTodo)
+    {
+        WriteChunkWSABuffers(s, "c2s", "WSASend", ret, lpBuffers, dwBufferCount, 0, true);
+    }
+    else
+    {
+        WriteChunkWSABuffers(s, "c2s", "WSASend", ret, lpBuffers, dwBufferCount, bytes, false);
+    }
+    return ret;
+}
+
+static int WSAAPI HookedWSARecv(
+    SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd,
+    LPDWORD lpFlags, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+{
+    WSARecv_t orig = g_origWSARecv ? g_origWSARecv : (WSARecv_t)g_wsaRecvDetour.target;
+    if (!orig) return SOCKET_ERROR;
+
+    int ret = orig(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpFlags, lpOverlapped, lpCompletionRoutine);
+    bool pendingTodo = false;
+    DWORD bytes = 0;
+
+    if (ret == 0)
+    {
+        if (lpNumberOfBytesRecvd)
+            bytes = *lpNumberOfBytesRecvd;
+        else if (!lpOverlapped)
+            bytes = SumWSABuffers(lpBuffers, dwBufferCount);
+    }
+    else if (ret == SOCKET_ERROR && lpOverlapped && WSAGetLastError() == WSA_IO_PENDING)
+    {
+        pendingTodo = true;
+    }
+
+    if (pendingTodo)
+    {
+        WriteChunkWSABuffers(s, "s2c", "WSARecv", ret, lpBuffers, dwBufferCount, 0, true);
+    }
+    else
+    {
+        WriteChunkWSABuffers(s, "s2c", "WSARecv", ret, lpBuffers, dwBufferCount, bytes, false);
+    }
+    return ret;
+}
 
 // ── 視窗化接管工具 ─────────────────────────────────────────────────────────────
 
@@ -497,6 +950,7 @@ static bool InstallDirect3DCreate8Hook()
 
 static void EnsureHooksInstalled()
 {
+    InstallWs2Hooks();
     InstallDirect3DCreate8Hook();
 }
 
@@ -531,8 +985,19 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
     {
         g_hInst = hInst;
         DisableThreadLibraryCalls(hInst);
+        InitializeCriticalSection(&g_packetLock);
+        g_packetLockReady = true;
         WriteLog("[Windower] DllMain DLL_PROCESS_ATTACH");
         EnsureHooksInstalled();
+    }
+    else if (reason == DLL_PROCESS_DETACH)
+    {
+        CleanupPacketSessions();
+        if (g_packetLockReady)
+        {
+            DeleteCriticalSection(&g_packetLock);
+            g_packetLockReady = false;
+        }
     }
     return TRUE;
 }
