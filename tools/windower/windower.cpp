@@ -82,9 +82,14 @@ typedef struct InlineDetour {
     const char* name;
     void* target;
     void* detour;
-    BYTE saved[5];
+    BYTE saved[32];
     BYTE* trampoline;
     bool installed;
+    BYTE savedBefore[5];
+    SIZE_T copiedLen;
+    SIZE_T trampolineLen;
+    SIZE_T patchLen;
+    bool hotpatchMode;
 } InlineDetour;
 
 typedef struct PacketSession {
@@ -153,6 +158,8 @@ static bool           g_d3d8EntryHooked  = false;
 static bool           g_createDeviceHooked = false;
 static bool           g_deviceVtableHooked = false;
 static bool           g_ws2HooksAttempted = false;
+static bool           g_ws2HooksSkippedByEnv = false;
+static bool           g_d3d8HookSkippedByEnv = false;
 static volatile LONG  g_presentLoggedOnce = 0;
 static volatile LONG  g_resetLoggedOnce   = 0;
 static HWND           g_gameWindow         = nullptr;
@@ -177,52 +184,864 @@ typedef struct D3DDISPLAYMODE_LOCAL {
 
 // ── inline detour / 封包擷取工具 ───────────────────────────────────────────────
 
-static bool InstallInlineDetour(InlineDetour* hook)
+enum
 {
-    if (!hook || hook->installed || !hook->target || !hook->detour)
-        return hook && hook->installed;
+    kInlineDetourMinPatch = 5,
+    kInlineDetourMaxCopy = 32,
+    kInlineDetourTrampolineCapacity = 128
+};
 
+typedef struct X86DecodedInstruction {
+    SIZE_T offset;
+    SIZE_T length;
+    SIZE_T relOffset;
+    SIZE_T relSize;
+    BYTE opcode;
+    BYTE opcode2;
+    bool hasRel;
+} X86DecodedInstruction;
+
+static bool IsReadableMemoryRange(const BYTE* ptr, SIZE_T len)
+{
+    if (!ptr || len == 0)
+        return false;
+
+    uintptr_t cur = (uintptr_t)ptr;
+    uintptr_t end = cur + len;
+    if (end < cur)
+        return false;
+
+    while (cur < end)
+    {
+        MEMORY_BASIC_INFORMATION mbi = {};
+        if (VirtualQuery((const void*)cur, &mbi, sizeof(mbi)) != sizeof(mbi))
+            return false;
+
+        if (mbi.State != MEM_COMMIT)
+            return false;
+
+        const DWORD protect = mbi.Protect & 0xFF;
+        if ((mbi.Protect & PAGE_GUARD) || protect == PAGE_NOACCESS)
+            return false;
+
+        uintptr_t regionEnd = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+        if (regionEnd <= cur)
+            return false;
+        cur = regionEnd;
+    }
+
+    return true;
+}
+
+static void SetDecodeReason(char* reason, SIZE_T reasonCount, const char* text)
+{
+    if (reason && reasonCount > 0)
+        _snprintf_s(reason, reasonCount, _TRUNCATE, "%s", text ? text : "unknown");
+}
+
+static bool NeedInstructionBytes(SIZE_T index, SIZE_T need, SIZE_T maxLen)
+{
+    return need <= maxLen && index <= maxLen - need && index + need <= 15;
+}
+
+static bool AddModRmLength(const BYTE* code, SIZE_T maxLen, SIZE_T* index, bool address16, BYTE* modrmOut)
+{
+    if (!NeedInstructionBytes(*index, 1, maxLen))
+        return false;
+
+    BYTE modrm = code[*index];
+    if (modrmOut) *modrmOut = modrm;
+    ++(*index);
+
+    const BYTE mod = (BYTE)(modrm >> 6);
+    const BYTE rm = (BYTE)(modrm & 7);
+
+    if (address16)
+    {
+        if (mod == 0 && rm == 6)
+        {
+            if (!NeedInstructionBytes(*index, 2, maxLen)) return false;
+            *index += 2;
+        }
+        else if (mod == 1)
+        {
+            if (!NeedInstructionBytes(*index, 1, maxLen)) return false;
+            *index += 1;
+        }
+        else if (mod == 2)
+        {
+            if (!NeedInstructionBytes(*index, 2, maxLen)) return false;
+            *index += 2;
+        }
+        return true;
+    }
+
+    if (mod != 3 && rm == 4)
+    {
+        if (!NeedInstructionBytes(*index, 1, maxLen))
+            return false;
+        BYTE sib = code[*index];
+        ++(*index);
+        const BYTE base = (BYTE)(sib & 7);
+        if (mod == 0 && base == 5)
+        {
+            if (!NeedInstructionBytes(*index, 4, maxLen)) return false;
+            *index += 4;
+        }
+    }
+    else if (mod == 0 && rm == 5)
+    {
+        if (!NeedInstructionBytes(*index, 4, maxLen)) return false;
+        *index += 4;
+    }
+
+    if (mod == 1)
+    {
+        if (!NeedInstructionBytes(*index, 1, maxLen)) return false;
+        *index += 1;
+    }
+    else if (mod == 2)
+    {
+        if (!NeedInstructionBytes(*index, 4, maxLen)) return false;
+        *index += 4;
+    }
+
+    return true;
+}
+
+static bool IsOneByteModRmOpcode(BYTE op)
+{
+    if ((op >= 0x00 && op <= 0x03) || (op >= 0x08 && op <= 0x0B) ||
+        (op >= 0x10 && op <= 0x13) || (op >= 0x18 && op <= 0x1B) ||
+        (op >= 0x20 && op <= 0x23) || (op >= 0x28 && op <= 0x2B) ||
+        (op >= 0x30 && op <= 0x33) || (op >= 0x38 && op <= 0x3B))
+        return true;
+
+    if ((op >= 0x80 && op <= 0x8F) ||
+        (op >= 0xD0 && op <= 0xD3) ||
+        (op >= 0xD8 && op <= 0xDF))
+        return true;
+
+    switch (op)
+    {
+        case 0x62: case 0x63: case 0x69: case 0x6B:
+        case 0xC0: case 0xC1: case 0xC4: case 0xC5:
+        case 0xC6: case 0xC7: case 0xF6: case 0xF7:
+        case 0xFE: case 0xFF:
+            return true;
+    }
+    return false;
+}
+
+static bool IsTwoByteModRmOpcode(BYTE op2)
+{
+    if ((op2 >= 0x10 && op2 <= 0x1F) ||
+        (op2 >= 0x20 && op2 <= 0x2F) ||
+        (op2 >= 0x40 && op2 <= 0x4F) ||
+        (op2 >= 0x90 && op2 <= 0x9F) ||
+        (op2 >= 0xB0 && op2 <= 0xBF) ||
+        (op2 >= 0xC0 && op2 <= 0xCF) ||
+        (op2 >= 0xD0 && op2 <= 0xFF))
+        return true;
+
+    switch (op2)
+    {
+        case 0x00: case 0x01: case 0x02: case 0x03:
+        case 0x13: case 0x18: case 0x1F:
+        case 0x38: case 0x3A:
+        case 0xA3: case 0xA4: case 0xA5: case 0xAB:
+        case 0xAC: case 0xAD: case 0xAE: case 0xAF:
+            return true;
+    }
+    return false;
+}
+
+static bool IsTwoByteNoModRmOpcode(BYTE op2)
+{
+    switch (op2)
+    {
+        case 0x05: case 0x06: case 0x07: case 0x08: case 0x09: case 0x0B:
+        case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35:
+        case 0x77: case 0xA0: case 0xA1: case 0xA2: case 0xA8: case 0xA9:
+            return true;
+    }
+    return false;
+}
+
+static bool DecodeX86Instruction(const BYTE* code, SIZE_T maxLen, X86DecodedInstruction* out, char* reason, SIZE_T reasonCount)
+{
+    if (!code || !out || maxLen == 0)
+    {
+        SetDecodeReason(reason, reasonCount, "invalid input");
+        return false;
+    }
+
+    memset(out, 0, sizeof(*out));
+
+    SIZE_T i = 0;
+    bool operand16 = false;
+    bool address16 = false;
+
+    for (;;)
+    {
+        if (!NeedInstructionBytes(i, 1, maxLen))
+        {
+            SetDecodeReason(reason, reasonCount, "truncated prefix/opcode");
+            return false;
+        }
+
+        BYTE p = code[i];
+        if (p == 0x66) { operand16 = true; ++i; continue; }
+        if (p == 0x67) { address16 = true; ++i; continue; }
+        if (p == 0xF0 || p == 0xF2 || p == 0xF3 ||
+            p == 0x2E || p == 0x36 || p == 0x3E || p == 0x26 || p == 0x64 || p == 0x65)
+        {
+            ++i;
+            continue;
+        }
+        break;
+    }
+
+    if (!NeedInstructionBytes(i, 1, maxLen))
+    {
+        SetDecodeReason(reason, reasonCount, "missing opcode");
+        return false;
+    }
+
+    BYTE op = code[i++];
+    out->opcode = op;
+    const SIZE_T operandBytes = operand16 ? 2 : 4;
+    const SIZE_T addressBytes = address16 ? 2 : 4;
+    BYTE modrm = 0;
+    bool hasModRm = false;
+    SIZE_T immBytes = 0;
+
+    if (op == 0x0F)
+    {
+        if (!NeedInstructionBytes(i, 1, maxLen))
+        {
+            SetDecodeReason(reason, reasonCount, "missing 0F opcode");
+            return false;
+        }
+
+        BYTE op2 = code[i++];
+        out->opcode2 = op2;
+
+        if (op2 >= 0x80 && op2 <= 0x8F)
+        {
+            if (!NeedInstructionBytes(i, 4, maxLen))
+            {
+                SetDecodeReason(reason, reasonCount, "truncated rel32 jcc");
+                return false;
+            }
+            out->hasRel = true;
+            out->relOffset = i;
+            out->relSize = 4;
+            i += 4;
+        }
+        else if (IsTwoByteNoModRmOpcode(op2))
+        {
+            // no extra bytes
+        }
+        else if (IsTwoByteModRmOpcode(op2))
+        {
+            hasModRm = true;
+            if (!AddModRmLength(code, maxLen, &i, address16, &modrm))
+            {
+                SetDecodeReason(reason, reasonCount, "truncated 0F ModRM");
+                return false;
+            }
+            if (op2 == 0x3A || op2 == 0xA4 || op2 == 0xAC || op2 == 0xBA)
+                immBytes = 1;
+        }
+        else
+        {
+            SetDecodeReason(reason, reasonCount, "unsupported 0F opcode");
+            return false;
+        }
+    }
+    else
+    {
+        if (op >= 0x70 && op <= 0x7F)
+        {
+            if (!NeedInstructionBytes(i, 1, maxLen))
+            {
+                SetDecodeReason(reason, reasonCount, "truncated rel8 jcc");
+                return false;
+            }
+            out->hasRel = true;
+            out->relOffset = i;
+            out->relSize = 1;
+            i += 1;
+        }
+        else if (op == 0xE8 || op == 0xE9)
+        {
+            if (!NeedInstructionBytes(i, 4, maxLen))
+            {
+                SetDecodeReason(reason, reasonCount, "truncated rel32 branch");
+                return false;
+            }
+            out->hasRel = true;
+            out->relOffset = i;
+            out->relSize = 4;
+            i += 4;
+        }
+        else if (op == 0xEB || (op >= 0xE0 && op <= 0xE3))
+        {
+            if (!NeedInstructionBytes(i, 1, maxLen))
+            {
+                SetDecodeReason(reason, reasonCount, "truncated rel8 branch");
+                return false;
+            }
+            out->hasRel = true;
+            out->relOffset = i;
+            out->relSize = 1;
+            i += 1;
+        }
+        else if (IsOneByteModRmOpcode(op))
+        {
+            hasModRm = true;
+            if (!AddModRmLength(code, maxLen, &i, address16, &modrm))
+            {
+                SetDecodeReason(reason, reasonCount, "truncated ModRM");
+                return false;
+            }
+
+            if (op == 0x69 || op == 0x81 || op == 0xC7)
+                immBytes = operandBytes;
+            else if (op == 0x6B || op == 0x80 || op == 0x82 || op == 0x83 ||
+                     op == 0xC0 || op == 0xC1 || op == 0xC6)
+                immBytes = 1;
+            else if (op == 0xF6)
+            {
+                BYTE reg = (BYTE)((modrm >> 3) & 7);
+                if (reg == 0 || reg == 1)
+                    immBytes = 1;
+            }
+            else if (op == 0xF7)
+            {
+                BYTE reg = (BYTE)((modrm >> 3) & 7);
+                if (reg == 0 || reg == 1)
+                    immBytes = operandBytes;
+            }
+        }
+        else if ((op >= 0xB0 && op <= 0xB7))
+        {
+            immBytes = 1;
+        }
+        else if ((op >= 0xB8 && op <= 0xBF))
+        {
+            immBytes = operandBytes;
+        }
+        else
+        {
+            switch (op)
+            {
+                case 0x04: case 0x0C: case 0x14: case 0x1C:
+                case 0x24: case 0x2C: case 0x34: case 0x3C:
+                case 0x6A: case 0xA8: case 0xCD:
+                case 0xD4: case 0xD5: case 0xE4: case 0xE5:
+                case 0xE6: case 0xE7:
+                    immBytes = 1;
+                    break;
+
+                case 0x05: case 0x0D: case 0x15: case 0x1D:
+                case 0x25: case 0x2D: case 0x35: case 0x3D:
+                case 0x68: case 0xA9:
+                    immBytes = operandBytes;
+                    break;
+
+                case 0xA0: case 0xA1: case 0xA2: case 0xA3:
+                    immBytes = addressBytes;
+                    break;
+
+                case 0xC2: case 0xCA:
+                    immBytes = 2;
+                    break;
+
+                case 0xC8:
+                    immBytes = 3;
+                    break;
+
+                case 0x9A: case 0xEA:
+                    immBytes = operandBytes + 2;
+                    break;
+
+                case 0x06: case 0x07: case 0x0E: case 0x16: case 0x17:
+                case 0x1E: case 0x1F: case 0x27: case 0x2F: case 0x37:
+                case 0x3F: case 0x40: case 0x41: case 0x42: case 0x43:
+                case 0x44: case 0x45: case 0x46: case 0x47: case 0x48:
+                case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D:
+                case 0x4E: case 0x4F: case 0x50: case 0x51: case 0x52:
+                case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+                case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C:
+                case 0x5D: case 0x5E: case 0x5F: case 0x60: case 0x61:
+                case 0x6C: case 0x6D: case 0x6E: case 0x6F: case 0x90:
+                case 0x91: case 0x92: case 0x93: case 0x94: case 0x95:
+                case 0x96: case 0x97: case 0x98: case 0x99: case 0x9B:
+                case 0x9C: case 0x9D: case 0x9E: case 0x9F: case 0xA4:
+                case 0xA5: case 0xA6: case 0xA7: case 0xAA: case 0xAB:
+                case 0xAC: case 0xAD: case 0xAE: case 0xAF: case 0xC3:
+                case 0xC9: case 0xCB: case 0xCC: case 0xCE: case 0xCF:
+                case 0xD6: case 0xD7: case 0xEC: case 0xED: case 0xEE:
+                case 0xEF: case 0xF4: case 0xF5: case 0xF8: case 0xF9:
+                case 0xFA: case 0xFB: case 0xFC: case 0xFD:
+                    break;
+
+                default:
+                    SetDecodeReason(reason, reasonCount, "unsupported opcode");
+                    return false;
+            }
+        }
+    }
+
+    (void)hasModRm;
+    if (immBytes > 0)
+    {
+        if (!NeedInstructionBytes(i, immBytes, maxLen))
+        {
+            SetDecodeReason(reason, reasonCount, "truncated immediate");
+            return false;
+        }
+        i += immBytes;
+    }
+
+    if (i == 0 || i > 15)
+    {
+        SetDecodeReason(reason, reasonCount, "invalid instruction length");
+        return false;
+    }
+
+    out->length = i;
+    return true;
+}
+
+static void FormatBytes(const BYTE* bytes, SIZE_T count, char* out, SIZE_T outCount)
+{
+    static const char kHex[] = "0123456789abcdef";
+    if (!out || outCount == 0)
+        return;
+    out[0] = '\0';
+
+    SIZE_T pos = 0;
+    for (SIZE_T i = 0; bytes && i < count && pos + 3 < outCount; ++i)
+    {
+        if (i > 0)
+            out[pos++] = ' ';
+        BYTE b = bytes[i];
+        out[pos++] = kHex[b >> 4];
+        out[pos++] = kHex[b & 0x0F];
+    }
+    out[pos] = '\0';
+}
+
+static bool WriteRelative32(BYTE* operand, const BYTE* nextInstruction, const BYTE* destination)
+{
+    uint32_t disp =
+        (uint32_t)(uintptr_t)destination - (uint32_t)(uintptr_t)nextInstruction;
+    *(int32_t*)operand = (int32_t)disp;
+    return true;
+}
+
+static const BYTE* GetRelativeDestination(const BYTE* instruction, const X86DecodedInstruction* decoded)
+{
+    if (!instruction || !decoded || !decoded->hasRel)
+        return nullptr;
+
+    const BYTE* next = instruction + decoded->length;
+    if (decoded->relSize == 1)
+    {
+        int8_t rel = *(const int8_t*)(instruction + decoded->relOffset);
+        return (const BYTE*)((uint32_t)(uintptr_t)next + (int32_t)rel);
+    }
+
+    if (decoded->relSize == 4)
+    {
+        int32_t rel = *(const int32_t*)(instruction + decoded->relOffset);
+        return (const BYTE*)((uint32_t)(uintptr_t)next + rel);
+    }
+
+    return nullptr;
+}
+
+static bool IsHotpatchPaddingByte(BYTE b)
+{
+    return b == 0x90 || b == 0xCC;
+}
+
+static bool CanUseHotpatchSlot(const BYTE* target)
+{
+    if (!target || !IsReadableMemoryRange(target - 5, 7))
+        return false;
+
+    if (target[0] != 0x8B || target[1] != 0xFF)
+        return false;
+
+    for (int i = -5; i < 0; ++i)
+    {
+        if (!IsHotpatchPaddingByte(target[i]))
+            return false;
+    }
+
+    return true;
+}
+
+static bool InstallHotpatchDetour(InlineDetour* hook)
+{
     BYTE* target = (BYTE*)hook->target;
-    memcpy(hook->saved, target, sizeof(hook->saved));
+    if (!CanUseHotpatchSlot(target))
+        return false;
 
-    hook->trampoline = (BYTE*)VirtualAlloc(nullptr, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!hook->trampoline)
+    BYTE* trampoline = (BYTE*)VirtualAlloc(
+        nullptr, kInlineDetourTrampolineCapacity, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!trampoline)
+    {
+        WriteLog("[Windower] %s hotpatch trampoline alloc failed err=%lu",
+            hook->name, (unsigned long)GetLastError());
+        return false;
+    }
+
+    trampoline[0] = target[0];
+    trampoline[1] = target[1];
+    trampoline[2] = 0xE9;
+    if (!WriteRelative32(trampoline + 3, trampoline + 7, target + 2))
+    {
+        WriteLog("[Windower] %s hotpatch trampoline rel32 out of range", hook->name);
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    BYTE* patchStart = target - 5;
+    memcpy(hook->savedBefore, patchStart, sizeof(hook->savedBefore));
+    memcpy(hook->saved, target, 2);
+
+    DWORD oldProt = 0;
+    if (!VirtualProtect(patchStart, 7, PAGE_EXECUTE_READWRITE, &oldProt))
+    {
+        WriteLog("[Windower] %s hotpatch VirtualProtect failed err=%lu",
+            hook->name, (unsigned long)GetLastError());
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    patchStart[0] = 0xE9;
+    if (!WriteRelative32(patchStart + 1, target, (const BYTE*)hook->detour))
+    {
+        VirtualProtect(patchStart, 7, oldProt, &oldProt);
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        WriteLog("[Windower] %s hotpatch detour rel32 out of range", hook->name);
+        return false;
+    }
+    target[0] = 0xEB;
+    target[1] = 0xF9;
+
+    VirtualProtect(patchStart, 7, oldProt, &oldProt);
+    FlushInstructionCache(GetCurrentProcess(), patchStart, 7);
+    FlushInstructionCache(GetCurrentProcess(), trampoline, 7);
+
+    hook->trampoline = trampoline;
+    hook->installed = true;
+    hook->copiedLen = 2;
+    hook->trampolineLen = 7;
+    hook->patchLen = 7;
+    hook->hotpatchMode = true;
+    WriteLog("[Windower] %s detour installed target=%p detour=%p copied %lu bytes mode=hotpatch",
+        hook->name, hook->target, hook->detour, (unsigned long)hook->copiedLen);
+    return true;
+}
+
+static bool RelocateInstruction(
+    const BYTE* target,
+    SIZE_T copiedLen,
+    const X86DecodedInstruction* decoded,
+    BYTE* trampoline,
+    SIZE_T trampolineOffset,
+    SIZE_T trampolineCapacity,
+    SIZE_T* outLen,
+    const char* hookName)
+{
+    const BYTE* src = target + decoded->offset;
+    BYTE* dst = trampoline + trampolineOffset;
+    *outLen = 0;
+
+    if (!decoded->hasRel)
+    {
+        if (trampolineOffset + decoded->length > trampolineCapacity)
+            return false;
+        memcpy(dst, src, decoded->length);
+        *outLen = decoded->length;
+        return true;
+    }
+
+    const BYTE* absDest = GetRelativeDestination(src, decoded);
+    if (!absDest)
+        return false;
+
+    if (absDest >= target && absDest < target + copiedLen)
+    {
+        WriteLog("[Windower] %s detour unsupported internal relative branch at +%lu",
+            hookName, (unsigned long)decoded->offset);
+        return false;
+    }
+
+    if (decoded->relSize == 4)
+    {
+        if (trampolineOffset + decoded->length > trampolineCapacity)
+            return false;
+        memcpy(dst, src, decoded->length);
+        if (!WriteRelative32(dst + decoded->relOffset, dst + decoded->length, absDest))
+            return false;
+        *outLen = decoded->length;
+        return true;
+    }
+
+    if (decoded->relSize != 1)
+        return false;
+
+    if (decoded->opcode == 0xEB)
+    {
+        if (trampolineOffset + 5 > trampolineCapacity)
+            return false;
+        dst[0] = 0xE9;
+        if (!WriteRelative32(dst + 1, dst + 5, absDest))
+            return false;
+        *outLen = 5;
+        return true;
+    }
+
+    if (decoded->opcode >= 0x70 && decoded->opcode <= 0x7F)
+    {
+        if (trampolineOffset + 6 > trampolineCapacity)
+            return false;
+        dst[0] = 0x0F;
+        dst[1] = (BYTE)(0x80 + (decoded->opcode - 0x70));
+        if (!WriteRelative32(dst + 2, dst + 6, absDest))
+            return false;
+        *outLen = 6;
+        return true;
+    }
+
+    int32_t newRel =
+        (int32_t)((uint32_t)(uintptr_t)absDest - (uint32_t)(uintptr_t)(dst + decoded->length));
+    if (newRel < -128 || newRel > 127)
+    {
+        WriteLog("[Windower] %s detour unsupported relocated rel8 opcode=0x%02X at +%lu",
+            hookName, (unsigned)decoded->opcode, (unsigned long)decoded->offset);
+        return false;
+    }
+
+    if (trampolineOffset + decoded->length > trampolineCapacity)
+        return false;
+    memcpy(dst, src, decoded->length);
+    *(int8_t*)(dst + decoded->relOffset) = (int8_t)newRel;
+    *outLen = decoded->length;
+    return true;
+}
+
+static bool InstallInlineLdeDetour(InlineDetour* hook)
+{
+    BYTE* target = (BYTE*)hook->target;
+    if (!IsReadableMemoryRange(target, kInlineDetourMaxCopy))
+    {
+        WriteLog("[Windower] %s detour target bytes unreadable", hook->name);
+        return false;
+    }
+
+    X86DecodedInstruction insts[16] = {};
+    SIZE_T instCount = 0;
+    SIZE_T copied = 0;
+    char reason[128] = {};
+
+    while (copied < kInlineDetourMinPatch)
+    {
+        if (instCount >= _countof(insts))
+        {
+            WriteLog("[Windower] %s detour decode failed: too many instructions", hook->name);
+            return false;
+        }
+
+        X86DecodedInstruction decoded = {};
+        decoded.offset = copied;
+        if (!DecodeX86Instruction(target + copied, kInlineDetourMaxCopy - copied, &decoded, reason, _countof(reason)))
+        {
+            char bytes[80] = {};
+            FormatBytes(target + copied, 12, bytes, _countof(bytes));
+            WriteLog("[Windower] %s detour decode failed at +%lu bytes=%s reason=%s",
+                hook->name, (unsigned long)copied, bytes, reason);
+            return false;
+        }
+
+        if (decoded.length == 0 || copied + decoded.length > kInlineDetourMaxCopy)
+        {
+            WriteLog("[Windower] %s detour decode produced invalid length", hook->name);
+            return false;
+        }
+
+        insts[instCount++] = decoded;
+        copied += decoded.length;
+    }
+
+    BYTE* trampoline = (BYTE*)VirtualAlloc(
+        nullptr, kInlineDetourTrampolineCapacity, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!trampoline)
     {
         WriteLog("[Windower] %s detour trampoline alloc failed err=%lu",
             hook->name, (unsigned long)GetLastError());
         return false;
     }
 
-    memcpy(hook->trampoline, target, 5);
-    hook->trampoline[5] = 0xE9;
-    *(int32_t*)(hook->trampoline + 6) = (int32_t)((target + 5) - (hook->trampoline + 10));
+    SIZE_T trampOff = 0;
+    for (SIZE_T i = 0; i < instCount; ++i)
+    {
+        SIZE_T outLen = 0;
+        if (!RelocateInstruction(target, copied, &insts[i], trampoline, trampOff, kInlineDetourTrampolineCapacity - 5, &outLen, hook->name))
+        {
+            WriteLog("[Windower] %s detour relocation failed at instruction +%lu",
+                hook->name, (unsigned long)insts[i].offset);
+            VirtualFree(trampoline, 0, MEM_RELEASE);
+            return false;
+        }
+        trampOff += outLen;
+    }
+
+    if (trampOff + 5 > kInlineDetourTrampolineCapacity)
+    {
+        WriteLog("[Windower] %s detour trampoline overflow", hook->name);
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    trampoline[trampOff] = 0xE9;
+    if (!WriteRelative32(trampoline + trampOff + 1, trampoline + trampOff + 5, target + copied))
+    {
+        WriteLog("[Windower] %s detour trampoline return rel32 out of range", hook->name);
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+    trampOff += 5;
+
+    memcpy(hook->saved, target, copied);
 
     DWORD oldProt = 0;
-    if (!VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &oldProt))
+    if (!VirtualProtect(target, copied, PAGE_EXECUTE_READWRITE, &oldProt))
     {
         WriteLog("[Windower] %s detour VirtualProtect failed err=%lu",
             hook->name, (unsigned long)GetLastError());
-        VirtualFree(hook->trampoline, 0, MEM_RELEASE);
-        hook->trampoline = nullptr;
+        VirtualFree(trampoline, 0, MEM_RELEASE);
         return false;
     }
 
     target[0] = 0xE9;
-    *(int32_t*)(target + 1) = (int32_t)((BYTE*)hook->detour - (target + 5));
-    VirtualProtect(target, 5, oldProt, &oldProt);
-    FlushInstructionCache(GetCurrentProcess(), target, 5);
+    if (!WriteRelative32(target + 1, target + 5, (const BYTE*)hook->detour))
+    {
+        VirtualProtect(target, copied, oldProt, &oldProt);
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        WriteLog("[Windower] %s detour rel32 out of range", hook->name);
+        return false;
+    }
+    for (SIZE_T i = kInlineDetourMinPatch; i < copied; ++i)
+        target[i] = 0x90;
 
+    VirtualProtect(target, copied, oldProt, &oldProt);
+    FlushInstructionCache(GetCurrentProcess(), target, copied);
+    FlushInstructionCache(GetCurrentProcess(), trampoline, trampOff);
+
+    hook->trampoline = trampoline;
     hook->installed = true;
-    WriteLog("[Windower] %s detour installed target=%p detour=%p",
-        hook->name, hook->target, hook->detour);
+    hook->copiedLen = copied;
+    hook->trampolineLen = trampOff;
+    hook->patchLen = copied;
+    hook->hotpatchMode = false;
+    WriteLog("[Windower] %s detour installed target=%p detour=%p copied %lu bytes mode=inline-lde",
+        hook->name, hook->target, hook->detour, (unsigned long)hook->copiedLen);
     return true;
+}
+
+static bool InstallInlineDetour(InlineDetour* hook)
+{
+    if (!hook || hook->installed || !hook->target || !hook->detour)
+        return hook && hook->installed;
+
+    if (InstallHotpatchDetour(hook))
+        return true;
+
+    return InstallInlineLdeDetour(hook);
+}
+
+static bool IsEnvFlagOne(const char* name)
+{
+    char value[16] = {};
+    DWORD n = GetEnvironmentVariableA(name, value, (DWORD)_countof(value));
+    return (n > 0 && n < _countof(value) && strcmp(value, "1") == 0);
 }
 
 static bool IsCaptureEnabled()
 {
-    char value[16] = {};
-    DWORD n = GetEnvironmentVariableA("MAPLEFORGE_WINDOWER_CAPTURE", value, (DWORD)_countof(value));
-    return (n > 0 && n < _countof(value) && strcmp(value, "1") == 0);
+    return IsEnvFlagOne("MAPLEFORGE_WINDOWER_CAPTURE");
+}
+
+static bool IsHookEnabledByList(const char* hookName)
+{
+    char value[256] = {};
+    DWORD n = GetEnvironmentVariableA("MAPLEFORGE_WINDOWER_HOOKS", value, (DWORD)_countof(value));
+    if (n == 0)
+        return true;
+    if (n >= _countof(value))
+        return false;
+
+    const size_t hookNameLen = strlen(hookName);
+    const char* p = value;
+    while (*p)
+    {
+        while (*p == ' ' || *p == '\t' || *p == ',')
+            ++p;
+
+        const char* start = p;
+        while (*p && *p != ',')
+            ++p;
+
+        const char* end = p;
+        while (end > start && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
+            --end;
+
+        const size_t tokenLen = (size_t)(end - start);
+        if (tokenLen == hookNameLen && _strnicmp(start, hookName, tokenLen) == 0)
+            return true;
+
+        if (*p == ',')
+            ++p;
+    }
+
+    return false;
+}
+
+static void* InstallInlineDetourIfEnabled(InlineDetour* hook, void* target)
+{
+    if (!hook)
+        return nullptr;
+
+    hook->target = target;
+    if (!IsHookEnabledByList(hook->name))
+    {
+        WriteLog("[Windower] hook %s skipped(hooks-env)", hook->name);
+        return nullptr;
+    }
+
+    if (!hook->target)
+    {
+        WriteLog("[Windower] hook %s skipped(missing)", hook->name);
+        return nullptr;
+    }
+
+    if (InstallInlineDetour(hook))
+    {
+        WriteLog("[Windower] hook %s installed copied %lu bytes mode=%s",
+            hook->name, (unsigned long)hook->copiedLen, hook->hotpatchMode ? "hotpatch" : "inline-lde");
+        return hook->trampoline;
+    }
+
+    WriteLog("[Windower] hook %s skipped(detour_failed)", hook->name);
+    return hook->target;
 }
 
 static void EnsureDirectoryW(const wchar_t* path)
@@ -608,60 +1427,21 @@ static void InstallWs2Hooks()
         return;
     }
 
-    g_sendDetour.target = (void*)GetProcAddress(hWs2, "send");
-    g_recvDetour.target = (void*)GetProcAddress(hWs2, "recv");
-    g_wsaSendDetour.target = (void*)GetProcAddress(hWs2, "WSASend");
-    g_wsaRecvDetour.target = (void*)GetProcAddress(hWs2, "WSARecv");
-    g_wsaGetOverlappedResultDetour.target = (void*)GetProcAddress(hWs2, "WSAGetOverlappedResult");
-
-    if (g_sendDetour.target)
-    {
-        if (InstallInlineDetour(&g_sendDetour))
-            g_origSend = (Send_t)g_sendDetour.trampoline;
-        else
-            g_origSend = (Send_t)g_sendDetour.target;
-    }
-    if (g_recvDetour.target)
-    {
-        if (InstallInlineDetour(&g_recvDetour))
-            g_origRecv = (Recv_t)g_recvDetour.trampoline;
-        else
-            g_origRecv = (Recv_t)g_recvDetour.target;
-    }
-    if (g_wsaSendDetour.target)
-    {
-        if (InstallInlineDetour(&g_wsaSendDetour))
-            g_origWSASend = (WSASend_t)g_wsaSendDetour.trampoline;
-        else
-            g_origWSASend = (WSASend_t)g_wsaSendDetour.target;
-    }
-    if (g_wsaRecvDetour.target)
-    {
-        if (InstallInlineDetour(&g_wsaRecvDetour))
-            g_origWSARecv = (WSARecv_t)g_wsaRecvDetour.trampoline;
-        else
-            g_origWSARecv = (WSARecv_t)g_wsaRecvDetour.target;
-    }
-    if (g_wsaGetOverlappedResultDetour.target)
-    {
-        if (InstallInlineDetour(&g_wsaGetOverlappedResultDetour))
-            g_origWSAGetOverlappedResult = (WSAGetOverlappedResult_t)g_wsaGetOverlappedResultDetour.trampoline;
-        else
-            g_origWSAGetOverlappedResult = (WSAGetOverlappedResult_t)g_wsaGetOverlappedResultDetour.target;
-    }
+    g_origSend = (Send_t)InstallInlineDetourIfEnabled(
+        &g_sendDetour, (void*)GetProcAddress(hWs2, "send"));
+    g_origRecv = (Recv_t)InstallInlineDetourIfEnabled(
+        &g_recvDetour, (void*)GetProcAddress(hWs2, "recv"));
+    g_origWSASend = (WSASend_t)InstallInlineDetourIfEnabled(
+        &g_wsaSendDetour, (void*)GetProcAddress(hWs2, "WSASend"));
+    g_origWSARecv = (WSARecv_t)InstallInlineDetourIfEnabled(
+        &g_wsaRecvDetour, (void*)GetProcAddress(hWs2, "WSARecv"));
+    g_origWSAGetOverlappedResult = (WSAGetOverlappedResult_t)InstallInlineDetourIfEnabled(
+        &g_wsaGetOverlappedResultDetour, (void*)GetProcAddress(hWs2, "WSAGetOverlappedResult"));
 
     HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-    if (hKernel32)
-    {
-        g_getQueuedCompletionStatusDetour.target = (void*)GetProcAddress(hKernel32, "GetQueuedCompletionStatus");
-        if (g_getQueuedCompletionStatusDetour.target)
-        {
-            if (InstallInlineDetour(&g_getQueuedCompletionStatusDetour))
-                g_origGetQueuedCompletionStatus = (GetQueuedCompletionStatus_t)g_getQueuedCompletionStatusDetour.trampoline;
-            else
-                g_origGetQueuedCompletionStatus = (GetQueuedCompletionStatus_t)g_getQueuedCompletionStatusDetour.target;
-        }
-    }
+    g_origGetQueuedCompletionStatus = (GetQueuedCompletionStatus_t)InstallInlineDetourIfEnabled(
+        &g_getQueuedCompletionStatusDetour,
+        hKernel32 ? (void*)GetProcAddress(hKernel32, "GetQueuedCompletionStatus") : nullptr);
 
     WriteLog(
         "[Windower] hooks status send=%d recv=%d WSASend=%d WSARecv=%d WSAGetOverlappedResult=%d GetQueuedCompletionStatus=%d",
@@ -671,6 +1451,7 @@ static void InstallWs2Hooks()
         g_wsaRecvDetour.installed ? 1 : 0,
         g_wsaGetOverlappedResultDetour.installed ? 1 : 0,
         g_getQueuedCompletionStatusDetour.installed ? 1 : 0);
+    WriteLog("[Windower] winsock hooks installed");
 }
 
 static int WSAAPI HookedSend(SOCKET s, const char* buf, int len, int flags)
@@ -692,9 +1473,12 @@ static int WSAAPI HookedRecv(SOCKET s, char* buf, int len, int flags)
     if (!orig) return SOCKET_ERROR;
 
     int ret = orig(s, buf, len, flags);
-    DWORD bytes = (ret > 0) ? (DWORD)ret : 0;
 
-    WriteChunkSingleBuffer(s, "s2c", "recv", ret, (const unsigned char*)buf, bytes, false);
+    // 只在「真有資料」(ret>0) 時才記錄。客戶端用非阻塞 recv 高頻輪詢，
+    // ret<=0(WSAEWOULDBLOCK) 是無資料空輪詢；若每次都 fprintf+fflush(在全域鎖內)
+    // 會造成 I/O 風暴拖垮客戶端網路 timing → 收 getHello 失敗而放棄連線(已 live A/B 確認)。
+    if (ret > 0)
+        WriteChunkSingleBuffer(s, "s2c", "recv", ret, (const unsigned char*)buf, (DWORD)ret, false);
     return ret;
 }
 
@@ -1339,8 +2123,33 @@ static bool InstallDirect3DCreate8Hook()
 
 static void EnsureHooksInstalled()
 {
-    InstallWs2Hooks();
-    InstallDirect3DCreate8Hook();
+    if (IsEnvFlagOne("MAPLEFORGE_WINDOWER_DISABLE_WINSOCK"))
+    {
+        if (!g_ws2HooksSkippedByEnv)
+        {
+            g_ws2HooksSkippedByEnv = true;
+            WriteLog("[Windower] winsock hooks skipped(env)");
+        }
+    }
+    else
+    {
+        InstallWs2Hooks();
+    }
+
+    if (IsEnvFlagOne("MAPLEFORGE_WINDOWER_DISABLE_D3D"))
+    {
+        if (!g_d3d8HookSkippedByEnv)
+        {
+            g_d3d8HookSkippedByEnv = true;
+            WriteLog("[Windower] D3D hooks skipped(env)");
+        }
+    }
+    else
+    {
+        const bool wasHooked = g_d3d8EntryHooked;
+        if (InstallDirect3DCreate8Hook() && !wasHooked)
+            WriteLog("[Windower] D3D hooks installed");
+    }
 }
 
 // ── SetWindowsHookEx callback ────────────────────────────────────────────────
@@ -1348,7 +2157,7 @@ static void EnsureHooksInstalled()
 extern "C" __declspec(dllexport)
 LRESULT CALLBACK CallWndProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
-    if (nCode >= 0 && !g_d3d8EntryHooked)
+    if (nCode >= 0 && !g_d3d8EntryHooked && !g_d3d8HookSkippedByEnv)
         EnsureHooksInstalled();
     return CallNextHookEx(g_hHook, nCode, wParam, lParam);
 }
