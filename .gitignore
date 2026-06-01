@@ -46,3 +46,8 @@ client-shot*.png
 
 # 封包擷取執行期輸出
 captures/
+
+# 執行期 artifacts 統一收納目錄（logs/captures/screenshots/obj）
+artifacts/
+.artifacts/
+diag-shots/
