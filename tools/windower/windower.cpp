@@ -18,6 +18,11 @@
 #include <stdint.h>
 #include "d3d8min.h"
 
+static void EnsureCaptureDirReady();
+static char           g_captureDirA[MAX_PATH] = {};
+static bool           g_captureDirReady = false;
+static volatile LONG  g_logResolvingCaptureDir = 0;
+
 static void WriteLog(const char* fmt, ...)
 {
     char msg[1024] = {};
@@ -43,8 +48,22 @@ static void WriteLog(const char* fmt, ...)
         name, (unsigned long)GetCurrentProcessId(), msg);
 
     OutputDebugStringA(line);
+
+    if (!g_captureDirReady &&
+        InterlockedCompareExchange(&g_logResolvingCaptureDir, 1, 0) == 0)
+    {
+        EnsureCaptureDirReady();
+        InterlockedExchange(&g_logResolvingCaptureDir, 0);
+    }
+
+    if (!g_captureDirReady || !g_captureDirA[0])
+        return;
+
+    char logPath[MAX_PATH] = {};
+    _snprintf_s(logPath, _countof(logPath), _TRUNCATE, "%s\\windower_inject.log", g_captureDirA);
+
     FILE* f = nullptr;
-    fopen_s(&f, "C:\\windower_inject.log", "a");
+    fopen_s(&f, logPath, "a");
     if (f) { fputs(line, f); fclose(f); }
 }
 
@@ -54,6 +73,10 @@ typedef int (WSAAPI* WSASend_t)(
     SOCKET, LPWSABUF, DWORD, LPDWORD, DWORD, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
 typedef int (WSAAPI* WSARecv_t)(
     SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD, LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+typedef BOOL (WSAAPI* WSAGetOverlappedResult_t)(
+    SOCKET, LPWSAOVERLAPPED, LPDWORD, BOOL, LPDWORD);
+typedef BOOL (WINAPI* GetQueuedCompletionStatus_t)(
+    HANDLE, LPDWORD, PULONG_PTR, LPOVERLAPPED*, DWORD);
 
 typedef struct InlineDetour {
     const char* name;
@@ -72,6 +95,18 @@ typedef struct PacketSession {
     struct PacketSession* next;
 } PacketSession;
 
+typedef struct PendingRecvOp {
+    LPWSAOVERLAPPED overlapped;
+    SOCKET socketValue;
+    WSABUF* buffers;
+    DWORD bufferCount;
+    ULONGLONG postedAt;
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE appCompletionRoutine;
+    bool completionRoutineWrapped;
+    bool captured;
+    struct PendingRecvOp* next;
+} PendingRecvOp;
+
 static int WSAAPI HookedSend(SOCKET s, const char* buf, int len, int flags);
 static int WSAAPI HookedRecv(SOCKET s, char* buf, int len, int flags);
 static int WSAAPI HookedWSASend(
@@ -80,6 +115,13 @@ static int WSAAPI HookedWSASend(
 static int WSAAPI HookedWSARecv(
     SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd,
     LPDWORD lpFlags, LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine);
+static BOOL WSAAPI HookedWSAGetOverlappedResult(
+    SOCKET s, LPWSAOVERLAPPED lpOverlapped, LPDWORD lpcbTransfer, BOOL fWait, LPDWORD lpdwFlags);
+static BOOL WINAPI HookedGetQueuedCompletionStatus(
+    HANDLE CompletionPort, LPDWORD lpNumberOfBytesTransferred,
+    PULONG_PTR lpCompletionKey, LPOVERLAPPED* lpOverlapped, DWORD dwMilliseconds);
+static void CALLBACK HookedWSARecvCompletionRoutine(
+    DWORD dwError, DWORD cbTransferred, LPWSAOVERLAPPED lpOverlapped, DWORD dwFlags);
 
 // ── 全域狀態 ─────────────────────────────────────────────────────────────────
 
@@ -95,11 +137,15 @@ static Send_t         g_origSend = nullptr;
 static Recv_t         g_origRecv = nullptr;
 static WSASend_t      g_origWSASend = nullptr;
 static WSARecv_t      g_origWSARecv = nullptr;
+static WSAGetOverlappedResult_t g_origWSAGetOverlappedResult = nullptr;
+static GetQueuedCompletionStatus_t g_origGetQueuedCompletionStatus = nullptr;
 
 static InlineDetour   g_sendDetour = { "send", nullptr, (void*)HookedSend, {}, nullptr, false };
 static InlineDetour   g_recvDetour = { "recv", nullptr, (void*)HookedRecv, {}, nullptr, false };
 static InlineDetour   g_wsaSendDetour = { "WSASend", nullptr, (void*)HookedWSASend, {}, nullptr, false };
 static InlineDetour   g_wsaRecvDetour = { "WSARecv", nullptr, (void*)HookedWSARecv, {}, nullptr, false };
+static InlineDetour   g_wsaGetOverlappedResultDetour = { "WSAGetOverlappedResult", nullptr, (void*)HookedWSAGetOverlappedResult, {}, nullptr, false };
+static InlineDetour   g_getQueuedCompletionStatusDetour = { "GetQueuedCompletionStatus", nullptr, (void*)HookedGetQueuedCompletionStatus, {}, nullptr, false };
 
 static HHOOK          g_hHook            = nullptr;
 static HINSTANCE      g_hInst            = nullptr;
@@ -117,8 +163,7 @@ static bool           g_hasCachedDesktopFormat = false;
 static CRITICAL_SECTION g_packetLock = {};
 static bool           g_packetLockReady = false;
 static PacketSession* g_packetSessions = nullptr;
-static char           g_captureDirA[MAX_PATH] = {};
-static bool           g_captureDirReady = false;
+static PendingRecvOp* g_pendingRecvOps = nullptr;
 
 enum { D3DADAPTER_DEFAULT_LOCAL = 0 };
 enum { D3DFMT_X8R8G8B8_LOCAL = 22 };
@@ -332,13 +377,9 @@ static void WriteChunkSingleBuffer(
     LeaveCriticalSection(&g_packetLock);
 }
 
-static void WriteChunkWSABuffers(
+static void WriteChunkWSABuffersLocked(
     SOCKET s, const char* dir, const char* api, int ret, const WSABUF* bufs, DWORD count, DWORD bytesToWrite, bool pendingTodo)
 {
-    if (!IsCaptureEnabled() || !g_packetLockReady)
-        return;
-
-    EnterCriticalSection(&g_packetLock);
     PacketSession* session = GetOrCreatePacketSessionLocked(s);
     if (session && session->file)
     {
@@ -363,7 +404,167 @@ static void WriteChunkWSABuffers(
         fprintf(session->file, "}\n");
         fflush(session->file);
     }
+}
+
+static void WriteChunkWSABuffers(
+    SOCKET s, const char* dir, const char* api, int ret, const WSABUF* bufs, DWORD count, DWORD bytesToWrite, bool pendingTodo)
+{
+    if (!IsCaptureEnabled() || !g_packetLockReady)
+        return;
+
+    EnterCriticalSection(&g_packetLock);
+    WriteChunkWSABuffersLocked(s, dir, api, ret, bufs, count, bytesToWrite, pendingTodo);
     LeaveCriticalSection(&g_packetLock);
+}
+
+static int RetFromBytes(DWORD bytes)
+{
+    return (bytes > 0x7FFFFFFFUL) ? 0x7FFFFFFF : (int)bytes;
+}
+
+static void FreePendingRecvOp(PendingRecvOp* op)
+{
+    if (!op) return;
+    if (op->buffers) HeapFree(GetProcessHeap(), 0, op->buffers);
+    HeapFree(GetProcessHeap(), 0, op);
+}
+
+static PendingRecvOp* FindPendingRecvLocked(LPWSAOVERLAPPED overlapped, PendingRecvOp** prevOut)
+{
+    if (prevOut) *prevOut = nullptr;
+    PendingRecvOp* prev = nullptr;
+    PendingRecvOp* cur = g_pendingRecvOps;
+    while (cur)
+    {
+        if (cur->overlapped == overlapped)
+        {
+            if (prevOut) *prevOut = prev;
+            return cur;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    return nullptr;
+}
+
+static void RemovePendingRecvLocked(PendingRecvOp* op, PendingRecvOp* prev)
+{
+    if (!op) return;
+    if (prev) prev->next = op->next;
+    else g_pendingRecvOps = op->next;
+    op->next = nullptr;
+    FreePendingRecvOp(op);
+}
+
+static void RemovePendingRecvByOverlappedLocked(LPWSAOVERLAPPED overlapped)
+{
+    PendingRecvOp* prev = nullptr;
+    PendingRecvOp* op = FindPendingRecvLocked(overlapped, &prev);
+    if (op)
+        RemovePendingRecvLocked(op, prev);
+}
+
+static bool TrackPendingWSARecv(
+    SOCKET s,
+    LPWSABUF lpBuffers,
+    DWORD dwBufferCount,
+    LPWSAOVERLAPPED lpOverlapped,
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+{
+    if (!IsCaptureEnabled() || !g_packetLockReady || !lpOverlapped || !lpBuffers || dwBufferCount == 0)
+        return false;
+
+    if (dwBufferCount > (0x7FFFFFFFUL / sizeof(WSABUF)))
+        return false;
+
+    const SIZE_T bytes = (SIZE_T)dwBufferCount * sizeof(WSABUF);
+    WSABUF* copy = (WSABUF*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, bytes);
+    PendingRecvOp* op = (PendingRecvOp*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PendingRecvOp));
+    if (!copy || !op)
+    {
+        if (copy) HeapFree(GetProcessHeap(), 0, copy);
+        if (op) HeapFree(GetProcessHeap(), 0, op);
+        return false;
+    }
+
+    memcpy(copy, lpBuffers, bytes);
+    op->overlapped = lpOverlapped;
+    op->socketValue = s;
+    op->buffers = copy;
+    op->bufferCount = dwBufferCount;
+    op->postedAt = GetTickCount64();
+    op->appCompletionRoutine = lpCompletionRoutine;
+    op->completionRoutineWrapped = (lpCompletionRoutine != nullptr);
+    op->captured = false;
+
+    EnterCriticalSection(&g_packetLock);
+    RemovePendingRecvByOverlappedLocked(lpOverlapped);
+    op->next = g_pendingRecvOps;
+    g_pendingRecvOps = op;
+    LeaveCriticalSection(&g_packetLock);
+    return true;
+}
+
+static bool CompletePendingWSARecvFromPoll(
+    LPWSAOVERLAPPED lpOverlapped,
+    DWORD bytesTransferred,
+    const char* api,
+    bool success,
+    bool terminal)
+{
+    if (!g_packetLockReady || !lpOverlapped)
+        return false;
+
+    bool found = false;
+    EnterCriticalSection(&g_packetLock);
+    PendingRecvOp* prev = nullptr;
+    PendingRecvOp* op = FindPendingRecvLocked(lpOverlapped, &prev);
+    if (op)
+    {
+        found = true;
+        if (success && !op->captured)
+        {
+            WriteChunkWSABuffersLocked(
+                op->socketValue, "s2c", api, RetFromBytes(bytesTransferred),
+                op->buffers, op->bufferCount, bytesTransferred, false);
+            op->captured = true;
+        }
+
+        if (terminal && !op->completionRoutineWrapped)
+            RemovePendingRecvLocked(op, prev);
+    }
+    LeaveCriticalSection(&g_packetLock);
+    return found;
+}
+
+static LPWSAOVERLAPPED_COMPLETION_ROUTINE CompletePendingWSARecvFromRoutine(
+    LPWSAOVERLAPPED lpOverlapped,
+    DWORD dwError,
+    DWORD bytesTransferred)
+{
+    if (!g_packetLockReady || !lpOverlapped)
+        return nullptr;
+
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE appRoutine = nullptr;
+
+    EnterCriticalSection(&g_packetLock);
+    PendingRecvOp* prev = nullptr;
+    PendingRecvOp* op = FindPendingRecvLocked(lpOverlapped, &prev);
+    if (op)
+    {
+        appRoutine = op->appCompletionRoutine;
+        if (dwError == 0 && !op->captured)
+        {
+            WriteChunkWSABuffersLocked(
+                op->socketValue, "s2c", "WSARecv-complete-routine", RetFromBytes(bytesTransferred),
+                op->buffers, op->bufferCount, bytesTransferred, false);
+            op->captured = true;
+        }
+        RemovePendingRecvLocked(op, prev);
+    }
+    LeaveCriticalSection(&g_packetLock);
+
+    return appRoutine;
 }
 
 static void CleanupPacketSessions()
@@ -372,6 +573,15 @@ static void CleanupPacketSessions()
         return;
 
     EnterCriticalSection(&g_packetLock);
+    PendingRecvOp* pending = g_pendingRecvOps;
+    while (pending)
+    {
+        PendingRecvOp* next = pending->next;
+        FreePendingRecvOp(pending);
+        pending = next;
+    }
+    g_pendingRecvOps = nullptr;
+
     PacketSession* cur = g_packetSessions;
     while (cur)
     {
@@ -402,6 +612,7 @@ static void InstallWs2Hooks()
     g_recvDetour.target = (void*)GetProcAddress(hWs2, "recv");
     g_wsaSendDetour.target = (void*)GetProcAddress(hWs2, "WSASend");
     g_wsaRecvDetour.target = (void*)GetProcAddress(hWs2, "WSARecv");
+    g_wsaGetOverlappedResultDetour.target = (void*)GetProcAddress(hWs2, "WSAGetOverlappedResult");
 
     if (g_sendDetour.target)
     {
@@ -431,13 +642,35 @@ static void InstallWs2Hooks()
         else
             g_origWSARecv = (WSARecv_t)g_wsaRecvDetour.target;
     }
+    if (g_wsaGetOverlappedResultDetour.target)
+    {
+        if (InstallInlineDetour(&g_wsaGetOverlappedResultDetour))
+            g_origWSAGetOverlappedResult = (WSAGetOverlappedResult_t)g_wsaGetOverlappedResultDetour.trampoline;
+        else
+            g_origWSAGetOverlappedResult = (WSAGetOverlappedResult_t)g_wsaGetOverlappedResultDetour.target;
+    }
+
+    HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+    if (hKernel32)
+    {
+        g_getQueuedCompletionStatusDetour.target = (void*)GetProcAddress(hKernel32, "GetQueuedCompletionStatus");
+        if (g_getQueuedCompletionStatusDetour.target)
+        {
+            if (InstallInlineDetour(&g_getQueuedCompletionStatusDetour))
+                g_origGetQueuedCompletionStatus = (GetQueuedCompletionStatus_t)g_getQueuedCompletionStatusDetour.trampoline;
+            else
+                g_origGetQueuedCompletionStatus = (GetQueuedCompletionStatus_t)g_getQueuedCompletionStatusDetour.target;
+        }
+    }
 
     WriteLog(
-        "[Windower] ws2 hooks status send=%d recv=%d WSASend=%d WSARecv=%d",
+        "[Windower] hooks status send=%d recv=%d WSASend=%d WSARecv=%d WSAGetOverlappedResult=%d GetQueuedCompletionStatus=%d",
         g_sendDetour.installed ? 1 : 0,
         g_recvDetour.installed ? 1 : 0,
         g_wsaSendDetour.installed ? 1 : 0,
-        g_wsaRecvDetour.installed ? 1 : 0);
+        g_wsaRecvDetour.installed ? 1 : 0,
+        g_wsaGetOverlappedResultDetour.installed ? 1 : 0,
+        g_getQueuedCompletionStatusDetour.installed ? 1 : 0);
 }
 
 static int WSAAPI HookedSend(SOCKET s, const char* buf, int len, int flags)
@@ -506,9 +739,15 @@ static int WSAAPI HookedWSARecv(
     WSARecv_t orig = g_origWSARecv ? g_origWSARecv : (WSARecv_t)g_wsaRecvDetour.target;
     if (!orig) return SOCKET_ERROR;
 
-    int ret = orig(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpFlags, lpOverlapped, lpCompletionRoutine);
+    const bool tracked = TrackPendingWSARecv(s, lpBuffers, dwBufferCount, lpOverlapped, lpCompletionRoutine);
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE completionRoutineToPass =
+        (tracked && lpCompletionRoutine) ? HookedWSARecvCompletionRoutine : lpCompletionRoutine;
+
+    int ret = orig(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpFlags, lpOverlapped, completionRoutineToPass);
+    const int wsaErr = (ret == SOCKET_ERROR) ? WSAGetLastError() : 0;
     bool pendingTodo = false;
     DWORD bytes = 0;
+    bool wrote = false;
 
     if (ret == 0)
     {
@@ -516,21 +755,171 @@ static int WSAAPI HookedWSARecv(
             bytes = *lpNumberOfBytesRecvd;
         else if (!lpOverlapped)
             bytes = SumWSABuffers(lpBuffers, dwBufferCount);
+
+        if (tracked && lpOverlapped)
+        {
+            if (lpNumberOfBytesRecvd)
+            {
+                CompletePendingWSARecvFromPoll(lpOverlapped, bytes, "WSARecv-complete", true, true);
+                wrote = true;
+                WriteLog(
+                    "[Windower] WSARecv completed at submit tracked=1 s=%llu ov=%p bytes=%lu completionRoutine=%p hEvent=%p",
+                    (unsigned long long)(uintptr_t)s, (void*)lpOverlapped, (unsigned long)bytes,
+                    (void*)lpCompletionRoutine, lpOverlapped ? (void*)lpOverlapped->hEvent : nullptr);
+            }
+            else
+            {
+                WriteChunkWSABuffers(s, "s2c", "WSARecv", ret, lpBuffers, dwBufferCount, 0, false);
+                wrote = true;
+                WriteLog(
+                    "[Windower] WSARecv submitted/complete without byte count tracked=1 s=%llu ov=%p completionRoutine=%p hEvent=%p",
+                    (unsigned long long)(uintptr_t)s, (void*)lpOverlapped,
+                    (void*)lpCompletionRoutine, lpOverlapped ? (void*)lpOverlapped->hEvent : nullptr);
+            }
+        }
     }
-    else if (ret == SOCKET_ERROR && lpOverlapped && WSAGetLastError() == WSA_IO_PENDING)
+    else if (ret == SOCKET_ERROR && lpOverlapped && wsaErr == WSA_IO_PENDING)
     {
-        pendingTodo = true;
+        if (tracked)
+        {
+            WriteChunkWSABuffers(s, "s2c", "WSARecv", ret, lpBuffers, dwBufferCount, 0, false);
+            wrote = true;
+            WriteLog(
+                "[Windower] WSARecv pending tracked=1 s=%llu ov=%p buffers=%lu completionRoutine=%p hEvent=%p",
+                (unsigned long long)(uintptr_t)s, (void*)lpOverlapped, (unsigned long)dwBufferCount,
+                (void*)lpCompletionRoutine, lpOverlapped ? (void*)lpOverlapped->hEvent : nullptr);
+        }
+        else
+        {
+            pendingTodo = true;
+        }
+    }
+    else if (ret == SOCKET_ERROR && tracked && lpOverlapped)
+    {
+        EnterCriticalSection(&g_packetLock);
+        RemovePendingRecvByOverlappedLocked(lpOverlapped);
+        LeaveCriticalSection(&g_packetLock);
     }
 
-    if (pendingTodo)
+    if (!wrote && pendingTodo)
     {
         WriteChunkWSABuffers(s, "s2c", "WSARecv", ret, lpBuffers, dwBufferCount, 0, true);
     }
-    else
+    else if (!wrote)
     {
         WriteChunkWSABuffers(s, "s2c", "WSARecv", ret, lpBuffers, dwBufferCount, bytes, false);
     }
+
+    if (ret == SOCKET_ERROR)
+        WSASetLastError(wsaErr);
     return ret;
+}
+
+static BOOL WSAAPI HookedWSAGetOverlappedResult(
+    SOCKET s, LPWSAOVERLAPPED lpOverlapped, LPDWORD lpcbTransfer, BOOL fWait, LPDWORD lpdwFlags)
+{
+    WSAGetOverlappedResult_t orig =
+        g_origWSAGetOverlappedResult ? g_origWSAGetOverlappedResult :
+        (WSAGetOverlappedResult_t)g_wsaGetOverlappedResultDetour.target;
+    if (!orig) return FALSE;
+
+    BOOL ret = orig(s, lpOverlapped, lpcbTransfer, fWait, lpdwFlags);
+    const int wsaErr = ret ? 0 : WSAGetLastError();
+    const DWORD lastErr = GetLastError();
+    const DWORD bytes = (ret && lpcbTransfer) ? *lpcbTransfer : 0;
+
+    if (ret)
+    {
+        if (CompletePendingWSARecvFromPoll(lpOverlapped, bytes, "WSARecv-complete", true, true))
+        {
+            WriteLog(
+                "[Windower] WSARecv completion via WSAGetOverlappedResult s=%llu ov=%p bytes=%lu fWait=%d",
+                (unsigned long long)(uintptr_t)s, (void*)lpOverlapped, (unsigned long)bytes, (int)fWait);
+        }
+    }
+    else if (wsaErr != WSA_IO_INCOMPLETE)
+    {
+        if (CompletePendingWSARecvFromPoll(lpOverlapped, 0, "WSARecv-complete", false, true))
+        {
+            WriteLog(
+                "[Windower] WSARecv terminal error via WSAGetOverlappedResult s=%llu ov=%p err=%d fWait=%d",
+                (unsigned long long)(uintptr_t)s, (void*)lpOverlapped, wsaErr, (int)fWait);
+        }
+    }
+
+    if (!ret)
+        WSASetLastError(wsaErr);
+    SetLastError(lastErr);
+    return ret;
+}
+
+static BOOL WINAPI HookedGetQueuedCompletionStatus(
+    HANDLE CompletionPort, LPDWORD lpNumberOfBytesTransferred,
+    PULONG_PTR lpCompletionKey, LPOVERLAPPED* lpOverlapped, DWORD dwMilliseconds)
+{
+    GetQueuedCompletionStatus_t orig =
+        g_origGetQueuedCompletionStatus ? g_origGetQueuedCompletionStatus :
+        (GetQueuedCompletionStatus_t)g_getQueuedCompletionStatusDetour.target;
+    if (!orig) return FALSE;
+
+    BOOL ret = orig(CompletionPort, lpNumberOfBytesTransferred, lpCompletionKey, lpOverlapped, dwMilliseconds);
+    const DWORD lastErr = GetLastError();
+    LPOVERLAPPED completedOverlapped = lpOverlapped ? *lpOverlapped : nullptr;
+    const DWORD bytes = (ret && lpNumberOfBytesTransferred) ? *lpNumberOfBytesTransferred : 0;
+
+    if (completedOverlapped)
+    {
+        if (ret)
+        {
+            if (CompletePendingWSARecvFromPoll((LPWSAOVERLAPPED)completedOverlapped, bytes, "WSARecv-complete-iocp", true, true))
+            {
+                WriteLog(
+                    "[Windower] WSARecv completion via GetQueuedCompletionStatus port=%p ov=%p bytes=%lu",
+                    (void*)CompletionPort, (void*)completedOverlapped, (unsigned long)bytes);
+            }
+        }
+        else
+        {
+            if (CompletePendingWSARecvFromPoll((LPWSAOVERLAPPED)completedOverlapped, 0, "WSARecv-complete-iocp", false, true))
+            {
+                WriteLog(
+                    "[Windower] WSARecv terminal error via GetQueuedCompletionStatus port=%p ov=%p err=%lu",
+                    (void*)CompletionPort, (void*)completedOverlapped, (unsigned long)lastErr);
+            }
+        }
+    }
+
+    SetLastError(lastErr);
+    return ret;
+}
+
+static void CALLBACK HookedWSARecvCompletionRoutine(
+    DWORD dwError, DWORD cbTransferred, LPWSAOVERLAPPED lpOverlapped, DWORD dwFlags)
+{
+    const DWORD lastErr = GetLastError();
+    const int wsaErr = WSAGetLastError();
+
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE appRoutine =
+        CompletePendingWSARecvFromRoutine(lpOverlapped, dwError, cbTransferred);
+
+    if (dwError == 0)
+    {
+        WriteLog(
+            "[Windower] WSARecv completion via completion routine ov=%p bytes=%lu flags=0x%08lX appRoutine=%p",
+            (void*)lpOverlapped, (unsigned long)cbTransferred, (unsigned long)dwFlags, (void*)appRoutine);
+    }
+    else
+    {
+        WriteLog(
+            "[Windower] WSARecv terminal error via completion routine ov=%p err=%lu appRoutine=%p",
+            (void*)lpOverlapped, (unsigned long)dwError, (void*)appRoutine);
+    }
+
+    WSASetLastError(wsaErr);
+    SetLastError(lastErr);
+
+    if (appRoutine)
+        appRoutine(dwError, cbTransferred, lpOverlapped, dwFlags);
 }
 
 // ── 視窗化接管工具 ─────────────────────────────────────────────────────────────
