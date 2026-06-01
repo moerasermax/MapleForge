@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 封包擷取模式・離線解碼核心（純解碼、無 I/O、可單測）。重用 Adapters.V113 的 cipher，不進 server。
+       設計：docs/封包擷取模式-設計.md §4。北極星：協定知識留在 Adapters.V113，本工具只「使用」cipher。 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Maple.Adapters.V113\Maple.Adapters.V113.csproj" />
+    <ProjectReference Include="..\..\src\Maple.Versioning\Maple.Versioning.csproj" />
+  </ItemGroup>
+
+</Project>
