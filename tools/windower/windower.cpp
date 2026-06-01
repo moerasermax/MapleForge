@@ -64,6 +64,214 @@ static bool           g_createDeviceHooked = false;
 static bool           g_deviceVtableHooked = false;
 static volatile LONG  g_presentLoggedOnce = 0;
 static volatile LONG  g_resetLoggedOnce   = 0;
+static HWND           g_gameWindow         = nullptr;
+static UINT           g_backBufferWidth    = 800;
+static UINT           g_backBufferHeight   = 600;
+static D3DFORMAT      g_cachedDesktopFormat = D3DFMT_UNKNOWN;
+static bool           g_hasCachedDesktopFormat = false;
+
+enum { D3DADAPTER_DEFAULT_LOCAL = 0 };
+enum { D3DFMT_X8R8G8B8_LOCAL = 22 };
+
+typedef struct D3DDISPLAYMODE_LOCAL {
+    UINT Width;
+    UINT Height;
+    UINT RefreshRate;
+    D3DFORMAT Format;
+} D3DDISPLAYMODE_LOCAL;
+
+// ── 視窗化接管工具 ─────────────────────────────────────────────────────────────
+
+static HWND ResolveGameWindow(HWND ppWindow, HWND fallbackWindow, const char* tag)
+{
+    HWND hwnd = nullptr;
+    const char* source = "none";
+
+    if (ppWindow && IsWindow(ppWindow))
+    {
+        hwnd = ppWindow;
+        source = "pPP->hDeviceWindow";
+    }
+    else if (fallbackWindow && IsWindow(fallbackWindow))
+    {
+        hwnd = fallbackWindow;
+        source = "fallbackWindow";
+    }
+    else
+    {
+        HWND active = GetActiveWindow();
+        if (active && IsWindow(active))
+        {
+            hwnd = active;
+            source = "GetActiveWindow";
+        }
+    }
+
+    if (!hwnd)
+    {
+        WriteLog("[Windower] %s resolve HWND failed (no valid window)", tag);
+        return nullptr;
+    }
+
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (root && IsWindow(root))
+        hwnd = root;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid != GetCurrentProcessId())
+    {
+        WriteLog("[Windower] %s resolve HWND rejected (source=%s hwnd=%p pid=%lu current=%lu)",
+            tag, source, (void*)hwnd, (unsigned long)pid, (unsigned long)GetCurrentProcessId());
+        return nullptr;
+    }
+
+    WriteLog("[Windower] %s resolve HWND ok (source=%s hwnd=%p)", tag, source, (void*)hwnd);
+    return hwnd;
+}
+
+static void ForceWindowedPresentParams(D3DPRESENT_PARAMETERS* pPP, const char* tag)
+{
+    if (!pPP)
+    {
+        WriteLog("[Windower] %s no present params", tag);
+        return;
+    }
+
+    const BOOL oldWindowed = pPP->Windowed;
+    const UINT oldRefreshRate = pPP->FullScreen_RefreshRateInHz;
+    const UINT oldPresentInterval = pPP->FullScreen_PresentationInterval;
+    const UINT oldWidth = pPP->BackBufferWidth;
+    const UINT oldHeight = pPP->BackBufferHeight;
+
+    pPP->Windowed = TRUE;
+    pPP->FullScreen_RefreshRateInHz = 0;
+    pPP->FullScreen_PresentationInterval = 0; // D3DPRESENT_INTERVAL_DEFAULT
+
+    if (pPP->BackBufferWidth == 0) pPP->BackBufferWidth = g_backBufferWidth ? g_backBufferWidth : 800;
+    if (pPP->BackBufferHeight == 0) pPP->BackBufferHeight = g_backBufferHeight ? g_backBufferHeight : 600;
+
+    if (pPP->BackBufferWidth) g_backBufferWidth = pPP->BackBufferWidth;
+    if (pPP->BackBufferHeight) g_backBufferHeight = pPP->BackBufferHeight;
+
+    WriteLog(
+        "[Windower] %s force windowed: Windowed %d->%d, Refresh %u->%u, Interval %u->%u, BackBuffer %ux%u->%ux%u",
+        tag,
+        (int)oldWindowed, (int)pPP->Windowed,
+        (unsigned)oldRefreshRate, (unsigned)pPP->FullScreen_RefreshRateInHz,
+        (unsigned)oldPresentInterval, (unsigned)pPP->FullScreen_PresentationInterval,
+        (unsigned)oldWidth, (unsigned)oldHeight,
+        (unsigned)pPP->BackBufferWidth, (unsigned)pPP->BackBufferHeight);
+}
+
+static D3DFORMAT ResolveDesktopBackBufferFormat(IDirect3D8* pD3D, const char* tag)
+{
+    if (!pD3D || !pD3D->lpVtbl)
+    {
+        WriteLog("[Windower] %s GetAdapterDisplayMode skipped (invalid IDirect3D8), fallback to 0x%X",
+            tag, (unsigned)D3DFMT_X8R8G8B8_LOCAL);
+        return (D3DFORMAT)D3DFMT_X8R8G8B8_LOCAL;
+    }
+
+    typedef HRESULT(WINAPI* GetAdapterDisplayMode_t)(
+        IDirect3D8*,
+        UINT,
+        D3DDISPLAYMODE_LOCAL*);
+
+    GetAdapterDisplayMode_t fnGetAdapterDisplayMode =
+        (GetAdapterDisplayMode_t)pD3D->lpVtbl->GetAdapterDisplayMode;
+    if (!fnGetAdapterDisplayMode)
+    {
+        WriteLog("[Windower] %s GetAdapterDisplayMode pointer null, fallback to 0x%X",
+            tag, (unsigned)D3DFMT_X8R8G8B8_LOCAL);
+        return (D3DFORMAT)D3DFMT_X8R8G8B8_LOCAL;
+    }
+
+    D3DDISPLAYMODE_LOCAL dm = {};
+    HRESULT hr = fnGetAdapterDisplayMode(pD3D, D3DADAPTER_DEFAULT_LOCAL, &dm);
+    if (SUCCEEDED(hr))
+    {
+        WriteLog("[Windower] %s GetAdapterDisplayMode ok: %ux%u @%uHz format=0x%X",
+            tag, (unsigned)dm.Width, (unsigned)dm.Height, (unsigned)dm.RefreshRate, (unsigned)dm.Format);
+        return dm.Format;
+    }
+
+    WriteLog("[Windower] %s GetAdapterDisplayMode failed hr=0x%08lX, fallback to 0x%X",
+        tag, (unsigned long)hr, (unsigned)D3DFMT_X8R8G8B8_LOCAL);
+    return (D3DFORMAT)D3DFMT_X8R8G8B8_LOCAL;
+}
+
+static void ForceWindowedBackBufferFormat(D3DPRESENT_PARAMETERS* pPP, D3DFORMAT fmt, const char* tag)
+{
+    if (!pPP)
+    {
+        WriteLog("[Windower] %s skip BackBufferFormat override (no present params)", tag);
+        return;
+    }
+
+    const D3DFORMAT oldFmt = pPP->BackBufferFormat;
+    pPP->BackBufferFormat = fmt;
+    WriteLog("[Windower] %s BackBufferFormat 0x%X -> 0x%X",
+        tag, (unsigned)oldFmt, (unsigned)pPP->BackBufferFormat);
+}
+
+static void ApplyManagedWindowFrame(HWND hwnd, UINT backBufferWidth, UINT backBufferHeight, const char* tag)
+{
+    if (!hwnd || !IsWindow(hwnd))
+    {
+        WriteLog("[Windower] %s apply frame skipped (invalid hwnd=%p)", tag, (void*)hwnd);
+        return;
+    }
+
+    SetLastError(0);
+    LONG_PTR oldStyle = GetWindowLongPtr(hwnd, GWL_STYLE);
+    const DWORD styleErr = GetLastError();
+    if (oldStyle == 0 && styleErr != 0)
+    {
+        WriteLog("[Windower] %s GetWindowLongPtr failed hwnd=%p err=%lu", tag, (void*)hwnd, (unsigned long)styleErr);
+        return;
+    }
+
+    LONG_PTR newStyle = (oldStyle & ~((LONG_PTR)WS_POPUP)) | WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+    SetLastError(0);
+    if (!SetWindowLongPtr(hwnd, GWL_STYLE, newStyle))
+    {
+        const DWORD err = GetLastError();
+        if (err != 0)
+            WriteLog("[Windower] %s SetWindowLongPtr style failed hwnd=%p err=%lu", tag, (void*)hwnd, (unsigned long)err);
+    }
+
+    SetWindowTextA(hwnd, "MapleForge");
+
+    RECT frameRect = { 0, 0, (LONG)backBufferWidth, (LONG)backBufferHeight };
+    BOOL hasMenu = (GetMenu(hwnd) != nullptr);
+    if (!AdjustWindowRect(&frameRect, (DWORD)newStyle, hasMenu))
+    {
+        WriteLog("[Windower] %s AdjustWindowRect failed hwnd=%p err=%lu", tag, (void*)hwnd, (unsigned long)GetLastError());
+        return;
+    }
+
+    RECT oldRect = {};
+    if (!GetWindowRect(hwnd, &oldRect))
+    {
+        WriteLog("[Windower] %s GetWindowRect failed hwnd=%p err=%lu", tag, (void*)hwnd, (unsigned long)GetLastError());
+        return;
+    }
+
+    const int frameW = frameRect.right - frameRect.left;
+    const int frameH = frameRect.bottom - frameRect.top;
+
+    if (!SetWindowPos(
+            hwnd, nullptr, oldRect.left, oldRect.top, frameW, frameH,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED))
+    {
+        WriteLog("[Windower] %s SetWindowPos failed hwnd=%p err=%lu", tag, (void*)hwnd, (unsigned long)GetLastError());
+        return;
+    }
+
+    WriteLog("[Windower] %s apply frame ok hwnd=%p style 0x%08lX -> 0x%08lX size=%dx%d",
+        tag, (void*)hwnd, (unsigned long)oldStyle, (unsigned long)newStyle, frameW, frameH);
+}
 
 // ── Hook Device methods ──────────────────────────────────────────────────────
 
@@ -71,7 +279,39 @@ HRESULT WINAPI HookedReset(IDirect3DDevice8* pThis, D3DPRESENT_PARAMETERS* pPP)
 {
     if (InterlockedCompareExchange(&g_resetLoggedOnce, 1, 0) == 0)
         WriteLog("[Windower] IDirect3DDevice8::Reset first call");
-    return g_origReset ? g_origReset(pThis, pPP) : E_FAIL;
+
+    ForceWindowedPresentParams(pPP, "Reset(pre)");
+    if (g_hasCachedDesktopFormat)
+    {
+        ForceWindowedBackBufferFormat(pPP, g_cachedDesktopFormat, "Reset(pre)");
+    }
+    else
+    {
+        g_cachedDesktopFormat = (D3DFORMAT)D3DFMT_X8R8G8B8_LOCAL;
+        g_hasCachedDesktopFormat = true;
+        WriteLog("[Windower] Reset(pre) desktop format cache missing, fallback cache=0x%X",
+            (unsigned)g_cachedDesktopFormat);
+        ForceWindowedBackBufferFormat(pPP, g_cachedDesktopFormat, "Reset(pre)");
+    }
+
+    HWND hwnd = ResolveGameWindow(pPP ? pPP->hDeviceWindow : nullptr, g_gameWindow, "Reset(pre)");
+    if (hwnd)
+    {
+        g_gameWindow = hwnd;
+        if (pPP && !pPP->hDeviceWindow) pPP->hDeviceWindow = hwnd;
+        ApplyManagedWindowFrame(hwnd, g_backBufferWidth, g_backBufferHeight, "Reset(pre)");
+    }
+
+    if (!g_origReset)
+        return E_FAIL;
+
+    HRESULT hr = g_origReset(pThis, pPP);
+    WriteLog("[Windower] Reset returned hr=0x%08lX", (unsigned long)hr);
+
+    if (SUCCEEDED(hr) && g_gameWindow)
+        ApplyManagedWindowFrame(g_gameWindow, g_backBufferWidth, g_backBufferHeight, "Reset(post)");
+
+    return hr;
 }
 
 HRESULT WINAPI HookedPresent(
@@ -123,13 +363,16 @@ HRESULT WINAPI HookedCreateDevice(
 {
     WriteLog("[Windower] IDirect3D8::CreateDevice called");
 
-    if (pPP)
+    ForceWindowedPresentParams(pPP, "CreateDevice(pre)");
+    g_cachedDesktopFormat = ResolveDesktopBackBufferFormat(pThis, "CreateDevice(pre)");
+    g_hasCachedDesktopFormat = true;
+    ForceWindowedBackBufferFormat(pPP, g_cachedDesktopFormat, "CreateDevice(pre)");
+
+    HWND candidateHwnd = ResolveGameWindow(pPP ? pPP->hDeviceWindow : nullptr, hFocusWindow, "CreateDevice(pre)");
+    if (candidateHwnd && pPP && !pPP->hDeviceWindow)
     {
-        WriteLog("[Windower] CreateDevice: force Windowed=TRUE");
-        pPP->Windowed                   = TRUE;
-        pPP->FullScreen_RefreshRateInHz = 0;
-        if (pPP->BackBufferWidth  == 0) pPP->BackBufferWidth  = 800;
-        if (pPP->BackBufferHeight == 0) pPP->BackBufferHeight = 600;
+        pPP->hDeviceWindow = candidateHwnd;
+        WriteLog("[Windower] CreateDevice(pre) filled pPP->hDeviceWindow with %p", (void*)candidateHwnd);
     }
 
     if (!g_origCreateDevice)
@@ -145,7 +388,15 @@ HRESULT WINAPI HookedCreateDevice(
              (unsigned long)hr, (ppDevice ? (void*)(*ppDevice) : nullptr));
 
     if (SUCCEEDED(hr) && ppDevice && *ppDevice)
+    {
+        HWND hwnd = ResolveGameWindow(pPP ? pPP->hDeviceWindow : nullptr, hFocusWindow, "CreateDevice(post)");
+        if (hwnd)
+        {
+            g_gameWindow = hwnd;
+            ApplyManagedWindowFrame(hwnd, g_backBufferWidth, g_backBufferHeight, "CreateDevice(post)");
+        }
         HookDeviceVtable(*ppDevice);
+    }
 
     return hr;
 }
