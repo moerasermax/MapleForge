@@ -26,4 +26,10 @@ public sealed class Account
 
     /// <summary>封鎖原因；未封鎖時為空字串。</summary>
     public string BanReason { get; set; } = string.Empty;
+
+    /// <summary>帳號性別（10=未設定；0=男；1=女）。對照 Java：gender==10 代表新帳號尚未完成性別選擇流程。</summary>
+    public byte Gender { get; set; } = 10;
+
+    /// <summary>第二密碼（PIN）。null=尚未設定；新帳號需在 CHOOSE_GENDER 流程中設定。</summary>
+    public string? SecondPassword { get; set; }
 }

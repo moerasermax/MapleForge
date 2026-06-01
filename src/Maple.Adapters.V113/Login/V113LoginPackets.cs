@@ -36,15 +36,37 @@ internal static class V113LoginPackets
             .ToArray();
 
     /// <summary>
+    /// getGenderNeeded (CHOOSE_GENDER 0x14)：性別未設定時送出，要求客戶端進入性別選擇+設 PIN 流程。
+    /// 對照 Java：<c>LoginPacket.getGenderNeeded</c> = [opcode][MapleAsciiString accountName]。
+    /// </summary>
+    public static byte[] ChooseGender(string accountName)
+        => new PacketWriter(32)
+            .WriteShort(V113SendOp.ChooseGender)
+            .WriteMapleString(accountName)
+            .ToArray();
+
+    /// <summary>
+    /// getGenderChanged (GENDER_SET 0x15)：c2s SET_GENDER 處理完成後送出確認。
+    /// 對照 Java：<c>LoginPacket.getGenderChanged</c> = [opcode][MapleAsciiString accountName]。
+    /// 客戶端收到後返回登入畫面重新送 LOGIN_PASSWORD；此次 gate 已通過 → AuthSuccess。
+    /// </summary>
+    public static byte[] GenderSet(string accountName)
+        => new PacketWriter(32)
+            .WriteShort(V113SendOp.GenderSet)
+            .WriteMapleString(accountName)
+            .ToArray();
+
+    /// <summary>
     /// getAuthSuccess（登入成功）：對照舊 <c>LoginPacket.getAuthSuccessRequest</c>。
     /// 送出後客戶端離開登入畫面、進入選伺服器流程。
+    /// gender：0=男，1=女（帳號層級，非角色層級）。
     /// </summary>
-    public static byte[] AuthSuccess(int accountId, string accountName, bool isGm = false)
+    public static byte[] AuthSuccess(int accountId, string accountName, byte gender = 0, bool isGm = false)
         => new PacketWriter(32)
             .WriteShort(V113SendOp.LoginStatus)
             .WriteByte(0)                  // type（0=成功）
             .WriteInt(accountId)
-            .WriteByte(0)                  // gender（0=男；尚未設定可後續處理）
+            .WriteByte(gender)             // 帳號性別（對照 Java client.getGender()）
             .WriteByte(isGm ? 1 : 0)       // admin byte
             .WriteByte(0)
             .WriteInt(0)

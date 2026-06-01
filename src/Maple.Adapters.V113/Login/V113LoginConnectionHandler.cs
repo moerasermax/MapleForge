@@ -1,6 +1,7 @@
 using Maple.Adapters.V113.Crypto;
 using Maple.Application.Accounts;
 using Maple.Application.Characters;
+using Maple.Core.Accounts;
 using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Net;
@@ -97,6 +98,10 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
                 await HandleCharSelectAsync(reader, session, ctx, ct);
                 break;
 
+            case V113RecvOp.SetGender:
+                await HandleSetGenderAsync(reader, session, ctx, ct);
+                break;
+
             case V113RecvOp.Pong:
                 break;
 
@@ -128,13 +133,25 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
         switch (result.Status)
         {
             case AuthStatus.Success:
-                ctx.AccountId   = result.Account!.Id;
-                ctx.AccountName = result.Account.AccountName;
-                ctx.Gender      = 0; // gender 尚未收集，預設男；M2-5+ 再擴充
-                _log.LogInformation("[v113] ✓ 登入成功 account='{Account}' (id={Id}) {Remote}",
-                    account, ctx.AccountId, session.Remote);
-                await session.SendAsync(
-                    V113LoginPackets.AuthSuccess(ctx.AccountId, ctx.AccountName), ct);
+                var acc = result.Account!;
+                // v113 authentic gate：性別未設(10) 或 第二密碼未設(null) → 先送 CHOOSE_GENDER
+                if (acc.Gender == 10 || acc.SecondPassword == null)
+                {
+                    ctx.PendingAccount = acc;
+                    _log.LogInformation("[v113] → CHOOSE_GENDER account='{Account}' {Remote}",
+                        acc.AccountName, session.Remote);
+                    await session.SendAsync(V113LoginPackets.ChooseGender(acc.AccountName), ct);
+                }
+                else
+                {
+                    ctx.AccountId   = acc.Id;
+                    ctx.AccountName = acc.AccountName;
+                    ctx.Gender      = acc.Gender;
+                    _log.LogInformation("[v113] ✓ 登入成功 account='{Account}' (id={Id}) {Remote}",
+                        acc.AccountName, acc.Id, session.Remote);
+                    await session.SendAsync(
+                        V113LoginPackets.AuthSuccess(ctx.AccountId, ctx.AccountName, ctx.Gender), ct);
+                }
                 break;
 
             case AuthStatus.AccountBanned:
@@ -148,6 +165,47 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
                 await session.SendAsync(V113LoginPackets.LoginFailed(4), ct);
                 break;
         }
+    }
+
+    private async Task HandleSetGenderAsync(PacketReader reader, MapleSession session, LoginContext ctx, CancellationToken ct)
+    {
+        string username, secondPassword;
+        byte gender;
+        try
+        {
+            username       = reader.ReadMapleString();
+            secondPassword = reader.ReadMapleString();
+            gender         = reader.ReadByte();
+        }
+        catch (InvalidDataException)
+        {
+            _log.LogWarning("[v113] SET_GENDER 格式異常 {Remote}", session.Remote);
+            return;
+        }
+
+        // 只接受合法性別值（對照 Java：> 1 或 < 0 直接 close session）
+        if (gender > 1)
+        {
+            _log.LogWarning("[v113] SET_GENDER 無效性別 gender={G}，忽略 {Remote}", gender, session.Remote);
+            return;
+        }
+
+        var pending = ctx.PendingAccount;
+        var normalizedUsername = username.Trim().ToLowerInvariant();
+        if (pending == null || !pending.AccountName.Equals(normalizedUsername, StringComparison.Ordinal))
+        {
+            _log.LogWarning("[v113] SET_GENDER 無待設定帳號或帳號不符 {Remote}", session.Remote);
+            return;
+        }
+
+        await _auth.SetGenderAndPinAsync(pending, gender, secondPassword, ct);
+        ctx.PendingAccount = null;
+
+        _log.LogInformation("[v113] SET_GENDER 完成 account='{Account}' gender={G} {Remote}",
+            pending.AccountName, gender, session.Remote);
+        await session.SendAsync(V113LoginPackets.GenderSet(pending.AccountName), ct);
+        // 對照 Java LOGIN_NOTLOGGEDIN：客戶端收到 GENDER_SET 後重新送 LOGIN_PASSWORD；
+        // 此時 account.Gender ≠ 10 且 SecondPassword ≠ null → gate 通過 → AuthSuccess。
     }
 
     private async Task HandleServerlistRequestAsync(MapleSession session, LoginContext ctx, CancellationToken ct)
@@ -266,6 +324,12 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
         public string AccountName { get; set; } = "";
         public byte Gender { get; set; }
         public int SelectedChannel { get; set; } = 1;
+
+        /// <summary>
+        /// 送出 CHOOSE_GENDER 後暫存帳號物件，等待 SET_GENDER 完成。
+        /// 非 null 表示帳號驗證通過但正在等待性別/PIN 設定。
+        /// </summary>
+        public Account? PendingAccount { get; set; }
 
         public bool IsLoggedIn => AccountId > 0;
     }

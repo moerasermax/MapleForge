@@ -41,6 +41,9 @@ public class LoginPipelineIntegrationTests
             if (_byName.ContainsKey(account.AccountName))
                 return Task.FromResult(false);
             account.Id = _nextId++;
+            // pipeline 整合測試不測 gender 流程：autoRegister 建帳時直接標為已設定，
+            // 避免 CHOOSE_GENDER gate 干擾其他測試的登入路徑。
+            if (account.Gender == 10) { account.Gender = 0; account.SecondPassword = "pin"; }
             _byName[account.AccountName] = account;
             return Task.FromResult(true);
         }

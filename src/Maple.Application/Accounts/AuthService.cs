@@ -74,4 +74,19 @@ public sealed class AuthService
 
         return new AuthResult(AuthStatus.Success, account);
     }
+
+    /// <summary>
+    /// 性別選擇流程完成後，將帳號的性別與第二密碼（PIN）寫入持久層。
+    /// 由 v113 SET_GENDER handler 在驗證完 c2s 封包後呼叫。
+    /// </summary>
+    public async Task SetGenderAndPinAsync(
+        Account account,
+        byte gender,
+        string secondPassword,
+        CancellationToken cancellationToken = default)
+    {
+        account.Gender = gender;
+        account.SecondPassword = secondPassword;
+        await _accounts.UpdateAsync(account, cancellationToken);
+    }
 }
