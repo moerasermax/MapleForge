@@ -16,9 +16,11 @@
     <Project Path="tests/Maple.Application.Tests/Maple.Application.Tests.csproj" />
     <Project Path="tests/Maple.Content.Tests/Maple.Content.Tests.csproj" />
     <Project Path="tests/Maple.Tools.PacketDecoder.Tests/Maple.Tools.PacketDecoder.Tests.csproj" />
+    <Project Path="tests/Maple.Tools.HeadlessClient.Tests/Maple.Tools.HeadlessClient.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/MapleForge.Analyzers/MapleForge.Analyzers.csproj" />
     <Project Path="tools/Maple.Tools.PacketDecoder/Maple.Tools.PacketDecoder.csproj" />
+    <Project Path="tools/Maple.Tools.HeadlessClient/Maple.Tools.HeadlessClient.csproj" />
   </Folder>
 </Solution>
