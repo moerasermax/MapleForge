@@ -77,6 +77,14 @@ typedef BOOL (WSAAPI* WSAGetOverlappedResult_t)(
     SOCKET, LPWSAOVERLAPPED, LPDWORD, BOOL, LPDWORD);
 typedef BOOL (WINAPI* GetQueuedCompletionStatus_t)(
     HANDLE, LPDWORD, PULONG_PTR, LPOVERLAPPED*, DWORD);
+typedef HRESULT (WINAPI* DirectInput8Create_t)(HINSTANCE, DWORD, REFIID, LPVOID*, void*);
+typedef HRESULT (WINAPI* DirectInputCreateA_t)(HINSTANCE, DWORD, void**, void*);
+typedef HRESULT (WINAPI* DirectInputCreateW_t)(HINSTANCE, DWORD, void**, void*);
+typedef HRESULT (WINAPI* DI8CreateDevice_t)(void*, REFGUID, void**, void*);
+typedef HRESULT (WINAPI* DIGetDeviceState_t)(void*, DWORD, LPVOID);
+typedef HRESULT (WINAPI* DIGetDeviceData_t)(void*, DWORD, void*, LPDWORD, DWORD);
+typedef SHORT (WINAPI* GetAsyncKeyState_t)(int);
+typedef BOOL (WINAPI* GetKeyboardState_t)(PBYTE);
 
 typedef struct InlineDetour {
     const char* name;
@@ -112,6 +120,20 @@ typedef struct PendingRecvOp {
     struct PendingRecvOp* next;
 } PendingRecvOp;
 
+typedef struct KbdInjectKey {
+    BYTE dik;
+    BYTE vk;
+    bool shift;
+} KbdInjectKey;
+
+typedef struct DIDEVICEOBJECTDATA_LOCAL {
+    DWORD dwOfs;
+    DWORD dwData;
+    DWORD dwTimeStamp;
+    DWORD dwSequence;
+    ULONG_PTR uAppData;
+} DIDEVICEOBJECTDATA_LOCAL;
+
 static int WSAAPI HookedSend(SOCKET s, const char* buf, int len, int flags);
 static int WSAAPI HookedRecv(SOCKET s, char* buf, int len, int flags);
 static int WSAAPI HookedWSASend(
@@ -127,6 +149,14 @@ static BOOL WINAPI HookedGetQueuedCompletionStatus(
     PULONG_PTR lpCompletionKey, LPOVERLAPPED* lpOverlapped, DWORD dwMilliseconds);
 static void CALLBACK HookedWSARecvCompletionRoutine(
     DWORD dwError, DWORD cbTransferred, LPWSAOVERLAPPED lpOverlapped, DWORD dwFlags);
+static HRESULT WINAPI HookedDirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, void* punkOuter);
+static HRESULT WINAPI HookedDirectInputCreateA(HINSTANCE hinst, DWORD dwVersion, void** ppvOut, void* punkOuter);
+static HRESULT WINAPI HookedDirectInputCreateW(HINSTANCE hinst, DWORD dwVersion, void** ppvOut, void* punkOuter);
+static HRESULT WINAPI HookedDI8CreateDevice(void* self, REFGUID rguid, void** deviceOut, void* punkOuter);
+static HRESULT WINAPI HookedDIGetDeviceState(void* self, DWORD cbData, LPVOID lpvData);
+static HRESULT WINAPI HookedDIGetDeviceData(void* self, DWORD cbObjectData, void* rgdod, LPDWORD pdwInOut, DWORD dwFlags);
+static SHORT WINAPI HookedGetAsyncKeyState(int vKey);
+static BOOL WINAPI HookedGetKeyboardState(PBYTE lpKeyState);
 
 // ── 全域狀態 ─────────────────────────────────────────────────────────────────
 
@@ -144,6 +174,14 @@ static WSASend_t      g_origWSASend = nullptr;
 static WSARecv_t      g_origWSARecv = nullptr;
 static WSAGetOverlappedResult_t g_origWSAGetOverlappedResult = nullptr;
 static GetQueuedCompletionStatus_t g_origGetQueuedCompletionStatus = nullptr;
+static DirectInput8Create_t g_origDirectInput8Create = nullptr;
+static DirectInputCreateA_t g_origDirectInputCreateA = nullptr;
+static DirectInputCreateW_t g_origDirectInputCreateW = nullptr;
+static DI8CreateDevice_t g_origDI8CreateDevice = nullptr;
+static DIGetDeviceState_t g_origDIGetDeviceState = nullptr;
+static DIGetDeviceData_t g_origDIGetDeviceData = nullptr;
+static GetAsyncKeyState_t g_origGetAsyncKeyState = nullptr;
+static GetKeyboardState_t g_origGetKeyboardState = nullptr;
 
 static InlineDetour   g_sendDetour = { "send", nullptr, (void*)HookedSend, {}, nullptr, false };
 static InlineDetour   g_recvDetour = { "recv", nullptr, (void*)HookedRecv, {}, nullptr, false };
@@ -151,6 +189,11 @@ static InlineDetour   g_wsaSendDetour = { "WSASend", nullptr, (void*)HookedWSASe
 static InlineDetour   g_wsaRecvDetour = { "WSARecv", nullptr, (void*)HookedWSARecv, {}, nullptr, false };
 static InlineDetour   g_wsaGetOverlappedResultDetour = { "WSAGetOverlappedResult", nullptr, (void*)HookedWSAGetOverlappedResult, {}, nullptr, false };
 static InlineDetour   g_getQueuedCompletionStatusDetour = { "GetQueuedCompletionStatus", nullptr, (void*)HookedGetQueuedCompletionStatus, {}, nullptr, false };
+static InlineDetour   g_directInput8CreateDetour = { "DirectInput8Create", nullptr, (void*)HookedDirectInput8Create, {}, nullptr, false };
+static InlineDetour   g_directInputCreateADetour = { "DirectInputCreateA", nullptr, (void*)HookedDirectInputCreateA, {}, nullptr, false };
+static InlineDetour   g_directInputCreateWDetour = { "DirectInputCreateW", nullptr, (void*)HookedDirectInputCreateW, {}, nullptr, false };
+static InlineDetour   g_getAsyncKeyStateDetour = { "GetAsyncKeyState", nullptr, (void*)HookedGetAsyncKeyState, {}, nullptr, false };
+static InlineDetour   g_getKeyboardStateDetour = { "GetKeyboardState", nullptr, (void*)HookedGetKeyboardState, {}, nullptr, false };
 
 static HHOOK          g_hHook            = nullptr;
 static HINSTANCE      g_hInst            = nullptr;
@@ -160,6 +203,10 @@ static bool           g_deviceVtableHooked = false;
 static bool           g_ws2HooksAttempted = false;
 static bool           g_ws2HooksSkippedByEnv = false;
 static bool           g_d3d8HookSkippedByEnv = false;
+static bool           g_keyboardHooksAttempted = false;
+static bool           g_keyboardDetectionLogged = false;
+static bool           g_di8CreateDeviceHooked = false;
+static bool           g_diKeyboardDeviceHooked = false;
 static volatile LONG  g_presentLoggedOnce = 0;
 static volatile LONG  g_resetLoggedOnce   = 0;
 static HWND           g_gameWindow         = nullptr;
@@ -169,8 +216,21 @@ static D3DFORMAT      g_cachedDesktopFormat = D3DFMT_UNKNOWN;
 static bool           g_hasCachedDesktopFormat = false;
 static CRITICAL_SECTION g_packetLock = {};
 static bool           g_packetLockReady = false;
+static CRITICAL_SECTION g_keyboardLock = {};
+static bool           g_keyboardLockReady = false;
 static PacketSession* g_packetSessions = nullptr;
 static PendingRecvOp* g_pendingRecvOps = nullptr;
+static char           g_keyboardFileA[MAX_PATH] = {};
+static bool           g_keyboardFileReady = false;
+static bool           g_keyboardFileMissingLogged = false;
+static ULONGLONG      g_keyboardLastFilePoll = 0;
+static KbdInjectKey   g_keyboardQueue[1024] = {};
+static DWORD          g_keyboardQueueCount = 0;
+static DWORD          g_keyboardQueueIndex = 0;
+static int            g_keyboardPhase = 0;
+static int            g_keyboardPhaseTicks = 0;
+static DWORD          g_keyboardSequence = 1;
+static ULONGLONG      g_keyboardLastAsyncAdvance = 0;
 
 enum { D3DADAPTER_DEFAULT_LOCAL = 0 };
 enum { D3DFMT_X8R8G8B8_LOCAL = 22 };
@@ -1706,6 +1766,697 @@ static void CALLBACK HookedWSARecvCompletionRoutine(
         appRoutine(dwError, cbTransferred, lpOverlapped, dwFlags);
 }
 
+// ── Keyboard injection / DirectInput instrumentation ─────────────────────────
+
+enum
+{
+    DIK_ESCAPE_LOCAL = 0x01,
+    DIK_1_LOCAL = 0x02,
+    DIK_2_LOCAL = 0x03,
+    DIK_3_LOCAL = 0x04,
+    DIK_4_LOCAL = 0x05,
+    DIK_5_LOCAL = 0x06,
+    DIK_6_LOCAL = 0x07,
+    DIK_7_LOCAL = 0x08,
+    DIK_8_LOCAL = 0x09,
+    DIK_9_LOCAL = 0x0A,
+    DIK_0_LOCAL = 0x0B,
+    DIK_MINUS_LOCAL = 0x0C,
+    DIK_EQUALS_LOCAL = 0x0D,
+    DIK_BACK_LOCAL = 0x0E,
+    DIK_TAB_LOCAL = 0x0F,
+    DIK_Q_LOCAL = 0x10,
+    DIK_W_LOCAL = 0x11,
+    DIK_E_LOCAL = 0x12,
+    DIK_R_LOCAL = 0x13,
+    DIK_T_LOCAL = 0x14,
+    DIK_Y_LOCAL = 0x15,
+    DIK_U_LOCAL = 0x16,
+    DIK_I_LOCAL = 0x17,
+    DIK_O_LOCAL = 0x18,
+    DIK_P_LOCAL = 0x19,
+    DIK_LBRACKET_LOCAL = 0x1A,
+    DIK_RBRACKET_LOCAL = 0x1B,
+    DIK_RETURN_LOCAL = 0x1C,
+    DIK_A_LOCAL = 0x1E,
+    DIK_S_LOCAL = 0x1F,
+    DIK_D_LOCAL = 0x20,
+    DIK_F_LOCAL = 0x21,
+    DIK_G_LOCAL = 0x22,
+    DIK_H_LOCAL = 0x23,
+    DIK_J_LOCAL = 0x24,
+    DIK_K_LOCAL = 0x25,
+    DIK_L_LOCAL = 0x26,
+    DIK_SEMICOLON_LOCAL = 0x27,
+    DIK_APOSTROPHE_LOCAL = 0x28,
+    DIK_GRAVE_LOCAL = 0x29,
+    DIK_LSHIFT_LOCAL = 0x2A,
+    DIK_BACKSLASH_LOCAL = 0x2B,
+    DIK_Z_LOCAL = 0x2C,
+    DIK_X_LOCAL = 0x2D,
+    DIK_C_LOCAL = 0x2E,
+    DIK_V_LOCAL = 0x2F,
+    DIK_B_LOCAL = 0x30,
+    DIK_N_LOCAL = 0x31,
+    DIK_M_LOCAL = 0x32,
+    DIK_COMMA_LOCAL = 0x33,
+    DIK_PERIOD_LOCAL = 0x34,
+    DIK_SLASH_LOCAL = 0x35,
+    DIK_SPACE_LOCAL = 0x39,
+    KBD_DOWN_POLLS = 4,
+    KBD_UP_POLLS = 2
+};
+
+static const GUID GUID_SysKeyboard_Local =
+    { 0x6F1D2B61, 0xD5A0, 0x11CF, { 0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00 } };
+
+static bool IsKeyboardInjectEnabled()
+{
+    return IsEnvFlagOne("MAPLEFORGE_WINDOWER_KBD_INJECT");
+}
+
+static bool GuidEquals(REFGUID a, REFGUID b)
+{
+    return memcmp(&a, &b, sizeof(GUID)) == 0;
+}
+
+static void* RvaToPtr(BYTE* base, DWORD rva)
+{
+    return rva ? (void*)(base + rva) : nullptr;
+}
+
+static bool ExeImports(const char* moduleName, const char* functionName)
+{
+    HMODULE hExe = GetModuleHandleA(nullptr);
+    if (!hExe || !moduleName)
+        return false;
+
+    BYTE* base = (BYTE*)hExe;
+    IMAGE_DOS_HEADER* dos = (IMAGE_DOS_HEADER*)base;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+        return false;
+
+    IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE)
+        return false;
+
+    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress)
+        return false;
+
+    IMAGE_IMPORT_DESCRIPTOR* desc = (IMAGE_IMPORT_DESCRIPTOR*)RvaToPtr(base, dir.VirtualAddress);
+    for (; desc && desc->Name; ++desc)
+    {
+        const char* dllName = (const char*)RvaToPtr(base, desc->Name);
+        if (!dllName || _stricmp(dllName, moduleName) != 0)
+            continue;
+
+        if (!functionName)
+            return true;
+
+        DWORD thunkRva = desc->OriginalFirstThunk ? desc->OriginalFirstThunk : desc->FirstThunk;
+        IMAGE_THUNK_DATA* thunk = (IMAGE_THUNK_DATA*)RvaToPtr(base, thunkRva);
+        for (; thunk && thunk->u1.AddressOfData; ++thunk)
+        {
+            if (IMAGE_SNAP_BY_ORDINAL(thunk->u1.Ordinal))
+                continue;
+
+            IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)RvaToPtr(base, (DWORD)thunk->u1.AddressOfData);
+            if (byName && _stricmp((const char*)byName->Name, functionName) == 0)
+                return true;
+        }
+    }
+
+    return false;
+}
+
+static void LogKeyboardApiDetection()
+{
+    if (g_keyboardDetectionLogged)
+        return;
+    g_keyboardDetectionLogged = true;
+
+    const bool dinput8Loaded = (GetModuleHandleA("dinput8.dll") != nullptr);
+    const bool dinputLoaded = (GetModuleHandleA("dinput.dll") != nullptr);
+    const bool user32Loaded = (GetModuleHandleA("user32.dll") != nullptr);
+
+    const bool importsDinput8 = ExeImports("dinput8.dll", nullptr);
+    const bool importsDinput8Create = ExeImports("dinput8.dll", "DirectInput8Create");
+    const bool importsDinput = ExeImports("dinput.dll", nullptr);
+    const bool importsDirectInputCreateA = ExeImports("dinput.dll", "DirectInputCreateA");
+    const bool importsDirectInputCreateW = ExeImports("dinput.dll", "DirectInputCreateW");
+    const bool importsGetAsync = ExeImports("user32.dll", "GetAsyncKeyState");
+    const bool importsGetKeyboardState = ExeImports("user32.dll", "GetKeyboardState");
+    const bool importsRegisterRaw = ExeImports("user32.dll", "RegisterRawInputDevices");
+    const bool importsGetRawInputData = ExeImports("user32.dll", "GetRawInputData");
+
+    WriteLog(
+        "[Windower] keyboard API detection modules dinput8=%d dinput=%d user32=%d imports dinput8=%d DirectInput8Create=%d dinput=%d DirectInputCreateA=%d DirectInputCreateW=%d GetAsyncKeyState=%d GetKeyboardState=%d RegisterRawInputDevices=%d GetRawInputData=%d",
+        dinput8Loaded ? 1 : 0,
+        dinputLoaded ? 1 : 0,
+        user32Loaded ? 1 : 0,
+        importsDinput8 ? 1 : 0,
+        importsDinput8Create ? 1 : 0,
+        importsDinput ? 1 : 0,
+        importsDirectInputCreateA ? 1 : 0,
+        importsDirectInputCreateW ? 1 : 0,
+        importsGetAsync ? 1 : 0,
+        importsGetKeyboardState ? 1 : 0,
+        importsRegisterRaw ? 1 : 0,
+        importsGetRawInputData ? 1 : 0);
+}
+
+static bool ResolveKeyboardFilePath()
+{
+    if (g_keyboardFileReady)
+        return true;
+
+    DWORD n = GetEnvironmentVariableA("MAPLEFORGE_WINDOWER_KBD_FILE", g_keyboardFileA, (DWORD)_countof(g_keyboardFileA));
+    if (n > 0 && n < _countof(g_keyboardFileA))
+    {
+        g_keyboardFileReady = true;
+        WriteLog("[Windower] keyboard injection file=%s", g_keyboardFileA);
+        return true;
+    }
+
+    if (!g_keyboardFileMissingLogged)
+    {
+        g_keyboardFileMissingLogged = true;
+        WriteLog("[Windower] keyboard injection enabled but MAPLEFORGE_WINDOWER_KBD_FILE is not set");
+    }
+    return false;
+}
+
+static bool MapCharToKey(char ch, KbdInjectKey* out)
+{
+    if (!out)
+        return false;
+
+    memset(out, 0, sizeof(*out));
+
+    if (ch >= 'a' && ch <= 'z')
+    {
+        static const BYTE kLetterDik[26] = {
+            DIK_A_LOCAL, DIK_B_LOCAL, DIK_C_LOCAL, DIK_D_LOCAL, DIK_E_LOCAL, DIK_F_LOCAL,
+            DIK_G_LOCAL, DIK_H_LOCAL, DIK_I_LOCAL, DIK_J_LOCAL, DIK_K_LOCAL, DIK_L_LOCAL,
+            DIK_M_LOCAL, DIK_N_LOCAL, DIK_O_LOCAL, DIK_P_LOCAL, DIK_Q_LOCAL, DIK_R_LOCAL,
+            DIK_S_LOCAL, DIK_T_LOCAL, DIK_U_LOCAL, DIK_V_LOCAL, DIK_W_LOCAL, DIK_X_LOCAL,
+            DIK_Y_LOCAL, DIK_Z_LOCAL
+        };
+        out->dik = kLetterDik[ch - 'a'];
+        out->vk = (BYTE)('A' + (ch - 'a'));
+        return true;
+    }
+
+    if (ch >= 'A' && ch <= 'Z')
+    {
+        static const BYTE kLetterDik[26] = {
+            DIK_A_LOCAL, DIK_B_LOCAL, DIK_C_LOCAL, DIK_D_LOCAL, DIK_E_LOCAL, DIK_F_LOCAL,
+            DIK_G_LOCAL, DIK_H_LOCAL, DIK_I_LOCAL, DIK_J_LOCAL, DIK_K_LOCAL, DIK_L_LOCAL,
+            DIK_M_LOCAL, DIK_N_LOCAL, DIK_O_LOCAL, DIK_P_LOCAL, DIK_Q_LOCAL, DIK_R_LOCAL,
+            DIK_S_LOCAL, DIK_T_LOCAL, DIK_U_LOCAL, DIK_V_LOCAL, DIK_W_LOCAL, DIK_X_LOCAL,
+            DIK_Y_LOCAL, DIK_Z_LOCAL
+        };
+        out->dik = kLetterDik[ch - 'A'];
+        out->vk = (BYTE)ch;
+        out->shift = true;
+        return true;
+    }
+
+    if (ch >= '1' && ch <= '9')
+    {
+        out->dik = (BYTE)(DIK_1_LOCAL + (ch - '1'));
+        out->vk = (BYTE)ch;
+        return true;
+    }
+
+    if (ch == '0')
+    {
+        out->dik = DIK_0_LOCAL;
+        out->vk = '0';
+        return true;
+    }
+
+    switch (ch)
+    {
+        case '\n': case '\r': out->dik = DIK_RETURN_LOCAL; out->vk = VK_RETURN; return true;
+        case '\t': out->dik = DIK_TAB_LOCAL; out->vk = VK_TAB; return true;
+        case '\b': out->dik = DIK_BACK_LOCAL; out->vk = VK_BACK; return true;
+        case ' ': out->dik = DIK_SPACE_LOCAL; out->vk = VK_SPACE; return true;
+
+        case '-': out->dik = DIK_MINUS_LOCAL; out->vk = VK_OEM_MINUS; return true;
+        case '_': out->dik = DIK_MINUS_LOCAL; out->vk = VK_OEM_MINUS; out->shift = true; return true;
+        case '=': out->dik = DIK_EQUALS_LOCAL; out->vk = VK_OEM_PLUS; return true;
+        case '+': out->dik = DIK_EQUALS_LOCAL; out->vk = VK_OEM_PLUS; out->shift = true; return true;
+        case '[': out->dik = DIK_LBRACKET_LOCAL; out->vk = VK_OEM_4; return true;
+        case '{': out->dik = DIK_LBRACKET_LOCAL; out->vk = VK_OEM_4; out->shift = true; return true;
+        case ']': out->dik = DIK_RBRACKET_LOCAL; out->vk = VK_OEM_6; return true;
+        case '}': out->dik = DIK_RBRACKET_LOCAL; out->vk = VK_OEM_6; out->shift = true; return true;
+        case ';': out->dik = DIK_SEMICOLON_LOCAL; out->vk = VK_OEM_1; return true;
+        case ':': out->dik = DIK_SEMICOLON_LOCAL; out->vk = VK_OEM_1; out->shift = true; return true;
+        case '\'': out->dik = DIK_APOSTROPHE_LOCAL; out->vk = VK_OEM_7; return true;
+        case '"': out->dik = DIK_APOSTROPHE_LOCAL; out->vk = VK_OEM_7; out->shift = true; return true;
+        case '`': out->dik = DIK_GRAVE_LOCAL; out->vk = VK_OEM_3; return true;
+        case '~': out->dik = DIK_GRAVE_LOCAL; out->vk = VK_OEM_3; out->shift = true; return true;
+        case '\\': out->dik = DIK_BACKSLASH_LOCAL; out->vk = VK_OEM_5; return true;
+        case '|': out->dik = DIK_BACKSLASH_LOCAL; out->vk = VK_OEM_5; out->shift = true; return true;
+        case ',': out->dik = DIK_COMMA_LOCAL; out->vk = VK_OEM_COMMA; return true;
+        case '<': out->dik = DIK_COMMA_LOCAL; out->vk = VK_OEM_COMMA; out->shift = true; return true;
+        case '.': out->dik = DIK_PERIOD_LOCAL; out->vk = VK_OEM_PERIOD; return true;
+        case '>': out->dik = DIK_PERIOD_LOCAL; out->vk = VK_OEM_PERIOD; out->shift = true; return true;
+        case '/': out->dik = DIK_SLASH_LOCAL; out->vk = VK_OEM_2; return true;
+        case '?': out->dik = DIK_SLASH_LOCAL; out->vk = VK_OEM_2; out->shift = true; return true;
+
+        case '!': out->dik = DIK_1_LOCAL; out->vk = '1'; out->shift = true; return true;
+        case '@': out->dik = DIK_2_LOCAL; out->vk = '2'; out->shift = true; return true;
+        case '#': out->dik = DIK_3_LOCAL; out->vk = '3'; out->shift = true; return true;
+        case '$': out->dik = DIK_4_LOCAL; out->vk = '4'; out->shift = true; return true;
+        case '%': out->dik = DIK_5_LOCAL; out->vk = '5'; out->shift = true; return true;
+        case '^': out->dik = DIK_6_LOCAL; out->vk = '6'; out->shift = true; return true;
+        case '&': out->dik = DIK_7_LOCAL; out->vk = '7'; out->shift = true; return true;
+        case '*': out->dik = DIK_8_LOCAL; out->vk = '8'; out->shift = true; return true;
+        case '(': out->dik = DIK_9_LOCAL; out->vk = '9'; out->shift = true; return true;
+        case ')': out->dik = DIK_0_LOCAL; out->vk = '0'; out->shift = true; return true;
+    }
+
+    return false;
+}
+
+static void ClearKeyboardInjectionFileLocked()
+{
+    if (!g_keyboardFileReady || !g_keyboardFileA[0])
+        return;
+
+    HANDLE h = CreateFileA(
+        g_keyboardFileA, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+}
+
+static void LoadKeyboardInjectionFileLocked()
+{
+    if (g_keyboardQueueIndex < g_keyboardQueueCount)
+        return;
+
+    ULONGLONG now = GetTickCount64();
+    if (now - g_keyboardLastFilePoll < 50)
+        return;
+    g_keyboardLastFilePoll = now;
+
+    if (!ResolveKeyboardFilePath())
+        return;
+
+    HANDLE h = CreateFileA(
+        g_keyboardFileA, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+
+    DWORD size = GetFileSize(h, nullptr);
+    if (size == INVALID_FILE_SIZE || size == 0)
+    {
+        CloseHandle(h);
+        return;
+    }
+    if (size > 4095)
+        size = 4095;
+
+    char buf[4096] = {};
+    DWORD read = 0;
+    BOOL ok = ReadFile(h, buf, size, &read, nullptr);
+    CloseHandle(h);
+    if (!ok || read == 0)
+        return;
+
+    g_keyboardQueueCount = 0;
+    g_keyboardQueueIndex = 0;
+    g_keyboardPhase = 0;
+    g_keyboardPhaseTicks = KBD_DOWN_POLLS;
+
+    for (DWORD i = 0; i < read && g_keyboardQueueCount < _countof(g_keyboardQueue); ++i)
+    {
+        if (buf[i] == '\r' && i + 1 < read && buf[i + 1] == '\n')
+            continue;
+
+        KbdInjectKey key = {};
+        if (MapCharToKey(buf[i], &key))
+            g_keyboardQueue[g_keyboardQueueCount++] = key;
+    }
+
+    ClearKeyboardInjectionFileLocked();
+
+    if (g_keyboardQueueCount > 0)
+    {
+        buf[read] = '\0';
+        WriteLog("[Windower] keyboard injection loaded string=\"%s\" keys=%lu",
+            buf, (unsigned long)g_keyboardQueueCount);
+    }
+}
+
+static bool GetCurrentInjectedKeyLocked(KbdInjectKey* keyOut, bool* isDownOut)
+{
+    LoadKeyboardInjectionFileLocked();
+
+    if (g_keyboardQueueIndex >= g_keyboardQueueCount)
+        return false;
+
+    if (keyOut)
+        *keyOut = g_keyboardQueue[g_keyboardQueueIndex];
+    if (isDownOut)
+        *isDownOut = (g_keyboardPhase == 0);
+    return true;
+}
+
+static void AdvanceKeyboardInjectionLocked()
+{
+    if (g_keyboardQueueIndex >= g_keyboardQueueCount)
+        return;
+
+    --g_keyboardPhaseTicks;
+    if (g_keyboardPhaseTicks > 0)
+        return;
+
+    if (g_keyboardPhase == 0)
+    {
+        g_keyboardPhase = 1;
+        g_keyboardPhaseTicks = KBD_UP_POLLS;
+    }
+    else
+    {
+        ++g_keyboardQueueIndex;
+        g_keyboardPhase = 0;
+        g_keyboardPhaseTicks = KBD_DOWN_POLLS;
+        if (g_keyboardQueueIndex >= g_keyboardQueueCount)
+        {
+            WriteLog("[Windower] keyboard injection finished keys=%lu", (unsigned long)g_keyboardQueueCount);
+            g_keyboardQueueCount = 0;
+            g_keyboardQueueIndex = 0;
+        }
+    }
+}
+
+static void OverlayDirectInputKeyboardState(BYTE* state, DWORD cbData)
+{
+    if (!state || cbData < 256 || !g_keyboardLockReady)
+        return;
+
+    EnterCriticalSection(&g_keyboardLock);
+    KbdInjectKey key = {};
+    bool isDown = false;
+    if (GetCurrentInjectedKeyLocked(&key, &isDown))
+    {
+        if (isDown)
+        {
+            state[key.dik] |= 0x80;
+            if (key.shift)
+                state[DIK_LSHIFT_LOCAL] |= 0x80;
+        }
+        AdvanceKeyboardInjectionLocked();
+    }
+    LeaveCriticalSection(&g_keyboardLock);
+}
+
+static bool CurrentVirtualKeyDownLocked(int vKey)
+{
+    KbdInjectKey key = {};
+    bool isDown = false;
+    if (!GetCurrentInjectedKeyLocked(&key, &isDown) || !isDown)
+        return false;
+
+    if (vKey == key.vk)
+        return true;
+    if (key.shift && (vKey == VK_SHIFT || vKey == VK_LSHIFT))
+        return true;
+    return false;
+}
+
+static void MaybeAdvanceKeyboardAsyncLocked()
+{
+    ULONGLONG now = GetTickCount64();
+    if (now - g_keyboardLastAsyncAdvance >= 25)
+    {
+        g_keyboardLastAsyncAdvance = now;
+        AdvanceKeyboardInjectionLocked();
+    }
+}
+
+static void AppendDirectInputDeviceDataEvents(void* rgdod, DWORD cbObjectData, LPDWORD pdwInOut, DWORD capacity)
+{
+    if (!rgdod || !pdwInOut || cbObjectData < sizeof(DIDEVICEOBJECTDATA_LOCAL) || !g_keyboardLockReady)
+        return;
+
+    EnterCriticalSection(&g_keyboardLock);
+    KbdInjectKey key = {};
+    bool isDown = false;
+    if (GetCurrentInjectedKeyLocked(&key, &isDown))
+    {
+        DWORD used = *pdwInOut;
+        BYTE* base = (BYTE*)rgdod;
+        DWORD time = GetTickCount();
+
+        if (key.shift && used < capacity)
+        {
+            DIDEVICEOBJECTDATA_LOCAL* item = (DIDEVICEOBJECTDATA_LOCAL*)(base + (SIZE_T)used * cbObjectData);
+            memset(item, 0, sizeof(*item));
+            item->dwOfs = DIK_LSHIFT_LOCAL;
+            item->dwData = isDown ? 0x80 : 0;
+            item->dwTimeStamp = time;
+            item->dwSequence = g_keyboardSequence++;
+            ++used;
+        }
+
+        if (used < capacity)
+        {
+            DIDEVICEOBJECTDATA_LOCAL* item = (DIDEVICEOBJECTDATA_LOCAL*)(base + (SIZE_T)used * cbObjectData);
+            memset(item, 0, sizeof(*item));
+            item->dwOfs = key.dik;
+            item->dwData = isDown ? 0x80 : 0;
+            item->dwTimeStamp = time;
+            item->dwSequence = g_keyboardSequence++;
+            ++used;
+        }
+
+        *pdwInOut = used;
+        AdvanceKeyboardInjectionLocked();
+    }
+    LeaveCriticalSection(&g_keyboardLock);
+}
+
+static bool PatchVtableSlot(void** slot, void* detour, void** origOut, const char* tag)
+{
+    if (!slot || !detour)
+        return false;
+
+    if (*slot == detour)
+        return true;
+
+    DWORD oldProt = 0;
+    if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &oldProt))
+    {
+        WriteLog("[Windower] %s vtable VirtualProtect failed err=%lu", tag, (unsigned long)GetLastError());
+        return false;
+    }
+
+    if (origOut && !*origOut)
+        *origOut = *slot;
+    *slot = detour;
+
+    VirtualProtect(slot, sizeof(void*), oldProt, &oldProt);
+    FlushInstructionCache(GetCurrentProcess(), slot, sizeof(void*));
+    WriteLog("[Windower] %s vtable hook installed slot=%p detour=%p", tag, (void*)slot, detour);
+    return true;
+}
+
+static void HookDirectInputDeviceKeyboard(void* device)
+{
+    if (!device || g_diKeyboardDeviceHooked)
+        return;
+
+    void** vtable = *(void***)device;
+    if (!vtable)
+        return;
+
+    bool okState = PatchVtableSlot(&vtable[9], (void*)HookedDIGetDeviceState, (void**)&g_origDIGetDeviceState, "IDirectInputDevice8::GetDeviceState");
+    bool okData = PatchVtableSlot(&vtable[10], (void*)HookedDIGetDeviceData, (void**)&g_origDIGetDeviceData, "IDirectInputDevice8::GetDeviceData");
+    g_diKeyboardDeviceHooked = okState || okData;
+    WriteLog("[Windower] DirectInput keyboard device hook state=%d data=%d", okState ? 1 : 0, okData ? 1 : 0);
+}
+
+static void HookDirectInput8Object(void* di8)
+{
+    if (!di8 || g_di8CreateDeviceHooked)
+        return;
+
+    void** vtable = *(void***)di8;
+    if (!vtable)
+        return;
+
+    if (PatchVtableSlot(&vtable[3], (void*)HookedDI8CreateDevice, (void**)&g_origDI8CreateDevice, "IDirectInput8::CreateDevice"))
+        g_di8CreateDeviceHooked = true;
+}
+
+static HRESULT WINAPI HookedDirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, void* punkOuter)
+{
+    DirectInput8Create_t orig = g_origDirectInput8Create ? g_origDirectInput8Create : (DirectInput8Create_t)g_directInput8CreateDetour.target;
+    if (!orig)
+        return E_FAIL;
+
+    HRESULT hr = orig(hinst, dwVersion, riidltf, ppvOut, punkOuter);
+    WriteLog("[Windower] DirectInput8Create hr=0x%08lX out=%p", (unsigned long)hr, (ppvOut ? *ppvOut : nullptr));
+    if (SUCCEEDED(hr) && ppvOut && *ppvOut)
+        HookDirectInput8Object(*ppvOut);
+    return hr;
+}
+
+static HRESULT WINAPI HookedDirectInputCreateA(HINSTANCE hinst, DWORD dwVersion, void** ppvOut, void* punkOuter)
+{
+    DirectInputCreateA_t orig = g_origDirectInputCreateA ? g_origDirectInputCreateA : (DirectInputCreateA_t)g_directInputCreateADetour.target;
+    if (!orig)
+        return E_FAIL;
+
+    HRESULT hr = orig(hinst, dwVersion, ppvOut, punkOuter);
+    WriteLog("[Windower] DirectInputCreateA hr=0x%08lX out=%p", (unsigned long)hr, (ppvOut ? *ppvOut : nullptr));
+    if (SUCCEEDED(hr) && ppvOut && *ppvOut)
+        HookDirectInput8Object(*ppvOut);
+    return hr;
+}
+
+static HRESULT WINAPI HookedDirectInputCreateW(HINSTANCE hinst, DWORD dwVersion, void** ppvOut, void* punkOuter)
+{
+    DirectInputCreateW_t orig = g_origDirectInputCreateW ? g_origDirectInputCreateW : (DirectInputCreateW_t)g_directInputCreateWDetour.target;
+    if (!orig)
+        return E_FAIL;
+
+    HRESULT hr = orig(hinst, dwVersion, ppvOut, punkOuter);
+    WriteLog("[Windower] DirectInputCreateW hr=0x%08lX out=%p", (unsigned long)hr, (ppvOut ? *ppvOut : nullptr));
+    if (SUCCEEDED(hr) && ppvOut && *ppvOut)
+        HookDirectInput8Object(*ppvOut);
+    return hr;
+}
+
+static HRESULT WINAPI HookedDI8CreateDevice(void* self, REFGUID rguid, void** deviceOut, void* punkOuter)
+{
+    if (!g_origDI8CreateDevice)
+        return E_FAIL;
+
+    HRESULT hr = g_origDI8CreateDevice(self, rguid, deviceOut, punkOuter);
+    const bool isKeyboard = GuidEquals(rguid, GUID_SysKeyboard_Local);
+    WriteLog("[Windower] IDirectInput8::CreateDevice hr=0x%08lX keyboard=%d device=%p",
+        (unsigned long)hr, isKeyboard ? 1 : 0, (deviceOut ? *deviceOut : nullptr));
+    if (SUCCEEDED(hr) && isKeyboard && deviceOut && *deviceOut)
+        HookDirectInputDeviceKeyboard(*deviceOut);
+    return hr;
+}
+
+static HRESULT WINAPI HookedDIGetDeviceState(void* self, DWORD cbData, LPVOID lpvData)
+{
+    if (!g_origDIGetDeviceState)
+        return E_FAIL;
+
+    HRESULT hr = g_origDIGetDeviceState(self, cbData, lpvData);
+    if (SUCCEEDED(hr) && lpvData && cbData >= 256)
+        OverlayDirectInputKeyboardState((BYTE*)lpvData, cbData);
+    return hr;
+}
+
+static HRESULT WINAPI HookedDIGetDeviceData(void* self, DWORD cbObjectData, void* rgdod, LPDWORD pdwInOut, DWORD dwFlags)
+{
+    if (!g_origDIGetDeviceData)
+        return E_FAIL;
+
+    DWORD capacity = pdwInOut ? *pdwInOut : 0;
+    HRESULT hr = g_origDIGetDeviceData(self, cbObjectData, rgdod, pdwInOut, dwFlags);
+    if (SUCCEEDED(hr) && pdwInOut && rgdod && capacity > *pdwInOut)
+        AppendDirectInputDeviceDataEvents(rgdod, cbObjectData, pdwInOut, capacity);
+    return hr;
+}
+
+static SHORT WINAPI HookedGetAsyncKeyState(int vKey)
+{
+    GetAsyncKeyState_t orig = g_origGetAsyncKeyState ? g_origGetAsyncKeyState : (GetAsyncKeyState_t)g_getAsyncKeyStateDetour.target;
+    SHORT ret = orig ? orig(vKey) : 0;
+
+    if (g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        if (CurrentVirtualKeyDownLocked(vKey))
+            ret = (SHORT)(ret | 0x8000);
+        MaybeAdvanceKeyboardAsyncLocked();
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+    return ret;
+}
+
+static BOOL WINAPI HookedGetKeyboardState(PBYTE lpKeyState)
+{
+    GetKeyboardState_t orig = g_origGetKeyboardState ? g_origGetKeyboardState : (GetKeyboardState_t)g_getKeyboardStateDetour.target;
+    BOOL ret = orig ? orig(lpKeyState) : FALSE;
+    if (ret && lpKeyState && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        KbdInjectKey key = {};
+        bool isDown = false;
+        if (GetCurrentInjectedKeyLocked(&key, &isDown) && isDown)
+        {
+            lpKeyState[key.vk] |= 0x80;
+            if (key.shift)
+            {
+                lpKeyState[VK_SHIFT] |= 0x80;
+                lpKeyState[VK_LSHIFT] |= 0x80;
+            }
+        }
+        MaybeAdvanceKeyboardAsyncLocked();
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+    return ret;
+}
+
+static void InstallKeyboardHooks()
+{
+    if (!IsKeyboardInjectEnabled())
+        return;
+    if (g_keyboardHooksAttempted)
+        return;
+    g_keyboardHooksAttempted = true;
+
+    LogKeyboardApiDetection();
+
+    HMODULE hDinput8 = GetModuleHandleA("dinput8.dll");
+    if (!hDinput8)
+        hDinput8 = LoadLibraryA("dinput8.dll");
+    g_directInput8CreateDetour.target = hDinput8 ? (void*)GetProcAddress(hDinput8, "DirectInput8Create") : nullptr;
+    if (g_directInput8CreateDetour.target && InstallInlineDetour(&g_directInput8CreateDetour))
+        g_origDirectInput8Create = (DirectInput8Create_t)g_directInput8CreateDetour.trampoline;
+    WriteLog("[Windower] keyboard DirectInput8Create hook installed=%d", g_directInput8CreateDetour.installed ? 1 : 0);
+
+    HMODULE hDinput = GetModuleHandleA("dinput.dll");
+    if (!hDinput)
+        hDinput = LoadLibraryA("dinput.dll");
+    g_directInputCreateADetour.target = hDinput ? (void*)GetProcAddress(hDinput, "DirectInputCreateA") : nullptr;
+    if (g_directInputCreateADetour.target && InstallInlineDetour(&g_directInputCreateADetour))
+        g_origDirectInputCreateA = (DirectInputCreateA_t)g_directInputCreateADetour.trampoline;
+    WriteLog("[Windower] keyboard DirectInputCreateA hook installed=%d", g_directInputCreateADetour.installed ? 1 : 0);
+
+    g_directInputCreateWDetour.target = hDinput ? (void*)GetProcAddress(hDinput, "DirectInputCreateW") : nullptr;
+    if (g_directInputCreateWDetour.target && InstallInlineDetour(&g_directInputCreateWDetour))
+        g_origDirectInputCreateW = (DirectInputCreateW_t)g_directInputCreateWDetour.trampoline;
+    WriteLog("[Windower] keyboard DirectInputCreateW hook installed=%d", g_directInputCreateWDetour.installed ? 1 : 0);
+
+    HMODULE hUser32 = GetModuleHandleA("user32.dll");
+    if (!hUser32)
+        hUser32 = LoadLibraryA("user32.dll");
+    g_getAsyncKeyStateDetour.target = hUser32 ? (void*)GetProcAddress(hUser32, "GetAsyncKeyState") : nullptr;
+    if (g_getAsyncKeyStateDetour.target && InstallInlineDetour(&g_getAsyncKeyStateDetour))
+        g_origGetAsyncKeyState = (GetAsyncKeyState_t)g_getAsyncKeyStateDetour.trampoline;
+    WriteLog("[Windower] keyboard GetAsyncKeyState hook installed=%d", g_getAsyncKeyStateDetour.installed ? 1 : 0);
+
+    g_getKeyboardStateDetour.target = hUser32 ? (void*)GetProcAddress(hUser32, "GetKeyboardState") : nullptr;
+    if (g_getKeyboardStateDetour.target && InstallInlineDetour(&g_getKeyboardStateDetour))
+        g_origGetKeyboardState = (GetKeyboardState_t)g_getKeyboardStateDetour.trampoline;
+    WriteLog("[Windower] keyboard GetKeyboardState hook installed=%d", g_getKeyboardStateDetour.installed ? 1 : 0);
+}
+
 // ── 視窗化接管工具 ─────────────────────────────────────────────────────────────
 
 static HWND ResolveGameWindow(HWND ppWindow, HWND fallbackWindow, const char* tag)
@@ -2150,6 +2901,8 @@ static void EnsureHooksInstalled()
         if (InstallDirect3DCreate8Hook() && !wasHooked)
             WriteLog("[Windower] D3D hooks installed");
     }
+
+    InstallKeyboardHooks();
 }
 
 // ── SetWindowsHookEx callback ────────────────────────────────────────────────
@@ -2185,6 +2938,8 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(hInst);
         InitializeCriticalSection(&g_packetLock);
         g_packetLockReady = true;
+        InitializeCriticalSection(&g_keyboardLock);
+        g_keyboardLockReady = true;
         WriteLog("[Windower] DllMain DLL_PROCESS_ATTACH");
         EnsureHooksInstalled();
     }
@@ -2195,6 +2950,11 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
         {
             DeleteCriticalSection(&g_packetLock);
             g_packetLockReady = false;
+        }
+        if (g_keyboardLockReady)
+        {
+            DeleteCriticalSection(&g_keyboardLock);
+            g_keyboardLockReady = false;
         }
     }
     return TRUE;
