@@ -10,7 +10,16 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <stdio.h>
 #include "d3d8min.h"
+
+static void WriteLog(const char* msg)
+{
+    OutputDebugStringA(msg);
+    FILE* f = nullptr;
+    fopen_s(&f, "C:\\windower_inject.log", "a");
+    if (f) { fprintf(f, "%s", msg); fclose(f); }
+}
 
 // ── 全域狀態 ─────────────────────────────────────────────────────────────────
 
@@ -32,7 +41,7 @@ HRESULT WINAPI HookedCreateDevice(
 {
     if (pPP)
     {
-        OutputDebugStringA("[Windower] CreateDevice: 強制 Windowed=TRUE\n");
+        WriteLog("[Windower] CreateDevice: 強制 Windowed=TRUE!\n");
         pPP->Windowed                   = TRUE;
         pPP->FullScreen_RefreshRateInHz = 0;
         if (pPP->BackBufferWidth  == 0) pPP->BackBufferWidth  = 800;
@@ -48,11 +57,13 @@ static void PatchD3D8()
 {
     if (g_hooked) return;
 
+    WriteLog("[Windower] PatchD3D8 called\n");
+
     HMODULE hD3D8 = GetModuleHandleA("d3d8.dll");
     if (!hD3D8) hD3D8 = LoadLibraryA("d3d8.dll");
     if (!hD3D8)
     {
-        OutputDebugStringA("[Windower] d3d8.dll 未找到\n");
+        WriteLog("[Windower] d3d8.dll 未找到\n");
         return;
     }
 
@@ -80,11 +91,11 @@ static void PatchD3D8()
         vtable[15] = (void*)HookedCreateDevice;
         VirtualProtect(&vtable[15], sizeof(void*), oldProt, &oldProt);
         g_hooked = true;
-        OutputDebugStringA("[Windower] D3D8 vtable hook 完成\n");
+        WriteLog("[Windower] D3D8 vtable hook 完成!\n");
     }
     else
     {
-        OutputDebugStringA("[Windower] VirtualProtect 失敗\n");
+        WriteLog("[Windower] VirtualProtect 失敗\n");
     }
 
     pD3D->Release();
