@@ -62,6 +62,7 @@ $CliDir  = "D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"
 $CliExe  = "$CliDir\MapleStory.exe"
 $Log     = "$Root\live.log"
 if (Test-Path $Log) { Remove-Item $Log }
+$dxwnd = $null
 
 # 分析用計數器
 $stats = @{ Connections=0; GotHandshake=$false; GotLogin=$false; GotChannel=$false }
@@ -96,14 +97,34 @@ $ok = Test-NetConnection 127.0.0.1 -Port 8484 -InformationLevel Quiet -WarningAc
 Write-Host "    8484=$ok"
 
 # ── MapleForge Windower（視窗化 hook，必須在客戶端之前啟動）──────────────────
+# ── 建立測試角色（進地圖前置）──────────────────────────────────────────────
+$CreateCharScript = Join-Path $Root "tools\create-test-char.ps1"
+if (Test-Path $CreateCharScript) {
+    Write-Host "=== [2a] 建立/校正測試角色 ===" -ForegroundColor Cyan
+    & $CreateCharScript -Root $Root -AccountName "testuser" -CharacterName "TestHero"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "    建角腳本失敗（ExitCode=$LASTEXITCODE），停止測試。" -ForegroundColor Red
+        $srv | Stop-Process -Force -EA SilentlyContinue
+        exit 1
+    }
+} else {
+    Write-Host "=== [2a] 找不到 create-test-char.ps1，跳過建角 ===" -ForegroundColor DarkYellow
+}
+
+# ── MapleForge Windower（必須在客戶端之前啟動）────────────────────────────
 $WindowerHost = "D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\MapleForge\tools\windower\bin\windower_host.exe"
 if (Test-Path $WindowerHost) {
-    Write-Host "=== [2a] 啟動 MapleForge Windower hook ===" -ForegroundColor Cyan
+    Write-Host "=== [2b] 啟動 MapleForge Windower hook ===" -ForegroundColor Cyan
     $dxwnd = Start-Process -FilePath $WindowerHost -PassThru -WindowStyle Minimized
-    Start-Sleep -Milliseconds 1200   # 等 hook 安裝完成
+    Start-Sleep -Milliseconds 1200
+    if ($dxwnd.HasExited) {
+        Write-Host "    Windower 提前退出（Code=$($dxwnd.ExitCode)），停止測試。" -ForegroundColor Red
+        $srv | Stop-Process -Force -EA SilentlyContinue
+        exit 1
+    }
     Write-Host "    Windower PID=$($dxwnd.Id) ✓"
 } else {
-    Write-Host "=== [2a] Windower 未找到，跳過視窗化 ===" -ForegroundColor DarkYellow
+    Write-Host "=== [2b] Windower 未找到，跳過視窗化 ===" -ForegroundColor DarkYellow
 }
 
 # ── Client ──────────────────────────────────────────────────────────────────
