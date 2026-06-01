@@ -84,6 +84,7 @@ typedef HRESULT (WINAPI* DI8CreateDevice_t)(void*, REFGUID, void**, void*);
 typedef HRESULT (WINAPI* DIGetDeviceState_t)(void*, DWORD, LPVOID);
 typedef HRESULT (WINAPI* DIGetDeviceData_t)(void*, DWORD, void*, LPDWORD, DWORD);
 typedef SHORT (WINAPI* GetAsyncKeyState_t)(int);
+typedef SHORT (WINAPI* GetKeyState_t)(int);
 typedef BOOL (WINAPI* GetKeyboardState_t)(PBYTE);
 typedef BOOL (WINAPI* PeekMessageA_t)(LPMSG, HWND, UINT, UINT, UINT);
 typedef BOOL (WINAPI* PeekMessageW_t)(LPMSG, HWND, UINT, UINT, UINT);
@@ -128,6 +129,7 @@ typedef struct PendingRecvOp {
 typedef struct KbdInjectKey {
     BYTE dik;
     BYTE vk;
+    WORD ch;
     bool shift;
 } KbdInjectKey;
 
@@ -161,6 +163,7 @@ static HRESULT WINAPI HookedDI8CreateDevice(void* self, REFGUID rguid, void** de
 static HRESULT WINAPI HookedDIGetDeviceState(void* self, DWORD cbData, LPVOID lpvData);
 static HRESULT WINAPI HookedDIGetDeviceData(void* self, DWORD cbObjectData, void* rgdod, LPDWORD pdwInOut, DWORD dwFlags);
 static SHORT WINAPI HookedGetAsyncKeyState(int vKey);
+static SHORT WINAPI HookedGetKeyState(int vKey);
 static BOOL WINAPI HookedGetKeyboardState(PBYTE lpKeyState);
 static BOOL WINAPI HookedPeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
 static BOOL WINAPI HookedPeekMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
@@ -191,6 +194,7 @@ static DI8CreateDevice_t g_origDI8CreateDevice = nullptr;
 static DIGetDeviceState_t g_origDIGetDeviceState = nullptr;
 static DIGetDeviceData_t g_origDIGetDeviceData = nullptr;
 static GetAsyncKeyState_t g_origGetAsyncKeyState = nullptr;
+static GetKeyState_t   g_origGetKeyState = nullptr;
 static GetKeyboardState_t g_origGetKeyboardState = nullptr;
 static PeekMessageA_t  g_origPeekMessageA = nullptr;
 static PeekMessageW_t  g_origPeekMessageW = nullptr;
@@ -208,6 +212,7 @@ static InlineDetour   g_directInput8CreateDetour = { "DirectInput8Create", nullp
 static InlineDetour   g_directInputCreateADetour = { "DirectInputCreateA", nullptr, (void*)HookedDirectInputCreateA, {}, nullptr, false };
 static InlineDetour   g_directInputCreateWDetour = { "DirectInputCreateW", nullptr, (void*)HookedDirectInputCreateW, {}, nullptr, false };
 static InlineDetour   g_getAsyncKeyStateDetour = { "GetAsyncKeyState", nullptr, (void*)HookedGetAsyncKeyState, {}, nullptr, false };
+static InlineDetour   g_getKeyStateDetour = { "GetKeyState", nullptr, (void*)HookedGetKeyState, {}, nullptr, false };
 static InlineDetour   g_getKeyboardStateDetour = { "GetKeyboardState", nullptr, (void*)HookedGetKeyboardState, {}, nullptr, false };
 static InlineDetour   g_peekMessageADetour = { "PeekMessageA", nullptr, (void*)HookedPeekMessageA, {}, nullptr, false };
 static InlineDetour   g_peekMessageWDetour = { "PeekMessageW", nullptr, (void*)HookedPeekMessageW, {}, nullptr, false };
@@ -253,7 +258,14 @@ static int            g_keyboardPhase = 0;
 static int            g_keyboardPhaseTicks = 0;
 static DWORD          g_keyboardSequence = 1;
 static ULONGLONG      g_keyboardLastAsyncAdvance = 0;
+static DWORD          g_keyboardMsgQueueIndex = 0;
+static int            g_keyboardMsgStage = 0;
+static DWORD          g_keyboardLastSyntheticKeyIndex = 0xFFFFFFFFUL;
+static BYTE           g_keyboardLastSyntheticVk = 0;
+static WORD           g_keyboardLastSyntheticChar = 0;
+static HWND           g_keyboardLastSyntheticHwnd = nullptr;
 static volatile LONG  g_kbdCountGetAsyncKeyState = 0;
+static volatile LONG  g_kbdCountGetKeyState = 0;
 static volatile LONG  g_kbdCountGetKeyboardState = 0;
 static volatile LONG  g_kbdCountDIGetDeviceState = 0;
 static volatile LONG  g_kbdCountDIGetDeviceData = 0;
@@ -263,6 +275,7 @@ static volatile LONG  g_kbdCountGetMessageA = 0;
 static volatile LONG  g_kbdCountGetMessageW = 0;
 static volatile LONG  g_kbdCountTranslateMessage = 0;
 static volatile LONG  g_kbdCountKeyboardMessages = 0;
+static volatile LONG  g_kbdCountSyntheticMessages = 0;
 
 enum { D3DADAPTER_DEFAULT_LOCAL = 0 };
 enum { D3DFMT_X8R8G8B8_LOCAL = 22 };
@@ -1857,7 +1870,10 @@ enum
     DIK_SPACE_LOCAL = 0x39,
     KBD_DOWN_POLLS = 4,
     KBD_UP_POLLS = 2,
-    KBD_DEBUG_LOG_RATE = 500
+    KBD_DEBUG_LOG_RATE = 500,
+    KBD_MSG_STAGE_KEYDOWN = 0,
+    KBD_MSG_STAGE_CHAR = 1,
+    KBD_MSG_STAGE_KEYUP = 2
 };
 
 static const GUID GUID_SysKeyboard_Local =
@@ -1958,6 +1974,7 @@ static void LogKeyboardApiDetection()
     const bool importsDirectInputCreateA = ExeImports("dinput.dll", "DirectInputCreateA");
     const bool importsDirectInputCreateW = ExeImports("dinput.dll", "DirectInputCreateW");
     const bool importsGetAsync = ExeImports("user32.dll", "GetAsyncKeyState");
+    const bool importsGetKeyState = ExeImports("user32.dll", "GetKeyState");
     const bool importsGetKeyboardState = ExeImports("user32.dll", "GetKeyboardState");
     const bool importsRegisterRaw = ExeImports("user32.dll", "RegisterRawInputDevices");
     const bool importsGetRawInputData = ExeImports("user32.dll", "GetRawInputData");
@@ -1968,7 +1985,7 @@ static void LogKeyboardApiDetection()
     const bool importsTranslateMessage = ExeImports("user32.dll", "TranslateMessage");
 
     WriteLog(
-        "[Windower] keyboard API detection modules dinput8=%d dinput=%d user32=%d imports dinput8=%d DirectInput8Create=%d dinput=%d DirectInputCreateA=%d DirectInputCreateW=%d GetAsyncKeyState=%d GetKeyboardState=%d RegisterRawInputDevices=%d GetRawInputData=%d PeekMessageA=%d PeekMessageW=%d GetMessageA=%d GetMessageW=%d TranslateMessage=%d",
+        "[Windower] keyboard API detection modules dinput8=%d dinput=%d user32=%d imports dinput8=%d DirectInput8Create=%d dinput=%d DirectInputCreateA=%d DirectInputCreateW=%d GetAsyncKeyState=%d GetKeyState=%d GetKeyboardState=%d RegisterRawInputDevices=%d GetRawInputData=%d PeekMessageA=%d PeekMessageW=%d GetMessageA=%d GetMessageW=%d TranslateMessage=%d",
         dinput8Loaded ? 1 : 0,
         dinputLoaded ? 1 : 0,
         user32Loaded ? 1 : 0,
@@ -1978,6 +1995,7 @@ static void LogKeyboardApiDetection()
         importsDirectInputCreateA ? 1 : 0,
         importsDirectInputCreateW ? 1 : 0,
         importsGetAsync ? 1 : 0,
+        importsGetKeyState ? 1 : 0,
         importsGetKeyboardState ? 1 : 0,
         importsRegisterRaw ? 1 : 0,
         importsGetRawInputData ? 1 : 0,
@@ -2066,6 +2084,7 @@ static bool MapCharToKey(char ch, KbdInjectKey* out)
         return false;
 
     memset(out, 0, sizeof(*out));
+    out->ch = (WORD)((ch == '\n') ? '\r' : (unsigned char)ch);
 
     if (ch >= 'a' && ch <= 'z')
     {
@@ -2207,6 +2226,12 @@ static void LoadKeyboardInjectionFileLocked()
 
     g_keyboardQueueCount = 0;
     g_keyboardQueueIndex = 0;
+    g_keyboardMsgQueueIndex = 0;
+    g_keyboardMsgStage = KBD_MSG_STAGE_KEYDOWN;
+    g_keyboardLastSyntheticKeyIndex = 0xFFFFFFFFUL;
+    g_keyboardLastSyntheticVk = 0;
+    g_keyboardLastSyntheticChar = 0;
+    g_keyboardLastSyntheticHwnd = nullptr;
     g_keyboardPhase = 0;
     g_keyboardPhaseTicks = KBD_DOWN_POLLS;
 
@@ -2268,8 +2293,245 @@ static void AdvanceKeyboardInjectionLocked()
             WriteLog("[Windower] keyboard injection finished keys=%lu", (unsigned long)g_keyboardQueueCount);
             g_keyboardQueueCount = 0;
             g_keyboardQueueIndex = 0;
+            g_keyboardMsgQueueIndex = 0;
+            g_keyboardMsgStage = KBD_MSG_STAGE_KEYDOWN;
+            g_keyboardLastSyntheticKeyIndex = 0xFFFFFFFFUL;
+            g_keyboardLastSyntheticVk = 0;
+            g_keyboardLastSyntheticChar = 0;
+            g_keyboardLastSyntheticHwnd = nullptr;
         }
     }
+}
+
+static bool HwndBelongsToCurrentProcess(HWND hwnd)
+{
+    if (!hwnd || !IsWindow(hwnd))
+        return false;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    return pid == GetCurrentProcessId();
+}
+
+static HWND ResolveKeyboardMessageTargetHwnd(HWND requested)
+{
+    if (requested == (HWND)-1)
+        return nullptr;
+
+    if (HwndBelongsToCurrentProcess(requested))
+        return requested;
+
+    HWND hwnd = GetFocus();
+    if (HwndBelongsToCurrentProcess(hwnd))
+        return hwnd;
+
+    if (HwndBelongsToCurrentProcess(g_gameWindow))
+        return g_gameWindow;
+
+    hwnd = GetActiveWindow();
+    if (HwndBelongsToCurrentProcess(hwnd))
+        return hwnd;
+
+    hwnd = GetForegroundWindow();
+    if (HwndBelongsToCurrentProcess(hwnd))
+        return hwnd;
+
+    return requested;
+}
+
+static bool MessagePassesFilter(UINT message, UINT minMessage, UINT maxMessage)
+{
+    if (minMessage == 0 && maxMessage == 0)
+        return true;
+    return message >= minMessage && message <= maxMessage;
+}
+
+static BYTE KeyboardScanCodeForKey(const KbdInjectKey* key)
+{
+    if (!key)
+        return 0;
+
+    UINT scan = MapVirtualKeyA(key->vk, MAPVK_VK_TO_VSC);
+    if (scan == 0)
+        scan = key->dik;
+    return (BYTE)(scan & 0xFF);
+}
+
+static LPARAM MakeKeyboardLParam(const KbdInjectKey* key, bool keyUp)
+{
+    DWORD lp = 1;
+    lp |= ((DWORD)KeyboardScanCodeForKey(key)) << 16;
+    if (keyUp)
+        lp |= 0xC0000000UL;
+    return (LPARAM)lp;
+}
+
+static void ResetKeyboardInjectionQueueLocked()
+{
+    g_keyboardQueueCount = 0;
+    g_keyboardQueueIndex = 0;
+    g_keyboardMsgQueueIndex = 0;
+    g_keyboardMsgStage = KBD_MSG_STAGE_KEYDOWN;
+    g_keyboardPhase = 0;
+    g_keyboardPhaseTicks = KBD_DOWN_POLLS;
+    g_keyboardLastSyntheticKeyIndex = 0xFFFFFFFFUL;
+    g_keyboardLastSyntheticVk = 0;
+    g_keyboardLastSyntheticChar = 0;
+    g_keyboardLastSyntheticHwnd = nullptr;
+}
+
+static void AdvanceKeyboardMessageInjectionLocked(const char* api, UINT message)
+{
+    if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount)
+        return;
+
+    if (g_keyboardMsgStage == KBD_MSG_STAGE_KEYDOWN)
+    {
+        g_keyboardMsgStage = KBD_MSG_STAGE_CHAR;
+        return;
+    }
+
+    if (g_keyboardMsgStage == KBD_MSG_STAGE_CHAR)
+    {
+        g_keyboardMsgStage = KBD_MSG_STAGE_KEYUP;
+        return;
+    }
+
+    ++g_keyboardMsgQueueIndex;
+    g_keyboardMsgStage = KBD_MSG_STAGE_KEYDOWN;
+    g_keyboardLastSyntheticKeyIndex = 0xFFFFFFFFUL;
+    g_keyboardLastSyntheticVk = 0;
+    g_keyboardLastSyntheticChar = 0;
+    g_keyboardLastSyntheticHwnd = nullptr;
+
+    if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount)
+    {
+        WriteLog("[Windower] keyboard message injection finished keys=%lu api=%s lastMsg=%s",
+            (unsigned long)g_keyboardQueueCount,
+            api ? api : "unknown",
+            KeyboardMessageName(message));
+        ResetKeyboardInjectionQueueLocked();
+    }
+}
+
+static bool CurrentMessageVirtualKeyDownLocked(int vKey)
+{
+    LoadKeyboardInjectionFileLocked();
+
+    if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount)
+        return false;
+
+    if (g_keyboardMsgStage == KBD_MSG_STAGE_KEYDOWN)
+        return false;
+
+    const KbdInjectKey* key = &g_keyboardQueue[g_keyboardMsgQueueIndex];
+    if (vKey == key->vk)
+        return true;
+    if (key->shift && (vKey == VK_SHIFT || vKey == VK_LSHIFT))
+        return true;
+    return false;
+}
+
+static bool FillSyntheticKeyboardMessageLocked(
+    MSG* msg, HWND requestedHwnd, UINT minMessage, UINT maxMessage, bool consume, const char* api)
+{
+    if (!g_keyboardInjectActive || !msg)
+        return false;
+
+    LoadKeyboardInjectionFileLocked();
+    if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount)
+        return false;
+
+    const KbdInjectKey* key = &g_keyboardQueue[g_keyboardMsgQueueIndex];
+    UINT message = WM_KEYDOWN;
+    WPARAM wParam = key->vk;
+    LPARAM lParam = MakeKeyboardLParam(key, false);
+
+    if (g_keyboardMsgStage == KBD_MSG_STAGE_CHAR)
+    {
+        message = WM_CHAR;
+        wParam = key->ch;
+    }
+    else if (g_keyboardMsgStage == KBD_MSG_STAGE_KEYUP)
+    {
+        message = WM_KEYUP;
+        wParam = key->vk;
+        lParam = MakeKeyboardLParam(key, true);
+    }
+
+    if (!MessagePassesFilter(message, minMessage, maxMessage))
+        return false;
+
+    HWND hwnd = ResolveKeyboardMessageTargetHwnd(requestedHwnd);
+    if (!hwnd)
+        return false;
+
+    memset(msg, 0, sizeof(*msg));
+    msg->hwnd = hwnd;
+    msg->message = message;
+    msg->wParam = wParam;
+    msg->lParam = lParam;
+    msg->time = GetTickCount();
+    GetCursorPos(&msg->pt);
+
+    LONG count = InterlockedIncrement(&g_kbdCountSyntheticMessages);
+    if (consume || count == 1 || (count % KBD_DEBUG_LOG_RATE) == 0)
+    {
+        WriteLog(
+            "[Windower] keyboard injection forged api=%s synthetic_count=%ld consume=%d index=%lu/%lu stage=%d hwnd=%p msg=%s vk=0x%02lX char=0x%04lX scan=0x%02lX lParam=0x%08lX",
+            api ? api : "unknown",
+            (long)count,
+            consume ? 1 : 0,
+            (unsigned long)g_keyboardMsgQueueIndex,
+            (unsigned long)g_keyboardQueueCount,
+            g_keyboardMsgStage,
+            (void*)hwnd,
+            KeyboardMessageName(message),
+            (unsigned long)key->vk,
+            (unsigned long)key->ch,
+            (unsigned long)KeyboardScanCodeForKey(key),
+            (unsigned long)(uintptr_t)lParam);
+    }
+
+    if (consume)
+    {
+        if (message == WM_KEYDOWN)
+        {
+            g_keyboardLastSyntheticKeyIndex = g_keyboardMsgQueueIndex;
+            g_keyboardLastSyntheticVk = key->vk;
+            g_keyboardLastSyntheticChar = key->ch;
+            g_keyboardLastSyntheticHwnd = hwnd;
+        }
+        AdvanceKeyboardMessageInjectionLocked(api, message);
+    }
+    return true;
+}
+
+static bool ConsumeTranslatedCharIfMatchingLocked(const MSG* msg, const char* api)
+{
+    if (!g_keyboardInjectActive || !msg || msg->message != WM_CHAR)
+        return false;
+
+    LoadKeyboardInjectionFileLocked();
+    if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount ||
+        g_keyboardMsgStage != KBD_MSG_STAGE_CHAR)
+    {
+        return false;
+    }
+
+    const KbdInjectKey* key = &g_keyboardQueue[g_keyboardMsgQueueIndex];
+    if ((WORD)msg->wParam != key->ch)
+        return false;
+
+    WriteLog(
+        "[Windower] keyboard injection observed translated WM_CHAR api=%s index=%lu hwnd=%p char=0x%04lX expected=0x%04lX",
+        api ? api : "unknown",
+        (unsigned long)g_keyboardMsgQueueIndex,
+        (void*)msg->hwnd,
+        (unsigned long)(WORD)msg->wParam,
+        (unsigned long)key->ch);
+    AdvanceKeyboardMessageInjectionLocked(api, WM_CHAR);
+    return true;
 }
 
 static void OverlayDirectInputKeyboardState(BYTE* state, DWORD cbData)
@@ -2528,6 +2790,33 @@ static SHORT WINAPI HookedGetAsyncKeyState(int vKey)
     return ret;
 }
 
+static SHORT WINAPI HookedGetKeyState(int vKey)
+{
+    GetKeyState_t orig = g_origGetKeyState ? g_origGetKeyState : (GetKeyState_t)g_getKeyStateDetour.target;
+    SHORT ret = orig ? orig(vKey) : 0;
+
+    if (g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        bool down = CurrentMessageVirtualKeyDownLocked(vKey);
+        const bool hasMessageQueue = (g_keyboardMsgQueueIndex < g_keyboardQueueCount);
+        if (!down && !hasMessageQueue && CurrentVirtualKeyDownLocked(vKey))
+            down = true;
+        if (down)
+            ret = (SHORT)(ret | 0x8000);
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+
+    LONG count = 0;
+    if (ShouldLogKeyboardCount(&g_kbdCountGetKeyState, &count))
+    {
+        WriteLog(
+            "[Windower] keyboard poll GetKeyState count=%ld vk=0x%02lX ret=0x%04lX",
+            (long)count, (unsigned long)(vKey & 0xFF), (unsigned long)((WORD)ret));
+    }
+    return ret;
+}
+
 static BOOL WINAPI HookedGetKeyboardState(PBYTE lpKeyState)
 {
     GetKeyboardState_t orig = g_origGetKeyboardState ? g_origGetKeyboardState : (GetKeyboardState_t)g_getKeyboardStateDetour.target;
@@ -2564,6 +2853,22 @@ static BOOL WINAPI HookedPeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin
 {
     PeekMessageA_t orig = g_origPeekMessageA ? g_origPeekMessageA : (PeekMessageA_t)g_peekMessageADetour.target;
     BOOL ret = orig ? orig(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) : FALSE;
+    if (ret && lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        ConsumeTranslatedCharIfMatchingLocked(lpMsg, "PeekMessageA");
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+    else if (!ret && lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        if (FillSyntheticKeyboardMessageLocked(
+                lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, (wRemoveMsg & PM_REMOVE) != 0, "PeekMessageA"))
+        {
+            ret = TRUE;
+        }
+        LeaveCriticalSection(&g_keyboardLock);
+    }
 
     LONG count = 0;
     if (ShouldLogKeyboardCount(&g_kbdCountPeekMessageA, &count))
@@ -2583,6 +2888,22 @@ static BOOL WINAPI HookedPeekMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin
 {
     PeekMessageW_t orig = g_origPeekMessageW ? g_origPeekMessageW : (PeekMessageW_t)g_peekMessageWDetour.target;
     BOOL ret = orig ? orig(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) : FALSE;
+    if (ret && lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        ConsumeTranslatedCharIfMatchingLocked(lpMsg, "PeekMessageW");
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+    else if (!ret && lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        if (FillSyntheticKeyboardMessageLocked(
+                lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, (wRemoveMsg & PM_REMOVE) != 0, "PeekMessageW"))
+        {
+            ret = TRUE;
+        }
+        LeaveCriticalSection(&g_keyboardLock);
+    }
 
     LONG count = 0;
     if (ShouldLogKeyboardCount(&g_kbdCountPeekMessageW, &count))
@@ -2601,7 +2922,21 @@ static BOOL WINAPI HookedPeekMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin
 static BOOL WINAPI HookedGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
     GetMessageA_t orig = g_origGetMessageA ? g_origGetMessageA : (GetMessageA_t)g_getMessageADetour.target;
-    BOOL ret = orig ? orig(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax) : FALSE;
+    BOOL ret = FALSE;
+    bool synthetic = false;
+    if (lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        synthetic = FillSyntheticKeyboardMessageLocked(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, true, "GetMessageA");
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+    ret = synthetic ? TRUE : (orig ? orig(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax) : FALSE);
+    if (!synthetic && ret > 0 && lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        ConsumeTranslatedCharIfMatchingLocked(lpMsg, "GetMessageA");
+        LeaveCriticalSection(&g_keyboardLock);
+    }
 
     LONG count = 0;
     if (ShouldLogKeyboardCount(&g_kbdCountGetMessageA, &count))
@@ -2619,7 +2954,21 @@ static BOOL WINAPI HookedGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin,
 static BOOL WINAPI HookedGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
     GetMessageW_t orig = g_origGetMessageW ? g_origGetMessageW : (GetMessageW_t)g_getMessageWDetour.target;
-    BOOL ret = orig ? orig(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax) : FALSE;
+    BOOL ret = FALSE;
+    bool synthetic = false;
+    if (lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        synthetic = FillSyntheticKeyboardMessageLocked(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, true, "GetMessageW");
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+    ret = synthetic ? TRUE : (orig ? orig(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax) : FALSE);
+    if (!synthetic && ret > 0 && lpMsg && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        ConsumeTranslatedCharIfMatchingLocked(lpMsg, "GetMessageW");
+        LeaveCriticalSection(&g_keyboardLock);
+    }
 
     LONG count = 0;
     if (ShouldLogKeyboardCount(&g_kbdCountGetMessageW, &count))
@@ -2637,7 +2986,37 @@ static BOOL WINAPI HookedGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin,
 static BOOL WINAPI HookedTranslateMessage(const MSG* lpMsg)
 {
     TranslateMessage_t orig = g_origTranslateMessage ? g_origTranslateMessage : (TranslateMessage_t)g_translateMessageDetour.target;
+    bool syntheticKeyDown = false;
+    BYTE syntheticVk = 0;
+    WORD syntheticChar = 0;
+    HWND syntheticHwnd = nullptr;
+
+    if (lpMsg && lpMsg->message == WM_KEYDOWN && g_keyboardInjectActive && g_keyboardLockReady)
+    {
+        EnterCriticalSection(&g_keyboardLock);
+        if (g_keyboardLastSyntheticKeyIndex != 0xFFFFFFFFUL &&
+            g_keyboardMsgStage == KBD_MSG_STAGE_CHAR &&
+            (BYTE)lpMsg->wParam == g_keyboardLastSyntheticVk)
+        {
+            syntheticKeyDown = true;
+            syntheticVk = g_keyboardLastSyntheticVk;
+            syntheticChar = g_keyboardLastSyntheticChar;
+            syntheticHwnd = g_keyboardLastSyntheticHwnd;
+        }
+        LeaveCriticalSection(&g_keyboardLock);
+    }
+
     BOOL ret = orig ? orig(lpMsg) : FALSE;
+    if (syntheticKeyDown)
+    {
+        WriteLog(
+            "[Windower] keyboard injection TranslateMessage synthetic keydown ret=%d hwnd=%p msgHwnd=%p vk=0x%02lX expectedChar=0x%04lX",
+            ret ? 1 : 0,
+            (void*)syntheticHwnd,
+            lpMsg ? (void*)lpMsg->hwnd : nullptr,
+            (unsigned long)syntheticVk,
+            (unsigned long)syntheticChar);
+    }
 
     LONG count = 0;
     if (ShouldLogKeyboardCount(&g_kbdCountTranslateMessage, &count))
@@ -2693,6 +3072,11 @@ static void InstallKeyboardHooks()
     if (g_getAsyncKeyStateDetour.target && InstallInlineDetour(&g_getAsyncKeyStateDetour))
         g_origGetAsyncKeyState = (GetAsyncKeyState_t)g_getAsyncKeyStateDetour.trampoline;
     WriteLog("[Windower] keyboard GetAsyncKeyState hook installed=%d", g_getAsyncKeyStateDetour.installed ? 1 : 0);
+
+    g_getKeyStateDetour.target = hUser32 ? (void*)GetProcAddress(hUser32, "GetKeyState") : nullptr;
+    if (g_getKeyStateDetour.target && InstallInlineDetour(&g_getKeyStateDetour))
+        g_origGetKeyState = (GetKeyState_t)g_getKeyStateDetour.trampoline;
+    WriteLog("[Windower] keyboard GetKeyState hook installed=%d", g_getKeyStateDetour.installed ? 1 : 0);
 
     g_getKeyboardStateDetour.target = hUser32 ? (void*)GetProcAddress(hUser32, "GetKeyboardState") : nullptr;
     if (g_getKeyboardStateDetour.target && InstallInlineDetour(&g_getKeyboardStateDetour))
