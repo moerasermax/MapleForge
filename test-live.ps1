@@ -95,6 +95,17 @@ Start-Sleep 5
 $ok = Test-NetConnection 127.0.0.1 -Port 8484 -InformationLevel Quiet -WarningAction SilentlyContinue
 Write-Host "    8484=$ok"
 
+# ── MapleForge Windower（視窗化 hook，必須在客戶端之前啟動）──────────────────
+$WindowerHost = "D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\MapleForge\tools\windower\bin\windower_host.exe"
+if (Test-Path $WindowerHost) {
+    Write-Host "=== [2a] 啟動 MapleForge Windower hook ===" -ForegroundColor Cyan
+    $dxwnd = Start-Process -FilePath $WindowerHost -PassThru -WindowStyle Minimized
+    Start-Sleep -Milliseconds 1200   # 等 hook 安裝完成
+    Write-Host "    Windower PID=$($dxwnd.Id) ✓"
+} else {
+    Write-Host "=== [2a] Windower 未找到，跳過視窗化 ===" -ForegroundColor DarkYellow
+}
+
 # ── Client ──────────────────────────────────────────────────────────────────
 Write-Host "=== [2] Client 啟動 ===" -ForegroundColor Cyan
 $cli = Start-Process -FilePath $CliExe -ArgumentList "127.0.0.1 8484" -WorkingDirectory $CliDir -PassThru
@@ -108,16 +119,22 @@ $stats['GotHandshake'] = Watch-Pattern "握手送出" 30 "握手送出"
 if ($Mode -eq "Auto") {
     Write-Host "=== [AUTO] 自動模式 ===" -ForegroundColor Cyan
     
-    # 用 EnumWindows 掃描所有視窗（包含子進程）
-    $childPids = (Get-Process -EA SilentlyContinue | Where-Object { $_.Parent.Id -eq $cli.Id }).Id
-    $allPids = [System.Collections.Generic.HashSet[uint]]::new()
-    $allPids.Add([uint]$cli.Id) | Out-Null
-    foreach ($cp in $childPids) { $allPids.Add([uint]$cp) | Out-Null }
-    $hWnd = [WinAPI]::FindWindowByPids($allPids)
+    # 等待 MapleStory 視窗出現（最多 20 秒）
+    Write-Host "    等待 MapleStory 視窗出現..." -ForegroundColor DarkYellow
+    $hWnd = [IntPtr]::Zero
+    for ($w = 0; $w -lt 20; $w++) {
+        $allPids = [System.Collections.Generic.HashSet[uint]]::new()
+        $allPids.Add([uint]$cli.Id) | Out-Null
+        $hWnd = [WinAPI]::FindWindowByPids($allPids)
+        if ($hWnd -ne [IntPtr]::Zero) { Write-Host "    視窗已出現 hWnd=$hWnd"; break }
+        Start-Sleep -Seconds 1
+        Write-Host "    等視窗 $($w+1)/20..." -NoNewline
+    }
     if ($hWnd -eq [IntPtr]::Zero) {
+        Write-Host "    hWnd=0，嘗試 MainWindowHandle..." -ForegroundColor Yellow
         $hWnd = (Get-Process -Id $cli.Id -EA SilentlyContinue).MainWindowHandle
     }
-    Write-Host "    hWnd=$hWnd (PID=$($cli.Id), 子進程=$($childPids -join ',')) → 送 ESC"
+    Write-Host "    hWnd=$hWnd → 送 ESC"
     if ($hWnd -and $hWnd -ne [IntPtr]::Zero) {
         [WinAPI]::ShowWindow($hWnd, 9) | Out-Null
         [WinAPI]::SetForegroundWindow($hWnd) | Out-Null
@@ -237,4 +254,5 @@ if (Test-Path $Log) { Get-Content $Log } else { Write-Host "(空)" }
 # ── 清理 ─────────────────────────────────────────────────────────────────────
 $cli | Stop-Process -Force -EA SilentlyContinue
 $srv | Stop-Process -Force -EA SilentlyContinue
+if ($dxwnd) { $dxwnd | Stop-Process -Force -EA SilentlyContinue }
 Write-Host "完成"
