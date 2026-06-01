@@ -189,7 +189,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         w.WriteBytes(patchBytes);
         w.WriteBytes(recvIv);
         w.WriteBytes(sendIv);
-        w.WriteByte(8);
+        w.WriteByte(6);   // locale = 6 (TMS)，Login Hello 也是 6
         return w.ToArray();
     }
 }
