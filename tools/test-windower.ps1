@@ -77,6 +77,8 @@ try{
         $hasCaption = ($st -band 0x00C00000) -ne 0
         Write-Host "  接管結果 : $(if($hasCaption){'✓ 有標題列/邊框 = windower 接管成功'}else{'✗ 仍無邊框 = windower 未生效'})" -ForegroundColor $(if($hasCaption){'Green'}else{'Red'})
     } else { Write-Host "找不到遊戲視窗" -ForegroundColor Red }
+    Write-Host "`n>>> 視窗保持開啟 30 秒供你觀察：看標題列是否寫『MapleForge』、有無邊框、裡面是不是正常遊戲(登入)畫面 <<<" -ForegroundColor Magenta
+    for($s=30;$s -gt 0;$s-=5){ Write-Host "    ...剩 $s 秒"; Start-Sleep 5 }
 }finally{
     if($cli){$cli|Stop-Process -Force -EA SilentlyContinue}
     if($wh){$wh|Stop-Process -Force -EA SilentlyContinue}

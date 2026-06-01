@@ -65,9 +65,10 @@ public class WinAPI {
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint x,uint y,uint d,IntPtr e);
-    public static void ClickBottomCenter(IntPtr h){
+    public static void ClickBottomCenter(IntPtr h){ ClickAt(h, 0.5, 0.965); }   // Play! 按鈕
+    public static void ClickAt(IntPtr h, double fx, double fy){
         RECT r; GetWindowRect(h, out r);
-        int x = r.L + (r.R - r.L)/2; int y = r.B - 20;   // 底部中央 = Play! 按鈕
+        int x = r.L + (int)((r.R - r.L)*fx); int y = r.T + (int)((r.B - r.T)*fy);
         SetForegroundWindow(h); Thread.Sleep(300);
         SetCursorPos(x,y); Thread.Sleep(150);
         mouse_event(0x0002,0,0,0,IntPtr.Zero); Thread.Sleep(80);   // LEFTDOWN
@@ -173,10 +174,19 @@ Start-Sleep 5
 $ok = Test-NetConnection 127.0.0.1 -Port 8484 -InformationLevel Quiet -WarningAction SilentlyContinue
 Write-Host "    8484=$ok"
 
-# ── 視窗化說明 ───────────────────────────────────────────────────────────────
-# 客戶端 SolusTech.ini 已 Windowed=1 → 原生視窗化（實測 636x536 無邊框小視窗，不改解析度）。
-# 自製 windower 對「自動化測試」非必要；故預設不注入（與 Themida 硬幹易脆弱）。
-# 若日後要驗 windower 診斷 log，再手動啟動 tools\windower\bin\windower_host.exe。
+# ── MapleForge Windower 注入（接管視窗化，必須在客戶端之前啟動）────────────────
+# 點 Play! 啟動 D3D 遊戲後，windower 會強制視窗模式 + 套標題列「MapleForge」+ 修正 backbuffer 格式。
+# （已驗證：CreateDevice hr=0、Present 有渲染、桌面解析度不變、使用者視覺確認）
+$WindowerHost = "$Root\tools\windower\bin\windower_host.exe"
+if (Test-Path $WindowerHost) {
+    Write-Host "=== [2b] 注入 MapleForge Windower（接管視窗化）===" -ForegroundColor Cyan
+    $dxwnd = Start-Process -FilePath $WindowerHost -PassThru -WindowStyle Minimized
+    Start-Sleep -Milliseconds 1200
+    if ($dxwnd.HasExited) { Write-Host "    Windower 提前退出 code=$($dxwnd.ExitCode)" -ForegroundColor Red }
+    else { Write-Host "    Windower PID=$($dxwnd.Id)（點 Play! 後遊戲將以 MapleForge 視窗開啟）" }
+} else {
+    Write-Host "=== [2b] 找不到 windower_host.exe，客戶端走原生 Windowed=1 ===" -ForegroundColor DarkYellow
+}
 
 # ── Client ──────────────────────────────────────────────────────────────────
 Write-Host "=== [2] Client 啟動 ===" -ForegroundColor Cyan
@@ -235,6 +245,9 @@ if ($Mode -eq "Auto") {
         Start-Sleep -Milliseconds 1000
         [WinAPI]::Press([WinAPI]::ESC)            # 跳過開場/通知
         Start-Sleep -Milliseconds 1200
+        # 先點視窗中央：搶前景焦點 + 點進登入 ID 欄位（D3D 視窗常要滑鼠點一下才吃鍵盤）
+        [WinAPI]::ClickAt($hWnd, 0.5, 0.5)
+        Start-Sleep -Milliseconds 600
         [WinAPI]::Type("testuser")
         Start-Sleep -Milliseconds 500
         [WinAPI]::Press([WinAPI]::TAB)
