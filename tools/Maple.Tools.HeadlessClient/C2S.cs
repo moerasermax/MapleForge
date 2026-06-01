@@ -44,4 +44,17 @@ public static class C2S
     /// <summary>角色選擇（RecvOp 0x06）：[short 0x0006][int charId]。</summary>
     public static byte[] CharSelect(int charId)
         => new PacketWriter(6).WriteShort(0x0006).WriteInt(charId).ToArray();
+
+    /// <summary>伺服器狀態查詢（RecvOp 0x18）：補取 s2c ServerStatus（0x16）。</summary>
+    public static byte[] ServerStatusRequest()
+        => new PacketWriter(2).WriteShort(0x0018).ToArray();
+
+    // ── Channel Server (port 8585) c2s ────────────────────────────────────────
+
+    /// <summary>
+    /// PlayerLoggedIn（Channel RecvOp 0x07）：[short 0x0007][int charId]。
+    /// 進頻道握手後第一個封包，server 讀 charId → 載入角色 → 送 SetField。
+    /// </summary>
+    public static byte[] PlayerLoggedIn(int charId)
+        => new PacketWriter(6).WriteShort(0x0007).WriteInt(charId).ToArray();
 }

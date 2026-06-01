@@ -19,10 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Maple.Core 需明確 ref，transitive ProjectReference 不自動暴露型別 -->
+    <!-- Maple.Core 需明確 ref（transitive ProjectReference 不自動暴露型別） -->
     <ProjectReference Include="..\..\src\Maple.Core\Maple.Core.csproj" />
     <ProjectReference Include="..\..\src\Maple.Adapters.V113\Maple.Adapters.V113.csproj" />
     <ProjectReference Include="..\..\src\Maple.Versioning\Maple.Versioning.csproj" />
+    <!-- HeadlessClient Exe 可被 test project reference；xunit 不會執行其 Main -->
+    <ProjectReference Include="..\..\tools\Maple.Tools.HeadlessClient\Maple.Tools.HeadlessClient.csproj" />
   </ItemGroup>
 
 </Project>
