@@ -22,8 +22,9 @@ internal static class V113ChannelPackets
         w.WriteByte(1);
         w.WriteShort(0);
 
-        // CRand state (4 × int, anti-cheat RNG seed) — zeros ok for private server
-        w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0);
+        // CRand state (3 × int, anti-cheat RNG seed) — 對齊 Java PlayerRandomStream.connectData(3 int)
+        // 先前誤寫 4 個 → 整段 addCharacterInfo 位移 → 客戶端讀位移後誤判長度欄 → EOF(error 38)
+        w.WriteInt(0); w.WriteInt(0); w.WriteInt(0);
 
         AddCharacterInfo(w, chr);
 
@@ -123,39 +124,40 @@ internal static class V113ChannelPackets
         }
         w.WriteByte(0);
 
-        // Equip bag, Use, Setup, Etc, Cash (all empty)
-        w.WriteByte(0);
-        w.WriteByte(0);
-        w.WriteByte(0);
-        w.WriteByte(0);
-        w.WriteByte(0);
-        w.WriteByte(0);
+        // Use/Setup/Etc/Cash 各欄起始 + 最終結束 = 5 個 0(對齊 Java addInventoryInfo 共 7 個 marker；先前多寫 1 個)
+        w.WriteByte(0);   // use 起始
+        w.WriteByte(0);   // setup 起始
+        w.WriteByte(0);   // etc 起始
+        w.WriteByte(0);   // cash 起始
+        w.WriteByte(0);   // 最終結束
     }
 
     private static void AddEquipItemInfo(PacketWriter w, EquipEntry eq, bool zeroPosition)
     {
-        // Item info: type byte + position + itemId + owner + flag + ...
-        w.WriteByte(1);                 // item type = equip
+        // 逐欄對照 Java PacketHelper.addItemInfo (equip 分支, 非寵物/無 uniqueId)
         if (!zeroPosition)
         {
-            w.WriteShort(eq.Position);
+            short pos = eq.Position;
+            if (pos < 0) pos = (short)(-pos);
+            w.WriteByte((byte)(pos > 100 ? pos - 100 : pos)); // 位置: 1 byte, 絕對值, >100→-100 (先寫位置再 type!)
         }
+        w.WriteByte(1);                 // type = equip (非寵物=3)
         w.WriteInt(eq.ItemId);
-        w.WriteByte(0);                 // unique flag (0 = normal)
-        w.WriteLong(-1L);               // expiration time = never
-        // equip stats (all zero for minimal)
+        w.WriteByte(0);                 // hasUniqueId = 0 (一般裝備)
+        // hasUniqueId=0 → 不寫 uniqueId long
+        w.WriteLong(GetTime(-1));       // addExpirationTime = writeLong(getTime(expiration))
         w.WriteByte(0);                 // upgrade slots
         w.WriteByte(0);                 // level
-        w.WriteShort(0); w.WriteShort(0); w.WriteShort(0); w.WriteShort(0);  // str/dex/int/luk
-        w.WriteShort(0); w.WriteShort(0); w.WriteShort(0); w.WriteShort(0);  // hp/mp/watk/matk
-        w.WriteShort(0); w.WriteShort(0); w.WriteShort(0);  // wacc/macc/avoid
-        w.WriteShort(0); w.WriteShort(0); w.WriteShort(0);  // hands/speed/jump
-        w.WriteInt(0);                  // owner length
+        // 15 個 short: str,dex,int,luk,hp,mp,watk,matk,wdef,mdef,acc,avoid,hands,speed,jump
+        for (var i = 0; i < 15; i++) w.WriteShort(0);
+        w.WriteShort(0);                // owner = 空 MapleAsciiString (length 0)
         w.WriteShort(0);                // flag
+        w.WriteByte(0);                 // incSkill (>0?1:0)
         w.WriteByte(0);                 // item level
-        w.WriteShort(0);                // item exp
-        w.WriteInt(-1);                 // vicious hammer = -1
-        w.WriteLong(0);                 // ring id (0 = no ring)
+        w.WriteInt(0);                  // item exp (int, 不是 short!)
+        w.WriteLong(0);                 // tracking uniqueId (因 hasUniqueId=0 → Java 寫 item.getUniqueId())
+        w.WriteLong(GetTime(-2));       // getTime(-2)
+        w.WriteInt(-1);                 // -1
     }
 
     private static void AddSkillInfo(PacketWriter w) => w.WriteShort(0);
@@ -170,6 +172,8 @@ internal static class V113ChannelPackets
 
     private static void AddRingInfo(PacketWriter w)
     {
+        // 對齊 Java addRingInfo: 4 個 short (前置 + cRing.size + fRing.size + marriage旗標)；先前只 3 個
+        w.WriteShort(0);
         w.WriteShort(0);
         w.WriteShort(0);
         w.WriteShort(0);

@@ -14,7 +14,11 @@ public class WJ {
     [DllImport("user32.dll",CharSet=CharSet.Ansi)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint x,uint y,uint d,IntPtr e);
+    [DllImport("user32.dll")] public static extern short GetKeyState(int k);
+    [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
     [DllImport("user32.dll")] public static extern int ChangeDisplaySettings(IntPtr dm, int f);
+    // 注入大小寫敏感密碼前確保 CAPS LOCK 關閉(否則 test1234→TEST1234→密碼不符)
+    public static bool ClearCapsLock(){ bool was=(GetKeyState(0x14)&1)!=0; if(was){ keybd_event(0x14,0x45,0,IntPtr.Zero); Thread.Sleep(40); keybd_event(0x14,0x45,2,IntPtr.Zero); Thread.Sleep(60); } return was; }
     public delegate bool EnumProc(IntPtr h, IntPtr l);
     [StructLayout(LayoutKind.Sequential)] public struct R { public int L,T,Ri,B; }
     public static IntPtr FindByPid(uint pid){ IntPtr f=IntPtr.Zero; EnumWindows((h,_)=>{ if(!IsWindowVisible(h))return true; uint p; GetWindowThreadProcessId(h,out p); if(p==pid){f=h;return false;} return true;},IntPtr.Zero); return f; }
@@ -56,6 +60,7 @@ try{
     $loggedIn=$false
     for($try=1; $try -le 3 -and -not $loggedIn; $try++){
         Write-Host "--- 登入嘗試 $try ---"
+        $wasCaps=[WJ]::ClearCapsLock(); if($wasCaps){ Write-Host "  (CAPS LOCK 原為 ON,已關閉)" -ForegroundColor Yellow }
         [WJ]::ShowWindow($g,9)|Out-Null; [WJ]::SetForegroundWindow($g)|Out-Null; Start-Sleep -Milliseconds 600
         [WJ]::Click($g,0.56,0.45); Start-Sleep -Milliseconds 400      # 焦點到帳號框
         InjectType ("`b" * 14); InjectType "testuser"; InjectType "`t"; InjectType ("`b" * 14); InjectType "test1234"
@@ -85,13 +90,19 @@ try{
         Write-Host "--- 按「選擇角色」鈕 (0.74,0.31) ---"; [WJ]::Click($g,0.74,0.31); Start-Sleep 3; Shot $g "10b-after-selectchar"
         $inGame = (SrvHit 'SERVER_IP|PLAYER_LOGGEDIN|進入地圖') -gt 0
         if(-not $inGame){ Write-Host "--- 備援:雙擊角色 ---"; [WJ]::Click($g,0.31,0.56); Start-Sleep -Milliseconds 120; [WJ]::Click($g,0.31,0.56); Start-Sleep 3; Shot $g "10c-dblchar"; $inGame=(SrvHit 'SERVER_IP|PLAYER_LOGGEDIN|進入地圖') -gt 0 }
-        # 進地圖後客戶端可能換視窗/換 class→抓該 pid「任何 class」最大可見窗,印出 class 診斷
-        Start-Sleep 6
-        Write-Host "  進圖後 client pid 存活=$((Get-Process -Id $cli.Id -EA SilentlyContinue) -ne $null)"
-        $anyw=[WJ]::FindByPid([uint]$cli.Id)
-        if($anyw -ne [IntPtr]::Zero){ Write-Host ("  進圖後可見窗 class={0} {1}" -f [WJ]::ClassOf($anyw),[WJ]::RectStr($anyw)); [WJ]::SetForegroundWindow($anyw)|Out-Null; Start-Sleep -Milliseconds 500; Shot $anyw "11-map" } else { Write-Host "  進圖後找不到任何可見窗(客戶端視窗已消失)" }
-        Start-Sleep 8   # 多停久一點,觀察是否續留地圖
+        # 進圖後「不馬上殺」,連續觀察客戶端是否續留地圖(每4s×6=~24s),enum any-class 視窗截 render
         Write-Host ("  進遊戲(SERVER_IP/PLAYER_LOGGEDIN/進入地圖)={0}" -f $inGame)
+        for($k=1;$k -le 6;$k++){
+            Start-Sleep 4
+            $alive = (Get-Process -Id $cli.Id -EA SilentlyContinue) -ne $null
+            $leftMap = (SrvHit '離開地圖') -gt 0
+            $w2 = if($alive){ [WJ]::FindByPid([uint]$cli.Id) } else { [IntPtr]::Zero }
+            $cls = if($w2 -ne [IntPtr]::Zero){ [WJ]::ClassOf($w2) } else { "(無可見窗)" }
+            Write-Host ("  [t+{0}s] client存活={1} channel離開={2} 窗class={3} {4}" -f ($k*4),$alive,$leftMap,$cls,$(if($w2 -ne [IntPtr]::Zero){[WJ]::RectStr($w2)}else{""}))
+            if($w2 -ne [IntPtr]::Zero -and [WJ]::Width($w2) -ge 200){ [WJ]::SetForegroundWindow($w2)|Out-Null; Start-Sleep -Milliseconds 400; Shot $w2 ("map-{0}" -f $k) }
+            if(-not $alive){ Write-Host "  → 客戶端進程已關閉(非我kill,是自行結束/崩潰)" -ForegroundColor Red; break }
+            if($leftMap){ Write-Host "  → channel 已自行斷線(離開地圖,非我kill)" -ForegroundColor Red; break }
+        }
     }
     Write-Host "`n=== server channel 端訊號 ==="
     if(Test-Path $Log){ Get-Content $Log | Select-String -Pattern "CHARLIST|SERVER_IP|PLAYER_LOGGEDIN|SET_FIELD|進入地圖|TestHero|角色" | Select-Object -Last 12 | %{ Write-Host "  SRV: $($_.Line)" } }
