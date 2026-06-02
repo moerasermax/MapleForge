@@ -133,6 +133,14 @@ typedef struct KbdInjectKey {
     bool shift;
 } KbdInjectKey;
 
+typedef struct MoveInjectCommand {
+    char name[16];
+    BYTE dik;
+    BYTE vk;
+    BYTE aggregateVk;
+    DWORD durationMs;
+} MoveInjectCommand;
+
 typedef struct DIDEVICEOBJECTDATA_LOCAL {
     DWORD dwOfs;
     DWORD dwData;
@@ -239,6 +247,7 @@ static bool           g_d3d8HookSkippedByEnv = false;
 static bool           g_keyboardHooksAttempted = false;
 static bool           g_keyboardInjectActive = false;
 static bool           g_keyboardDebugActive = false;
+static bool           g_moveInjectActive = false;
 static bool           g_keyboardDetectionLogged = false;
 static bool           g_di8CreateDeviceHooked = false;
 static bool           g_diKeyboardDeviceHooked = false;
@@ -259,6 +268,18 @@ static char           g_keyboardFileA[MAX_PATH] = {};
 static bool           g_keyboardFileReady = false;
 static bool           g_keyboardFileMissingLogged = false;
 static ULONGLONG      g_keyboardLastFilePoll = 0;
+static char           g_moveFileA[MAX_PATH] = {};
+static bool           g_moveFileReady = false;
+static bool           g_moveFileMissingLogged = false;
+static bool           g_moveKeymapLogged = false;
+static ULONGLONG      g_moveLastFilePoll = 0;
+static MoveInjectCommand g_moveQueue[1024] = {};
+static DWORD          g_moveQueueCount = 0;
+static DWORD          g_moveQueueIndex = 0;
+static MoveInjectCommand g_moveHoldCommand = {};
+static bool           g_moveHoldActive = false;
+static ULONGLONG      g_moveHoldStartTick = 0;
+static ULONGLONG      g_moveHoldUntilTick = 0;
 static KbdInjectKey   g_keyboardQueue[1024] = {};
 static DWORD          g_keyboardQueueCount = 0;
 static DWORD          g_keyboardQueueIndex = 0;
@@ -1854,6 +1875,7 @@ enum
     DIK_LBRACKET_LOCAL = 0x1A,
     DIK_RBRACKET_LOCAL = 0x1B,
     DIK_RETURN_LOCAL = 0x1C,
+    DIK_LCONTROL_LOCAL = 0x1D,
     DIK_A_LOCAL = 0x1E,
     DIK_S_LOCAL = 0x1F,
     DIK_D_LOCAL = 0x20,
@@ -1878,7 +1900,12 @@ enum
     DIK_COMMA_LOCAL = 0x33,
     DIK_PERIOD_LOCAL = 0x34,
     DIK_SLASH_LOCAL = 0x35,
+    DIK_LMENU_LOCAL = 0x38,
     DIK_SPACE_LOCAL = 0x39,
+    DIK_UP_LOCAL = 0xC8,
+    DIK_LEFT_LOCAL = 0xCB,
+    DIK_RIGHT_LOCAL = 0xCD,
+    DIK_DOWN_LOCAL = 0xD0,
     KBD_DOWN_POLLS = 4,
     KBD_UP_POLLS = 2,
     KBD_DEBUG_LOG_RATE = 500,
@@ -1898,6 +1925,11 @@ static bool IsKeyboardInjectEnabled()
 static bool IsKeyboardDebugEnabled()
 {
     return IsEnvFlagOne("MAPLEFORGE_WINDOWER_KBD_DEBUG");
+}
+
+static bool IsMoveInjectEnabled()
+{
+    return IsEnvFlagOne("MAPLEFORGE_WINDOWER_MOVE_INJECT");
 }
 
 // 方法 A：注入前把目標執行緒切成美式英文鍵盤佈局，繞過中文 IME 把
@@ -1925,7 +1957,7 @@ static bool IsKeyboardSyntheticMessageInjectionEnabled()
 
 static bool IsKeyboardDiagnosticsEnabled()
 {
-    return g_keyboardInjectActive || g_keyboardDebugActive;
+    return g_keyboardInjectActive || g_moveInjectActive || g_keyboardDebugActive;
 }
 
 static bool ShouldLogKeyboardCount(volatile LONG* counter, LONG* countOut)
@@ -2112,6 +2144,183 @@ static bool ResolveKeyboardFilePath()
     return false;
 }
 
+static bool IsAsciiSpaceChar(char ch)
+{
+    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
+}
+
+static char* TrimAsciiInPlace(char* text)
+{
+    if (!text)
+        return text;
+
+    while (*text && IsAsciiSpaceChar(*text))
+        ++text;
+
+    char* end = text + strlen(text);
+    while (end > text && IsAsciiSpaceChar(end[-1]))
+        --end;
+    *end = '\0';
+    return text;
+}
+
+static void InitMoveCommand(
+    MoveInjectCommand* out, const char* name, BYTE dik, BYTE vk, BYTE aggregateVk)
+{
+    if (!out)
+        return;
+    memset(out, 0, sizeof(*out));
+    _snprintf_s(out->name, _countof(out->name), _TRUNCATE, "%s", name ? name : "");
+    out->dik = dik;
+    out->vk = vk;
+    out->aggregateVk = aggregateVk;
+}
+
+static bool MapMoveKeyName(const char* keyName, MoveInjectCommand* out)
+{
+    if (!keyName || !out)
+        return false;
+
+    if (_stricmp(keyName, "LEFT") == 0)
+    {
+        InitMoveCommand(out, "LEFT", DIK_LEFT_LOCAL, VK_LEFT, 0);
+        return true;
+    }
+    if (_stricmp(keyName, "RIGHT") == 0)
+    {
+        InitMoveCommand(out, "RIGHT", DIK_RIGHT_LOCAL, VK_RIGHT, 0);
+        return true;
+    }
+    if (_stricmp(keyName, "UP") == 0)
+    {
+        InitMoveCommand(out, "UP", DIK_UP_LOCAL, VK_UP, 0);
+        return true;
+    }
+    if (_stricmp(keyName, "DOWN") == 0)
+    {
+        InitMoveCommand(out, "DOWN", DIK_DOWN_LOCAL, VK_DOWN, 0);
+        return true;
+    }
+    if (_stricmp(keyName, "JUMP") == 0)
+    {
+        InitMoveCommand(out, "JUMP", DIK_LMENU_LOCAL, VK_LMENU, VK_MENU);
+        return true;
+    }
+    if (_stricmp(keyName, "ATTACK") == 0)
+    {
+        InitMoveCommand(out, "ATTACK", DIK_LCONTROL_LOCAL, VK_LCONTROL, VK_CONTROL);
+        return true;
+    }
+    if (_stricmp(keyName, "NPC") == 0)
+    {
+        InitMoveCommand(out, "NPC", DIK_UP_LOCAL, VK_UP, 0);
+        return true;
+    }
+
+    return false;
+}
+
+static void LogMoveKeymapOnce()
+{
+    if (g_moveKeymapLogged)
+        return;
+    g_moveKeymapLogged = true;
+
+    WriteLog(
+        "[Windower] move injection keymap LEFT=DIK 0x%02lX/VK_LEFT RIGHT=DIK 0x%02lX/VK_RIGHT UP=DIK 0x%02lX/VK_UP DOWN=DIK 0x%02lX/VK_DOWN JUMP=LeftAlt DIK 0x%02lX/VK_LMENU ATTACK=LeftCtrl DIK 0x%02lX/VK_LCONTROL NPC=UP DIK 0x%02lX/VK_UP",
+        (unsigned long)DIK_LEFT_LOCAL,
+        (unsigned long)DIK_RIGHT_LOCAL,
+        (unsigned long)DIK_UP_LOCAL,
+        (unsigned long)DIK_DOWN_LOCAL,
+        (unsigned long)DIK_LMENU_LOCAL,
+        (unsigned long)DIK_LCONTROL_LOCAL,
+        (unsigned long)DIK_UP_LOCAL);
+}
+
+static bool ResolveMoveInjectionFilePath()
+{
+    if (g_moveFileReady)
+        return true;
+
+    DWORD n = GetEnvironmentVariableA("MAPLEFORGE_WINDOWER_MOVE_FILE", g_moveFileA, (DWORD)_countof(g_moveFileA));
+    if (n > 0 && n < _countof(g_moveFileA))
+    {
+        g_moveFileReady = true;
+        WriteLog("[Windower] move injection file=%s", g_moveFileA);
+        return true;
+    }
+
+    if (!g_moveFileMissingLogged)
+    {
+        g_moveFileMissingLogged = true;
+        WriteLog("[Windower] move injection enabled but MAPLEFORGE_WINDOWER_MOVE_FILE is not set");
+    }
+    return false;
+}
+
+static void ClearMoveInjectionFileLocked()
+{
+    if (!g_moveFileReady || !g_moveFileA[0])
+        return;
+
+    HANDLE h = CreateFileA(
+        g_moveFileA, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+}
+
+static bool ParseMoveCommandLineLocked(char* line, DWORD lineNo, MoveInjectCommand* out)
+{
+    if (!line || !out)
+        return false;
+
+    char* text = TrimAsciiInPlace(line);
+    if (!text || !text[0] || text[0] == '#')
+        return false;
+    if (text[0] == '/' && text[1] == '/')
+        return false;
+
+    char* colon = strchr(text, ':');
+    if (!colon)
+    {
+        WriteLog("[Windower] move injection invalid line=%lu missing ':' text=\"%s\"",
+            (unsigned long)lineNo, text);
+        return false;
+    }
+
+    *colon = '\0';
+    char* keyName = TrimAsciiInPlace(text);
+    char* durationText = TrimAsciiInPlace(colon + 1);
+    if (!keyName || !keyName[0] || !durationText || !durationText[0])
+    {
+        WriteLog("[Windower] move injection invalid line=%lu empty key/duration", (unsigned long)lineNo);
+        return false;
+    }
+
+    MoveInjectCommand cmd = {};
+    if (!MapMoveKeyName(keyName, &cmd))
+    {
+        WriteLog("[Windower] move injection invalid line=%lu unsupported key=\"%s\"",
+            (unsigned long)lineNo, keyName);
+        return false;
+    }
+
+    char* end = nullptr;
+    unsigned long duration = strtoul(durationText, &end, 10);
+    end = TrimAsciiInPlace(end);
+    if (duration == 0 || !end || end[0] != '\0')
+    {
+        WriteLog("[Windower] move injection invalid line=%lu key=%s duration=\"%s\"",
+            (unsigned long)lineNo, keyName, durationText);
+        return false;
+    }
+
+    cmd.durationMs = (DWORD)duration;
+    *out = cmd;
+    return true;
+}
+
 static bool MapCharToKey(char ch, KbdInjectKey* out)
 {
     if (!out)
@@ -2218,6 +2427,99 @@ static void ClearKeyboardInjectionFileLocked()
         nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h != INVALID_HANDLE_VALUE)
         CloseHandle(h);
+}
+
+static void ResetMoveInjectionQueueLocked()
+{
+    g_moveQueueCount = 0;
+    g_moveQueueIndex = 0;
+    memset(g_moveQueue, 0, sizeof(g_moveQueue));
+    memset(&g_moveHoldCommand, 0, sizeof(g_moveHoldCommand));
+    g_moveHoldActive = false;
+    g_moveHoldStartTick = 0;
+    g_moveHoldUntilTick = 0;
+}
+
+static void LoadMoveInjectionFileLocked()
+{
+    if (!g_moveInjectActive)
+        return;
+
+    if (g_moveHoldActive || g_moveQueueIndex < g_moveQueueCount)
+        return;
+
+    ULONGLONG now = GetTickCount64();
+    if (now - g_moveLastFilePoll < 50)
+        return;
+    g_moveLastFilePoll = now;
+
+    if (!ResolveMoveInjectionFilePath())
+        return;
+
+    HANDLE h = CreateFileA(
+        g_moveFileA, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+
+    DWORD size = GetFileSize(h, nullptr);
+    if (size == INVALID_FILE_SIZE || size == 0)
+    {
+        CloseHandle(h);
+        return;
+    }
+    if (size > 8191)
+        size = 8191;
+
+    char buf[8192] = {};
+    DWORD read = 0;
+    BOOL ok = ReadFile(h, buf, size, &read, nullptr);
+    CloseHandle(h);
+    if (!ok || read == 0)
+        return;
+    buf[read] = '\0';
+
+    ResetMoveInjectionQueueLocked();
+
+    DWORD lineNo = 1;
+    char* p = buf;
+    while (*p && g_moveQueueCount < _countof(g_moveQueue))
+    {
+        char* line = p;
+        while (*p && *p != '\r' && *p != '\n')
+            ++p;
+
+        char newline = *p;
+        if (*p)
+        {
+            *p = '\0';
+            ++p;
+            if (newline == '\r' && *p == '\n')
+                ++p;
+        }
+
+        MoveInjectCommand cmd = {};
+        if (ParseMoveCommandLineLocked(line, lineNo, &cmd))
+            g_moveQueue[g_moveQueueCount++] = cmd;
+        ++lineNo;
+    }
+
+    if (g_moveQueueCount >= _countof(g_moveQueue) && *p)
+    {
+        WriteLog("[Windower] move injection command file truncated at %lu commands",
+            (unsigned long)g_moveQueueCount);
+    }
+
+    ClearMoveInjectionFileLocked();
+
+    if (g_moveQueueCount > 0)
+    {
+        WriteLog("[Windower] move injection loaded commands=%lu", (unsigned long)g_moveQueueCount);
+    }
+    else
+    {
+        WriteLog("[Windower] move injection file consumed but no valid commands");
+    }
 }
 
 static void LoadKeyboardInjectionFileLocked()
@@ -2342,6 +2644,95 @@ static void AdvanceKeyboardInjectionLocked()
             g_keyboardLastSyntheticHwnd = nullptr;
         }
     }
+}
+
+static void FinishMoveHoldLocked(ULONGLONG now, const char* reason)
+{
+    if (!g_moveHoldActive)
+        return;
+
+    ULONGLONG elapsed = (now >= g_moveHoldStartTick) ? (now - g_moveHoldStartTick) : 0;
+    WriteLog(
+        "[Windower] KBD_DEBUG move hold end key=%s DIK=0x%02lX VK=0x%02lX duration=%lu elapsed=%llu reason=%s",
+        g_moveHoldCommand.name,
+        (unsigned long)g_moveHoldCommand.dik,
+        (unsigned long)g_moveHoldCommand.vk,
+        (unsigned long)g_moveHoldCommand.durationMs,
+        (unsigned long long)elapsed,
+        reason ? reason : "unknown");
+
+    g_moveHoldActive = false;
+    memset(&g_moveHoldCommand, 0, sizeof(g_moveHoldCommand));
+    g_moveHoldStartTick = 0;
+    g_moveHoldUntilTick = 0;
+    if (g_moveQueueIndex < g_moveQueueCount)
+        ++g_moveQueueIndex;
+}
+
+static bool GetCurrentMoveHoldLocked(MoveInjectCommand* keyOut)
+{
+    if (!g_moveInjectActive)
+        return false;
+
+    ULONGLONG now = GetTickCount64();
+    for (;;)
+    {
+        if (g_moveHoldActive)
+        {
+            if (now < g_moveHoldUntilTick)
+            {
+                if (keyOut)
+                    *keyOut = g_moveHoldCommand;
+                return true;
+            }
+
+            FinishMoveHoldLocked(now, "duration");
+            continue;
+        }
+
+        if (g_moveQueueIndex >= g_moveQueueCount)
+        {
+            if (g_moveQueueCount > 0)
+            {
+                WriteLog("[Windower] move injection finished commands=%lu", (unsigned long)g_moveQueueCount);
+                ResetMoveInjectionQueueLocked();
+            }
+
+            LoadMoveInjectionFileLocked();
+            if (g_moveQueueIndex >= g_moveQueueCount)
+                return false;
+        }
+
+        g_moveHoldCommand = g_moveQueue[g_moveQueueIndex];
+        g_moveHoldStartTick = now;
+        g_moveHoldUntilTick = now + g_moveHoldCommand.durationMs;
+        g_moveHoldActive = true;
+
+        WriteLog(
+            "[Windower] KBD_DEBUG move hold begin key=%s DIK=0x%02lX VK=0x%02lX duration=%lu until=%llu",
+            g_moveHoldCommand.name,
+            (unsigned long)g_moveHoldCommand.dik,
+            (unsigned long)g_moveHoldCommand.vk,
+            (unsigned long)g_moveHoldCommand.durationMs,
+            (unsigned long long)g_moveHoldUntilTick);
+
+        if (keyOut)
+            *keyOut = g_moveHoldCommand;
+        return true;
+    }
+}
+
+static bool CurrentMoveVirtualKeyDownLocked(int vKey)
+{
+    MoveInjectCommand key = {};
+    if (!GetCurrentMoveHoldLocked(&key))
+        return false;
+
+    if (vKey == key.vk)
+        return true;
+    if (key.aggregateVk && vKey == key.aggregateVk)
+        return true;
+    return false;
 }
 
 static bool HwndBelongsToCurrentProcess(HWND hwnd)
@@ -3402,21 +3793,30 @@ static bool StartKeyboardInternalWorker(const char* text, DWORD len)
 
 static void OverlayDirectInputKeyboardState(BYTE* state, DWORD cbData)
 {
-    if (!g_keyboardInjectActive || !state || cbData < 256 || !g_keyboardLockReady)
+    if ((!g_keyboardInjectActive && !g_moveInjectActive) || !state || cbData < 256 || !g_keyboardLockReady)
         return;
 
     EnterCriticalSection(&g_keyboardLock);
-    KbdInjectKey key = {};
-    bool isDown = false;
-    if (GetCurrentInjectedKeyLocked(&key, &isDown))
+    if (g_keyboardInjectActive)
     {
-        if (isDown)
+        KbdInjectKey key = {};
+        bool isDown = false;
+        if (GetCurrentInjectedKeyLocked(&key, &isDown))
         {
-            state[key.dik] |= 0x80;
-            if (key.shift)
-                state[DIK_LSHIFT_LOCAL] |= 0x80;
+            if (isDown)
+            {
+                state[key.dik] |= 0x80;
+                if (key.shift)
+                    state[DIK_LSHIFT_LOCAL] |= 0x80;
+            }
+            AdvanceKeyboardInjectionLocked();
         }
-        AdvanceKeyboardInjectionLocked();
+    }
+    if (g_moveInjectActive)
+    {
+        MoveInjectCommand moveKey = {};
+        if (GetCurrentMoveHoldLocked(&moveKey))
+            state[moveKey.dik] |= 0x80;
     }
     LeaveCriticalSection(&g_keyboardLock);
 }
@@ -3637,12 +4037,16 @@ static SHORT WINAPI HookedGetAsyncKeyState(int vKey)
     GetAsyncKeyState_t orig = g_origGetAsyncKeyState ? g_origGetAsyncKeyState : (GetAsyncKeyState_t)g_getAsyncKeyStateDetour.target;
     SHORT ret = orig ? orig(vKey) : 0;
 
-    if (g_keyboardInjectActive && g_keyboardLockReady)
+    if ((g_keyboardInjectActive || g_moveInjectActive) && g_keyboardLockReady)
     {
         EnterCriticalSection(&g_keyboardLock);
-        if (CurrentVirtualKeyDownLocked(vKey))
+        if ((g_keyboardInjectActive && CurrentVirtualKeyDownLocked(vKey)) ||
+            (g_moveInjectActive && CurrentMoveVirtualKeyDownLocked(vKey)))
+        {
             ret = (SHORT)(ret | 0x8000);
-        MaybeAdvanceKeyboardAsyncLocked();
+        }
+        if (g_keyboardInjectActive)
+            MaybeAdvanceKeyboardAsyncLocked();
         LeaveCriticalSection(&g_keyboardLock);
     }
 
@@ -3661,14 +4065,21 @@ static SHORT WINAPI HookedGetKeyState(int vKey)
     GetKeyState_t orig = g_origGetKeyState ? g_origGetKeyState : (GetKeyState_t)g_getKeyStateDetour.target;
     SHORT ret = orig ? orig(vKey) : 0;
 
-    if (g_keyboardInjectActive && g_keyboardLockReady)
+    if ((g_keyboardInjectActive || g_moveInjectActive) && g_keyboardLockReady)
     {
         EnterCriticalSection(&g_keyboardLock);
-        bool down = CurrentMessageVirtualKeyDownLocked(vKey);
-        const bool hasMessageQueue =
-            IsKeyboardSyntheticMessageInjectionEnabled() &&
-            (g_keyboardMsgQueueIndex < g_keyboardQueueCount);
-        if (!down && !hasMessageQueue && CurrentVirtualKeyDownLocked(vKey))
+        bool down = false;
+        bool hasMessageQueue = false;
+        if (g_keyboardInjectActive)
+        {
+            down = CurrentMessageVirtualKeyDownLocked(vKey);
+            hasMessageQueue =
+                IsKeyboardSyntheticMessageInjectionEnabled() &&
+                (g_keyboardMsgQueueIndex < g_keyboardQueueCount);
+            if (!down && !hasMessageQueue && CurrentVirtualKeyDownLocked(vKey))
+                down = true;
+        }
+        if (!down && g_moveInjectActive && CurrentMoveVirtualKeyDownLocked(vKey))
             down = true;
         if (down)
             ret = (SHORT)(ret | 0x8000);
@@ -3689,21 +4100,34 @@ static BOOL WINAPI HookedGetKeyboardState(PBYTE lpKeyState)
 {
     GetKeyboardState_t orig = g_origGetKeyboardState ? g_origGetKeyboardState : (GetKeyboardState_t)g_getKeyboardStateDetour.target;
     BOOL ret = orig ? orig(lpKeyState) : FALSE;
-    if (ret && lpKeyState && g_keyboardInjectActive && g_keyboardLockReady)
+    if (ret && lpKeyState && (g_keyboardInjectActive || g_moveInjectActive) && g_keyboardLockReady)
     {
         EnterCriticalSection(&g_keyboardLock);
-        KbdInjectKey key = {};
-        bool isDown = false;
-        if (GetCurrentInjectedKeyLocked(&key, &isDown) && isDown)
+        if (g_keyboardInjectActive)
         {
-            lpKeyState[key.vk] |= 0x80;
-            if (key.shift)
+            KbdInjectKey key = {};
+            bool isDown = false;
+            if (GetCurrentInjectedKeyLocked(&key, &isDown) && isDown)
             {
-                lpKeyState[VK_SHIFT] |= 0x80;
-                lpKeyState[VK_LSHIFT] |= 0x80;
+                lpKeyState[key.vk] |= 0x80;
+                if (key.shift)
+                {
+                    lpKeyState[VK_SHIFT] |= 0x80;
+                    lpKeyState[VK_LSHIFT] |= 0x80;
+                }
+            }
+            MaybeAdvanceKeyboardAsyncLocked();
+        }
+        if (g_moveInjectActive)
+        {
+            MoveInjectCommand moveKey = {};
+            if (GetCurrentMoveHoldLocked(&moveKey))
+            {
+                lpKeyState[moveKey.vk] |= 0x80;
+                if (moveKey.aggregateVk)
+                    lpKeyState[moveKey.aggregateVk] |= 0x80;
             }
         }
-        MaybeAdvanceKeyboardAsyncLocked();
         LeaveCriticalSection(&g_keyboardLock);
     }
 
@@ -3902,14 +4326,19 @@ static void InstallKeyboardHooks()
 {
     g_keyboardInjectActive = IsKeyboardInjectEnabled();
     g_keyboardDebugActive = IsKeyboardDebugEnabled();
-    if (!g_keyboardInjectActive && !g_keyboardDebugActive)
+    g_moveInjectActive = IsMoveInjectEnabled();
+    if (!g_keyboardInjectActive && !g_moveInjectActive && !g_keyboardDebugActive)
         return;
     if (g_keyboardHooksAttempted)
         return;
     g_keyboardHooksAttempted = true;
 
-    WriteLog("[Windower] keyboard hooks enabled inject=%d debug=%d",
-        g_keyboardInjectActive ? 1 : 0, g_keyboardDebugActive ? 1 : 0);
+    WriteLog("[Windower] keyboard hooks enabled inject=%d move=%d debug=%d",
+        g_keyboardInjectActive ? 1 : 0,
+        g_moveInjectActive ? 1 : 0,
+        g_keyboardDebugActive ? 1 : 0);
+    if (g_moveInjectActive)
+        LogMoveKeymapOnce();
     LogKeyboardApiDetection();
 
     HMODULE hDinput8 = GetModuleHandleA("dinput8.dll");
