@@ -50,4 +50,12 @@ public sealed class MapServiceTests : IDisposable
         var map = _svc.LoadMap(100000000);
         Assert.True(map.Town);
     }
+
+    [Fact]
+    public void Henesys_Loads_Npcs()
+    {
+        var map = _svc.LoadMap(100000000);
+        Assert.NotEmpty(map.Npcs);                              // Henesys 有多個 NPC
+        Assert.All(map.Npcs, n => Assert.True(n.NpcId > 0));    // id 解析正確
+    }
 }

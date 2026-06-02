@@ -15,4 +15,7 @@ internal static class V113ChannelSendOp
     public const short SetField = 0x7B;   // WARP_TO_MAP / initial login / map change
     public const short ChatText = unchecked((short)0x9B);   // 地圖聊天泡泡
     public const short Ping = 0x09;
+    public const short SpawnNpc = unchecked((short)0xF9);              // SPAWN_NPC
+    public const short RemoveNpc = unchecked((short)0xFA);            // REMOVE_NPC
+    public const short SpawnNpcRequestController = unchecked((short)0xFB);  // SPAWN_NPC_REQUEST_CONTROLLER
 }

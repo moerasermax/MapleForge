@@ -14,6 +14,9 @@ public sealed class MapData
     public IReadOnlyList<MapPortal> Portals { get; init; } = Array.Empty<MapPortal>();
     public IReadOnlyList<MapFoothold> Footholds { get; init; } = Array.Empty<MapFoothold>();
 
+    /// <summary>地圖靜態 NPC（從 WZ life 節點載入）。</summary>
+    public IReadOnlyList<MapNpc> Npcs { get; init; } = Array.Empty<MapNpc>();
+
     /// <summary>依序號取得出生點；找不到時回最近的出生點或 null。</summary>
     public MapPortal? GetSpawnPoint(byte spawnPoint)
     {

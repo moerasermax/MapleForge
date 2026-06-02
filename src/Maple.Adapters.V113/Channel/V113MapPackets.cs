@@ -1,5 +1,6 @@
 using Maple.Core.Characters;
 using Maple.Core.IO;
+using Maple.Core.World;
 
 namespace Maple.Adapters.V113.Channel;
 
@@ -118,7 +119,58 @@ internal static class V113MapPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// SPAWN_NPC (0xF9) — 讓進場客戶端看到地圖 NPC。對照 Java spawnNPC。
+    /// 布局：[opcode][int objectId][int npcId][short x][short cy][byte dir][short fh][short rx0][short rx1][byte show]。
+    /// dir = (f==1 ? 0 : 1)（Java 慣例）。
+    /// </summary>
+    public static byte[] SpawnNpc(Npc npc, bool show = true)
+    {
+        var w = new PacketWriter(24);
+        w.WriteShort(V113ChannelSendOp.SpawnNpc);
+        WriteNpcBody(w, npc);
+        w.WriteByte(show ? (byte)1 : (byte)0);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// SPAWN_NPC_REQUEST_CONTROLLER (0xFB)，控制旗標=1 — 指派客戶端為該 NPC 的控制者。
+    /// 對照 Java spawnNPCRequestController。布局同 SpawnNpc，但前綴 [byte 1] 控制旗標、尾端 [byte miniMap]。
+    /// </summary>
+    public static byte[] SpawnNpcRequestController(Npc npc, bool miniMap = true)
+    {
+        var w = new PacketWriter(26);
+        w.WriteShort(V113ChannelSendOp.SpawnNpcRequestController);
+        w.WriteByte(1);   // 1 = 取得控制權（0 = 移除控制權，見 RemoveNpcController）
+        WriteNpcBody(w, npc);
+        w.WriteByte(miniMap ? (byte)1 : (byte)0);
+        return w.ToArray();
+    }
+
+    /// <summary>REMOVE_NPC (0xFA)。</summary>
+    public static byte[] RemoveNpc(int objectId)
+    {
+        var w = new PacketWriter(6);
+        w.WriteShort(V113ChannelSendOp.RemoveNpc);
+        w.WriteInt(objectId);
+        return w.ToArray();
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// <summary>SpawnNpc 與 controller 共用的 NPC 本體（id + 位置 + 移動範圍）。</summary>
+    private static void WriteNpcBody(PacketWriter w, Npc npc)
+    {
+        var d = npc.Definition;
+        w.WriteInt(npc.ObjectId);
+        w.WriteInt(d.NpcId);
+        w.WriteShort((short)d.X);
+        w.WriteShort((short)d.Cy);
+        w.WriteByte(d.F == 1 ? (byte)0 : (byte)1);
+        w.WriteShort((short)d.Fh);
+        w.WriteShort((short)d.Rx0);
+        w.WriteShort((short)d.Rx1);
+    }
 
     private static void WriteCharMagicShortBlock(PacketWriter w, int tick)
     {

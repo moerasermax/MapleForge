@@ -22,17 +22,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly ILogger<V113ChannelConnectionHandler> _log;
     private readonly CharacterService _charService;
     private readonly IMapSessionRegistry _mapRegistry;
+    private readonly MapService _mapService;
     private readonly V113ChannelOptions _options;
 
     public V113ChannelConnectionHandler(
         ILogger<V113ChannelConnectionHandler> log,
         CharacterService charService,
         IMapSessionRegistry mapRegistry,
+        MapService mapService,
         V113ChannelOptions options)
     {
         _log = log;
         _charService = charService;
         _mapRegistry = mapRegistry;
+        _mapService = mapService;
         _options = options;
     }
 
@@ -82,6 +85,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 await s.SendAsync(spawnForNew, token);
                             }
 
+                            // 地圖物件同步：把該地圖的 NPC spawn 給剛進場的玩家
+                            await SpawnMapNpcsAsync(chr.MapId, s, token);
+
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
                         }
                         break;
@@ -126,6 +132,30 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
     }
+
+    /// <summary>
+    /// 進場時把該地圖的 NPC spawn 給玩家（對照 Java MapleNPC.sendSpawnData：spawnNPC + spawnNPCRequestController）。
+    /// objectId 暫用每連線計數器（base <see cref="NpcObjectIdBase"/>，避開玩家 charId 小號）；
+    /// proper 每-Field 配發器待 IFieldRegistry 重構（見架構文件風險#5）。
+    /// 跳過隱藏 NPC 與 PlayerNPC（id ≥ 9901000，對照 Java sendSpawnData 條件）。
+    /// </summary>
+    private async Task SpawnMapNpcsAsync(int mapId, MapleSession session, CancellationToken ct)
+    {
+        var map = _mapService.LoadMap(mapId);
+        var objectId = NpcObjectIdBase;
+
+        foreach (var def in map.Npcs)
+        {
+            if (def.Hide || def.NpcId >= 9901000) continue;
+
+            var npc = new Npc(def, objectId++);
+            await session.SendAsync(V113MapPackets.SpawnNpc(npc), ct);
+            await session.SendAsync(V113MapPackets.SpawnNpcRequestController(npc), ct);
+        }
+    }
+
+    /// <summary>NPC 地圖物件 id 起始值（避開玩家以 charId 充當的小號 objectId）。</summary>
+    private const int NpcObjectIdBase = 1000;
 
     // ── Handlers ──────────────────────────────────────────────────────────────
 

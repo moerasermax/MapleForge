@@ -35,6 +35,7 @@ public sealed class MapService
 
         var portals = LoadPortals(mapImg["portal"]);
         var footholds = LoadFootholds(mapImg["foothold"]);
+        var npcs = LoadNpcs(mapImg["life"]);
 
         return new MapData
         {
@@ -43,6 +44,7 @@ public sealed class MapService
             Town = town,
             Portals = portals,
             Footholds = footholds,
+            Npcs = npcs,
         };
     }
 
@@ -94,6 +96,44 @@ public sealed class MapService
         }
 
         return portals;
+    }
+
+    /// <summary>
+    /// 從 WZ <c>life</c> 節點載入 NPC（type 首字 &quot;n&quot;）。怪物(type &quot;m&quot;)留待戰鬥階段。
+    /// 對照 Java MapleMapFactory.loadLife：life 子節點(numbered) 有 type/id/cy/f/fh/rx0/rx1/x/hide。
+    /// </summary>
+    private static IReadOnlyList<MapNpc> LoadNpcs(IDataNode? lifeNode)
+    {
+        if (lifeNode is null) return Array.Empty<MapNpc>();
+
+        var npcs = new List<MapNpc>();
+        var i = 0;
+
+        while (true)
+        {
+            var entry = lifeNode[$"{i}"];
+            if (entry is null) break;
+            i++;
+
+            var type = GetString(entry, "type");
+            if (type.Length == 0 || char.ToLowerInvariant(type[0]) != 'n') continue;   // 只收 NPC
+
+            if (!int.TryParse(GetString(entry, "id"), out var npcId)) continue;
+
+            npcs.Add(new MapNpc
+            {
+                NpcId = npcId,
+                X = GetInt(entry, "x", 0),
+                Cy = GetInt(entry, "cy", 0),
+                F = GetInt(entry, "f", 0),
+                Fh = GetInt(entry, "fh", 0),
+                Rx0 = GetInt(entry, "rx0", 0),
+                Rx1 = GetInt(entry, "rx1", 0),
+                Hide = GetInt(entry, "hide", 0) == 1,
+            });
+        }
+
+        return npcs;
     }
 
     private static IReadOnlyList<MapFoothold> LoadFootholds(IDataNode? fhNode)

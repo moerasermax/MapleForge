@@ -1,4 +1,5 @@
 using Maple.Core.Characters;
+using Maple.Core.Maps;
 using Maple.Core.World;
 
 namespace Maple.Application.Tests;
@@ -55,5 +56,30 @@ public class FieldWorldTests
             .Select(o => o.ObjectId).OrderBy(i => i).ToArray();
 
         Assert.Equal(new[] { 1, 2 }, inRange); // 自身 + (30,40) 在 60 內；(300,0) 不在
+    }
+
+    [Fact]
+    public void Npc_DerivesPositionFromDefinition_AndIsFieldObject()
+    {
+        var npc = new Npc(new MapNpc { NpcId = 9000000, X = 100, Cy = 200, Fh = 5 }, objectId: 1000);
+
+        Assert.Equal(1000, npc.ObjectId);
+        Assert.Equal(FieldObjectType.Npc, npc.Type);
+        Assert.Equal((short)100, npc.Position.X);
+        Assert.Equal((short)200, npc.Position.Y);   // 站立 y 取 WZ cy
+        Assert.Equal((short)5, npc.Position.Foothold);
+        Assert.Equal(9000000, npc.Definition.NpcId);
+    }
+
+    [Fact]
+    public void FieldInstance_HoldsPlayersAndNpcsTogether()
+    {
+        var f = new FieldInstance(100000000);
+        f.Add(MakePlayer(1, 0, 0));
+        f.Add(new Npc(new MapNpc { NpcId = 9000000, X = 10, Cy = 0 }, objectId: 1000));
+
+        Assert.Single(f.Players);                                  // NPC 不算 player
+        Assert.Equal(2, f.Objects.Count);                          // 但同在場上
+        Assert.Equal(FieldObjectType.Npc, f.Get(1000)!.Type);
     }
 }
