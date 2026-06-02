@@ -1,0 +1,37 @@
+namespace Maple.Core.World;
+
+/// <summary>
+/// 執行期地圖實例（＝舊 OdinMS <c>MapleMap</c> 的乾淨版，每頻道一份）。
+/// 持有場上所有 <see cref="IFieldObject"/>，支援範圍查詢（供戰鬥/NPC/技能命中）。
+/// 並行：領域變更應由上層的 field-actor/命令佇列序列化執行；**刻意不在此用 ConcurrentDictionary**，
+/// 不把並行語意洩進領域模型（見 docs/design/in-game-執行期狀態架構.md 風險#1）。
+/// </summary>
+public sealed class FieldInstance
+{
+    private readonly Dictionary<int, IFieldObject> _objects = new();
+
+    public int MapId { get; }
+
+    public FieldInstance(int mapId) => MapId = mapId;
+
+    /// <summary>加入/取代一個場上物件（以 ObjectId 為鍵）。</summary>
+    public void Add(IFieldObject obj) => _objects[obj.ObjectId] = obj;
+
+    /// <summary>移除場上物件（離開地圖/斷線/死亡）。回傳是否確有移除。</summary>
+    public bool Remove(int objectId) => _objects.Remove(objectId);
+
+    public IFieldObject? Get(int objectId) => _objects.TryGetValue(objectId, out var o) ? o : null;
+
+    /// <summary>場上所有物件。</summary>
+    public IReadOnlyCollection<IFieldObject> Objects => _objects.Values;
+
+    /// <summary>場上所有玩家。</summary>
+    public IEnumerable<Player> Players => _objects.Values.OfType<Player>();
+
+    /// <summary>
+    /// 中心點半徑內的場上物件（含中心自身；要排除自身由呼叫端 filter）。
+    /// 供戰鬥傷害、NPC 互動、技能 AoE 的範圍判定。
+    /// </summary>
+    public IEnumerable<IFieldObject> ObjectsInRange(Position center, double radius)
+        => _objects.Values.Where(o => o.Position.DistanceTo(center) <= radius);
+}

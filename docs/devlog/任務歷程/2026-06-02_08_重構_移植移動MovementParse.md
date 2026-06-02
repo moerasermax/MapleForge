@@ -34,7 +34,7 @@
 
 ## ⏯️ 接手點（★崩潰救命行★）
 
-> ✅ V113MovementParser 解析移植完成+測過+commit。**下個單元=整合進 V113ChannelConnectionHandler 的 MovePlayer**：讀 c2s 封包 header(現碼剝 35 bytes)→用 parser 抽位置→存到 session/Character(追蹤位置,供之後戰鬥/NPC 範圍)→維持廣播。需先確認 c2s MOVE_PLAYER header 精確 layout(對 Java PlayerHandler MovePlayer)。不要為整合冒險破壞現有可用的 raw-passthrough 廣播,先驗 header offset。windower 走路注入(move.txt)已備、里程碑時 live 驗。
+> ✅ V113MovementParser 解析移植完成+測過+commit。**團隊架構會議(claude-ultra+agy)定案 in-game 執行期狀態模型**(見 `docs/design/in-game-執行期狀態架構.md`)：執行期 `Player`/`FieldInstance`/`Position`/`IFieldObject` 放 **Core/World 富領域**(組合持有 Character、零傳輸)、生命週期/registry 在 Application、傳輸留 Net。**已實作 Core/World 最小切片(Position/IFieldObject/Player/FieldInstance)+3 測試(Application.Tests 22→25 綠)、commit**。**下個單元=整合進 V113ChannelConnectionHandler 的 MovePlayer**：MovementParser 輸出映射 Core Position → 重構 IMapSessionRegistry→IFieldRegistry(領域)+sink(傳輸) → handler 抽 stack ref 改呼用例 player.MoveTo + 維持原始 blob 廣播。先確認 c2s MOVE_PLAYER header offset。：讀 c2s 封包 header(現碼剝 35 bytes)→用 parser 抽位置→存到 session/Character(追蹤位置,供之後戰鬥/NPC 範圍)→維持廣播。需先確認 c2s MOVE_PLAYER header 精確 layout(對 Java PlayerHandler MovePlayer)。不要為整合冒險破壞現有可用的 raw-passthrough 廣播,先驗 header offset。windower 走路注入(move.txt)已備、里程碑時 live 驗。
 
 ## ✅ 結果與結論
 > （待補）
