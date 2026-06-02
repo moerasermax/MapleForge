@@ -103,6 +103,21 @@ internal static class V113MapPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// CHATTEXT (0x9B) — 地圖聊天泡泡。對照 Java getChatText(cidfrom,text,whiteBG,show)。
+    /// 格式：[opcode][int charId][byte whiteBG][maple string text][byte show]。
+    /// </summary>
+    public static byte[] ChatText(int charId, string text, byte show, bool whiteBg = false)
+    {
+        var w = new PacketWriter(text.Length + 16);
+        w.WriteShort(V113ChannelSendOp.ChatText);
+        w.WriteInt(charId);
+        w.WriteByte(whiteBg ? (byte)1 : (byte)0);
+        w.WriteMapleString(text);
+        w.WriteByte(show);
+        return w.ToArray();
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private static void WriteCharMagicShortBlock(PacketWriter w, int tick)

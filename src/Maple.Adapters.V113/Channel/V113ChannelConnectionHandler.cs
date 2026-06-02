@@ -92,6 +92,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await BroadcastToOthersAsync(player.Character, body, token);  // 原始 blob 轉發(動畫擬真)
                         break;
 
+                    case V113ChannelRecvOp.GeneralChat:
+                        if (player is null) break;
+                        await HandleGeneralChatAsync(reader, player, s, token);
+                        break;
+
                     case V113ChannelRecvOp.Pong:
                         break;
 
@@ -160,6 +165,34 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             _log.LogDebug("[Channel] 移動解析失敗(忽略,仍廣播) {Msg}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// 一般地圖聊天（對照 Java ChatHandler.GeneralChat 核心）。
+    /// c2s：[maple string text][byte show]；自己看到 + 廣播同地圖其他玩家 CHATTEXT。
+    /// </summary>
+    private async Task HandleGeneralChatAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        string text;
+        byte show;
+        try
+        {
+            text = reader.ReadMapleString();
+            show = reader.ReadByte();
+        }
+        catch (InvalidDataException) { return; }
+
+        if (text.Length == 0 || text.Length >= 80) return;   // Java：非 GM >=80 擋
+
+        var packet = V113MapPackets.ChatText(player.Character.Id, text, show);
+        await session.SendAsync(packet, ct);                  // 自己看到泡泡
+
+        var others = _mapRegistry.GetOthers(player.Character.MapId, player.Character.Id);
+        foreach (var other in others)
+        {
+            try { await other.SendPacket(packet, ct); } catch { /* session 可能正在關 */ }
+        }
+        _log.LogInformation("[Channel] 角色 {Name} 地圖聊天「{Text}」", player.Character.Name, text);
     }
 
     private async Task BroadcastToOthersAsync(Character chr, byte[] body, CancellationToken ct)
