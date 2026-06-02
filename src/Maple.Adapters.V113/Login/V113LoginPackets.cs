@@ -75,7 +75,9 @@ internal static class V113LoginPackets
             .WriteByte(0)
             .WriteByte(0)
             .WriteByte(0)                  // !canTalk（0=可說話）
-            .WriteLong(0)                  // 禁言期限
+            // 禁言期限：未禁言帳號 = Java getTime(0) = FT_UT_OFFSET(FILETIME epoch)，非 0。
+            // 寫 0 會被客戶端當無效時間 → AuthSuccess 處理中止、畫面不前進(blocker #2 候選根因)。
+            .WriteLong(116444592000000000L)
             .WriteByte(0)
             .WriteLong(0)
             .ToArray();

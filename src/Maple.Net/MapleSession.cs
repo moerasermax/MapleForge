@@ -83,33 +83,35 @@ public sealed class MapleSession : IAsyncDisposable
             try
             {
                 await _stream.ReadExactlyAsync(header, ct);
+
+                if (!_recv.Check(header))
+                {
+                    _log.LogWarning("封包頭驗證失敗 {Remote}，關閉連線（可能 cipher/版本不符）", Remote);
+                    return;
+                }
+
+                int length = _recv.ReadLength(header);
+                if (length is <= 0 or > 0x10000)
+                {
+                    _log.LogWarning("不合理的封包長度 {Length} {Remote}，關閉", length, Remote);
+                    return;
+                }
+
+                var body = new byte[length];
+                await _stream.ReadExactlyAsync(body, ct);
+                byte[]? encryptedCopy = _capture is null ? null : (byte[])body.Clone();
+                _recv.Crypt(body);
+                if (encryptedCopy is not null) _capture!.WriteRecv(header, encryptedCopy, body);
+
+                await onPacket(body, this, ct);
             }
-            catch (EndOfStreamException)
+            // 客戶端正常/突然斷線（乾淨 EOF、TCP reset、socket 已棄置）＝預期事件，
+            // 記 info 後乾淨收尾；真錯誤（解析 bug 等）不在此列，繼續向上拋給 listener 記 Error。
+            catch (Exception ex) when (ex is EndOfStreamException or IOException or SocketException or ObjectDisposedException)
             {
                 _log.LogInformation("連線關閉 {Remote}", Remote);
                 return;
             }
-
-            if (!_recv.Check(header))
-            {
-                _log.LogWarning("封包頭驗證失敗 {Remote}，關閉連線（可能 cipher/版本不符）", Remote);
-                return;
-            }
-
-            int length = _recv.ReadLength(header);
-            if (length is <= 0 or > 0x10000)
-            {
-                _log.LogWarning("不合理的封包長度 {Length} {Remote}，關閉", length, Remote);
-                return;
-            }
-
-            var body = new byte[length];
-            await _stream.ReadExactlyAsync(body, ct);
-            byte[]? encryptedCopy = _capture is null ? null : (byte[])body.Clone();
-            _recv.Crypt(body);
-            if (encryptedCopy is not null) _capture!.WriteRecv(header, encryptedCopy, body);
-
-            await onPacket(body, this, ct);
         }
     }
 

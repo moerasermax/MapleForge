@@ -221,6 +221,9 @@ public class LoginPipelineIntegrationTests
 
         // 3) 讀 AuthSuccess，丟棄
         await ReadDecryptedAsync(stream, clientRecv, cts.Token);
+        // blocker#2 修補：登入成功後 server 主動連送 ServerList+EndOfServerList（真客戶端不主動請求），先排空這兩個
+        await ReadDecryptedAsync(stream, clientRecv, cts.Token); // 主動 ServerList
+        await ReadDecryptedAsync(stream, clientRecv, cts.Token); // 主動 EndOfServerList
 
         // 4) 送 SERVERLIST_REQUEST
         await SendEncryptedAsync(stream, clientSend,
@@ -323,6 +326,9 @@ public class LoginPipelineIntegrationTests
         var authPkt = await ReadDecryptedAsync(stream, clientRecv, cts.Token);
         Assert.Equal((short)0x00, (short)(authPkt[0] | (authPkt[1] << 8)));
         Assert.Equal(0, authPkt[2]); // success
+        // blocker#2 修補：登入成功後 server 主動連送 ServerList+EndOfServerList，先排空這兩個
+        await ReadDecryptedAsync(stream, clientRecv, cts.Token); // 主動 ServerList
+        await ReadDecryptedAsync(stream, clientRecv, cts.Token); // 主動 EndOfServerList
 
         // 3) CHECK_CHAR_NAME（名稱可用）
         await SendEncryptedAsync(stream, clientSend,

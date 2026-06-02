@@ -151,6 +151,12 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
                         acc.AccountName, acc.Id, session.Remote);
                     await session.SendAsync(
                         V113LoginPackets.AuthSuccess(ctx.AccountId, ctx.AccountName, ctx.Gender), ct);
+                    // v113 客戶端登入成功後「不主動請求」世界列表，server 須緊接著主動連送
+                    // ServerList + EndOfServerList(對照 Java LoginWorker.java:75-77)。
+                    // 漏送會讓真客戶端停在登入頁互等(blocker #2 根因)。
+                    await session.SendAsync(
+                        V113LoginPackets.ServerList(_options.WorldName, _options.ChannelCount), ct);
+                    await session.SendAsync(V113LoginPackets.EndOfServerList(), ct);
                 }
                 break;
 

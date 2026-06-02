@@ -56,12 +56,16 @@ try {
         $acc["CreatedAt"]    = BV ([DateTime]::UtcNow)
         $acc["IsBanned"]     = BV $false
         $acc["BanReason"]    = BV ""
+        $acc["Gender"]         = BV ([int]0)        # 0=男；非 10 才過登入 gate(否則觸發 CHOOSE_GENDER)
+        $acc["SecondPassword"] = BV "000000"        # 非 null 才過 gate；模擬已完成性別/PIN 設定的帳號
         [void]$accounts.Insert($acc)
         Write-Host "[seed] 建立帳號 $acctName (id=$accountId)" -ForegroundColor Green
     } else {
         $accountId = $acc["_id"].AsInt32                # 慣例：Id 映射為 _id
         $acc["PasswordHash"] = BV $hash                 # 重設為已知密碼，確保可登入
         $acc["IsBanned"] = BV $false
+        $acc["Gender"]         = BV ([int]0)            # 校正：非 10 才過登入 gate
+        $acc["SecondPassword"] = BV "000000"            # 校正：非 null 才過 gate
         [void]$accounts.Update($acc)
         Write-Host "[seed] 帳號已存在 $acctName (id=$accountId)，密碼已校正" -ForegroundColor Yellow
     }

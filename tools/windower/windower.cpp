@@ -176,7 +176,8 @@ static BOOL WINAPI HookedGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin,
 static BOOL WINAPI HookedGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax);
 static BOOL WINAPI HookedTranslateMessage(const MSG* lpMsg);
 static LRESULT CALLBACK HookedKeyboardProbeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-static void StartKeyboardInternalWorker(const char* text, DWORD len);
+static bool StartKeyboardInternalWorker(const char* text, DWORD len);
+static void ResetKeyboardInjectionQueueLocked();
 
 // ── 全域狀態 ─────────────────────────────────────────────────────────────────
 
@@ -1914,6 +1915,14 @@ static bool IsKeyboardEnglishLayoutEnabled()
     return !IsEnvFlagZero("MAPLEFORGE_WINDOWER_KBD_LAYOUT_EN");
 }
 
+static bool IsKeyboardSyntheticMessageInjectionEnabled()
+{
+    // kbd.txt now uses 方法 A (AttachThreadInput + SendInput + en-US layout).
+    // The old PeekMessage/GetMessage synthetic WM_* injector consumed the same
+    // queue independently and delivered a second WM_CHAR for each character.
+    return false;
+}
+
 static bool IsKeyboardDiagnosticsEnabled()
 {
     return g_keyboardInjectActive || g_keyboardDebugActive;
@@ -2277,7 +2286,13 @@ static void LoadKeyboardInjectionFileLocked()
         buf[read] = '\0';
         WriteLog("[Windower] keyboard injection loaded string=\"%s\" keys=%lu",
             buf, (unsigned long)g_keyboardQueueCount);
-        StartKeyboardInternalWorker(buf, read);
+        bool workerStarted = StartKeyboardInternalWorker(buf, read);
+        if (!IsKeyboardSyntheticMessageInjectionEnabled())
+        {
+            WriteLog("[Windower] keyboard queue %s; synthetic message path disabled",
+                workerStarted ? "consumed by SendInput worker" : "dropped because SendInput worker did not start");
+            ResetKeyboardInjectionQueueLocked();
+        }
     }
 }
 
@@ -2444,6 +2459,9 @@ static bool CurrentMessageVirtualKeyDownLocked(int vKey)
 {
     LoadKeyboardInjectionFileLocked();
 
+    if (!IsKeyboardSyntheticMessageInjectionEnabled())
+        return false;
+
     if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount)
         return false;
 
@@ -2465,6 +2483,9 @@ static bool FillSyntheticKeyboardMessageLocked(
         return false;
 
     LoadKeyboardInjectionFileLocked();
+    if (!IsKeyboardSyntheticMessageInjectionEnabled())
+        return false;
+
     if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount)
         return false;
 
@@ -2535,10 +2556,13 @@ static bool FillSyntheticKeyboardMessageLocked(
 
 static bool ConsumeTranslatedCharIfMatchingLocked(const MSG* msg, const char* api)
 {
-    if (!g_keyboardInjectActive || !msg || msg->message != WM_CHAR)
+    if (!g_keyboardInjectActive || !msg)
         return false;
 
     LoadKeyboardInjectionFileLocked();
+    if (!IsKeyboardSyntheticMessageInjectionEnabled() || msg->message != WM_CHAR)
+        return false;
+
     if (g_keyboardMsgQueueIndex >= g_keyboardQueueCount ||
         g_keyboardMsgStage != KBD_MSG_STAGE_CHAR)
     {
@@ -3328,24 +3352,27 @@ static DWORD WINAPI KeyboardInternalWorkerProc(LPVOID param)
         WriteLog("[Windower] keyboard internal worker no foreground client hwnd");
     }
 
-    TryAttachThreadInputSendText(payload->text, payload->len);
+    bool sent = TryAttachThreadInputSendText(payload->text, payload->len);
+    InterlockedExchange(&g_keyboardWorkerActive, 0);
+    WriteLog("[Windower] keyboard internal worker send phase done len=%lu sent=%d; worker re-armed",
+        (unsigned long)payload->len, sent ? 1 : 0);
+
     ScanLoginTextAnchors(payload->text, payload->len);
 
     WriteLog("[Windower] keyboard internal worker done len=%lu", (unsigned long)payload->len);
     HeapFree(GetProcessHeap(), 0, payload);
-    InterlockedExchange(&g_keyboardWorkerActive, 0);
     return 0;
 }
 
-static void StartKeyboardInternalWorker(const char* text, DWORD len)
+static bool StartKeyboardInternalWorker(const char* text, DWORD len)
 {
     if (!g_keyboardInjectActive || !text || len == 0)
-        return;
+        return false;
 
     if (InterlockedCompareExchange(&g_keyboardWorkerActive, 1, 0) != 0)
     {
         WriteLog("[Windower] keyboard internal worker skipped: previous worker active");
-        return;
+        return false;
     }
 
     KbdWorkerPayload* payload = (KbdWorkerPayload*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(KbdWorkerPayload));
@@ -3353,7 +3380,7 @@ static void StartKeyboardInternalWorker(const char* text, DWORD len)
     {
         InterlockedExchange(&g_keyboardWorkerActive, 0);
         WriteLog("[Windower] keyboard internal worker alloc failed");
-        return;
+        return false;
     }
 
     payload->len = (len < (DWORD)(sizeof(payload->text) - 1)) ? len : (DWORD)(sizeof(payload->text) - 1);
@@ -3366,10 +3393,11 @@ static void StartKeyboardInternalWorker(const char* text, DWORD len)
         WriteLog("[Windower] keyboard internal worker CreateThread failed err=%lu", (unsigned long)GetLastError());
         HeapFree(GetProcessHeap(), 0, payload);
         InterlockedExchange(&g_keyboardWorkerActive, 0);
-        return;
+        return false;
     }
 
     CloseHandle(thread);
+    return true;
 }
 
 static void OverlayDirectInputKeyboardState(BYTE* state, DWORD cbData)
@@ -3637,7 +3665,9 @@ static SHORT WINAPI HookedGetKeyState(int vKey)
     {
         EnterCriticalSection(&g_keyboardLock);
         bool down = CurrentMessageVirtualKeyDownLocked(vKey);
-        const bool hasMessageQueue = (g_keyboardMsgQueueIndex < g_keyboardQueueCount);
+        const bool hasMessageQueue =
+            IsKeyboardSyntheticMessageInjectionEnabled() &&
+            (g_keyboardMsgQueueIndex < g_keyboardQueueCount);
         if (!down && !hasMessageQueue && CurrentVirtualKeyDownLocked(vKey))
             down = true;
         if (down)
