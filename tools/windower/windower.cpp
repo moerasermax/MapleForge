@@ -1899,6 +1899,21 @@ static bool IsKeyboardDebugEnabled()
     return IsEnvFlagOne("MAPLEFORGE_WINDOWER_KBD_DEBUG");
 }
 
+// 方法 A：注入前把目標執行緒切成美式英文鍵盤佈局，繞過中文 IME 把
+// 合成 scancode 吃成 VK_PROCESSKEY 的根因。預設開啟(只要在注入)，
+// 設 MAPLEFORGE_WINDOWER_KBD_LAYOUT_EN=0 可關掉做 A/B 對照。
+static bool IsEnvFlagZero(const char* name)
+{
+    char value[16] = {};
+    DWORD n = GetEnvironmentVariableA(name, value, (DWORD)_countof(value));
+    return (n > 0 && n < _countof(value) && strcmp(value, "0") == 0);
+}
+
+static bool IsKeyboardEnglishLayoutEnabled()
+{
+    return !IsEnvFlagZero("MAPLEFORGE_WINDOWER_KBD_LAYOUT_EN");
+}
+
 static bool IsKeyboardDiagnosticsEnabled()
 {
     return g_keyboardInjectActive || g_keyboardDebugActive;
@@ -2868,6 +2883,134 @@ static void EndImeNeutralize(ImeNeutralizeState* state)
     }
 }
 
+// ── 方法 A：英文鍵盤佈局切換 ─────────────────────────────────────────
+// 根因(已確認)：登入框輸入執行緒掛中文 IME(conv=NATIVE)，比視窗層級更底層
+// 攔截合成 scancode → WndProc 收到 wParam=VK_PROCESSKEY(0xE5)，字進不了欄位。
+// 我們之前只試過 ImmAssociateContext(NULL)/ImmSetConversionStatus(視窗/轉換層級，全敗)，
+// 從沒切過「鍵盤佈局」本身。切成非 IME 的 en-US HKL(0x0409) 後，實體 scancode
+// 不再進中文 IME 的 ProcessKey，便能正常轉成 ASCII 字元進欄位。
+static const wchar_t* const kEnglishLayoutId = L"00000409";
+
+typedef BOOL (WINAPI* ImmIsIME_t)(HKL);
+
+typedef struct EnglishLayoutSwitch {
+    HWND  hwnd;
+    DWORD targetThread;
+    HKL   previousLayout;  // 切換前目標執行緒的佈局(供還原)
+    HKL   englishLayout;   // 載入的 en-US HKL
+    bool  active;          // 本次有發出切換請求
+    bool  verified;        // GetKeyboardLayout(targetThread) 已確認變 0x0409 且非 IME
+} EnglishLayoutSwitch;
+
+static WORD LangIdOfHkl(HKL hkl)
+{
+    return (WORD)((uintptr_t)hkl & 0xFFFF);
+}
+
+// 動態取 ImmIsIME：驗證目標佈局確實「非 IME」(光看 low-word 0x0409 太鬆，
+// 研究綜整明確要求 ImmIsIME(hkl)==false)。imm32 缺席時回退成只看 langId。
+static bool HklIsNonImeEnglish(HKL hkl)
+{
+    if (LangIdOfHkl(hkl) != 0x0409)
+        return false;
+    HMODULE imm32 = GetModuleHandleA("imm32.dll");
+    if (!imm32)
+        imm32 = LoadLibraryA("imm32.dll");
+    if (imm32)
+    {
+        ImmIsIME_t pImmIsIME = (ImmIsIME_t)GetProcAddress(imm32, "ImmIsIME");
+        if (pImmIsIME)
+            return pImmIsIME(hkl) == FALSE;
+    }
+    return true; // langId 已是 en-US，imm32 不可用就放行
+}
+
+static bool BeginEnglishLayout(HWND hwnd, DWORD targetThread, EnglishLayoutSwitch* st)
+{
+    if (!st)
+        return false;
+    memset(st, 0, sizeof(*st));
+    st->hwnd = hwnd;
+
+    // 切換請求發給 hwnd，驗證也要看「同一個」UI thread；以 hwnd 實際所屬
+    // thread 為準，避免 foreground/focus 跨 thread 時驗錯執行緒(Codex 審查點)。
+    DWORD hwndThread = hwnd ? GetWindowThreadProcessId(hwnd, nullptr) : 0;
+    if (hwndThread && hwndThread != targetThread)
+    {
+        WriteLog("[Windower] kbd-layout thread mismatch: passed=%lu hwndThread=%lu — 改用 hwndThread 驗證",
+            (unsigned long)targetThread, (unsigned long)hwndThread);
+        targetThread = hwndThread;
+    }
+    st->targetThread = targetThread;
+
+    st->previousLayout = GetKeyboardLayout(targetThread);
+
+    SetLastError(0);
+    HKL en = LoadKeyboardLayoutW(kEnglishLayoutId, KLF_ACTIVATE);
+    WriteLog("[Windower] kbd-layout load en-US hkl=%p prevThreadLayout=%p(lang=0x%04X) err=%lu",
+        (void*)en, (void*)st->previousLayout, LangIdOfHkl(st->previousLayout),
+        (unsigned long)GetLastError());
+    if (!en)
+        return false;
+    st->englishLayout = en;
+    st->active = true;
+
+    // 對目標窗要求把輸入語言切成 en-US(由其訊息泵處理)。
+    // wParam=0：我們指定了明確的 HKL，不是請它切「下一個」佈局
+    // (INPUTLANGCHANGE_FORWARD 會語意衝突) — Codex 審查點 + 研究綜整一致。
+    if (hwnd)
+    {
+        BOOL posted = PostMessageW(hwnd, WM_INPUTLANGCHANGEREQUEST,
+            0, (LPARAM)en);
+        WriteLog("[Windower] kbd-layout WM_INPUTLANGCHANGEREQUEST posted hwnd=%p hkl=%p ok=%d err=%lu",
+            (void*)hwnd, (void*)en, posted ? 1 : 0, (unsigned long)GetLastError());
+    }
+
+    // 同步把(已 AttachThreadInput 的)當前輸入執行緒佈局也切成 en-US，
+    // 讓後續 VkKeyScanW/MapVirtualKeyW 用美式對應表。
+    SetLastError(0);
+    HKL prevActive = ActivateKeyboardLayout(en, KLF_SETFORPROCESS);
+    WriteLog("[Windower] kbd-layout ActivateKeyboardLayout hkl=%p prevActive=%p err=%lu",
+        (void*)en, (void*)prevActive, (unsigned long)GetLastError());
+
+    // 等目標執行緒處理完切換請求再驗證(最多 ~100ms)。
+    for (int i = 0; i < 20; ++i)
+    {
+        HKL now = GetKeyboardLayout(targetThread);
+        if (HklIsNonImeEnglish(now))
+        {
+            st->verified = true;
+            WriteLog("[Windower] kbd-layout verified en-US(non-IME) active thread=%lu hkl=%p iters=%d",
+                (unsigned long)targetThread, (void*)now, i);
+            break;
+        }
+        Sleep(5);
+    }
+    if (!st->verified)
+    {
+        HKL now = GetKeyboardLayout(targetThread);
+        WriteLog("[Windower] kbd-layout NOT verified thread=%lu hkl=%p(lang=0x%04X) — IME 可能仍在攔截",
+            (unsigned long)targetThread, (void*)now, LangIdOfHkl(now));
+    }
+    return st->active;
+}
+
+static void EndEnglishLayout(EnglishLayoutSwitch* st)
+{
+    if (!st || !st->active)
+        return;
+    if (st->previousLayout && st->hwnd)
+    {
+        BOOL posted = PostMessageW(st->hwnd, WM_INPUTLANGCHANGEREQUEST,
+            0, (LPARAM)st->previousLayout);
+        WriteLog("[Windower] kbd-layout restore posted hwnd=%p hkl=%p ok=%d err=%lu",
+            (void*)st->hwnd, (void*)st->previousLayout, posted ? 1 : 0,
+            (unsigned long)GetLastError());
+    }
+    if (st->previousLayout)
+        ActivateKeyboardLayout(st->previousLayout, KLF_SETFORPROCESS);
+}
+
 static bool TryAttachThreadInputSendText(const char* text, DWORD len)
 {
     if (!text || len == 0)
@@ -2917,6 +3060,14 @@ static bool TryAttachThreadInputSendText(const char* text, DWORD len)
         return false;
     }
 
+    // 方法 A 為主修(對症 VK_PROCESSKEY 根因)；IME 中和留作 belt-and-suspenders。
+    EnglishLayoutSwitch layoutState = {};
+    bool layoutEnabled = IsKeyboardEnglishLayoutEnabled();
+    if (layoutEnabled)
+        BeginEnglishLayout(focus, targetThread, &layoutState);
+    else
+        WriteLog("[Windower] kbd-layout en-US switch disabled via MAPLEFORGE_WINDOWER_KBD_LAYOUT_EN=0");
+
     ImeNeutralizeState imeState = {};
     BeginImeNeutralize(focus, targetThread, &imeState);
 
@@ -2933,6 +3084,8 @@ static bool TryAttachThreadInputSendText(const char* text, DWORD len)
     }
 
     EndImeNeutralize(&imeState);
+    if (layoutEnabled)
+        EndEnglishLayout(&layoutState);
 
     if (attached)
     {
