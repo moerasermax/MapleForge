@@ -143,6 +143,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     {
         var map = _mapService.LoadMap(mapId);
         var objectId = NpcObjectIdBase;
+        var spawned = 0;
 
         foreach (var def in map.Npcs)
         {
@@ -151,7 +152,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             var npc = new Npc(def, objectId++);
             await session.SendAsync(V113MapPackets.SpawnNpc(npc), ct);
             await session.SendAsync(V113MapPackets.SpawnNpcRequestController(npc), ct);
+            spawned++;
         }
+
+        _log.LogInformation("[Channel] 地圖 {Map} 送出 {Count} 個 NPC spawn", mapId, spawned);
     }
 
     /// <summary>NPC 地圖物件 id 起始值（避開玩家以 charId 充當的小號 objectId）。</summary>
