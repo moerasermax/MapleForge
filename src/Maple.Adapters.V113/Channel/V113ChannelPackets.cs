@@ -1,4 +1,5 @@
 using Maple.Core.Characters;
+using Maple.Core.Inventory;
 using Maple.Core.IO;
 
 namespace Maple.Adapters.V113.Channel;
@@ -124,12 +125,55 @@ internal static class V113ChannelPackets
         }
         w.WriteByte(0);
 
-        // Use/Setup/Etc/Cash 各欄起始 + 最終結束 = 5 個 0(對齊 Java addInventoryInfo 共 7 個 marker；先前多寫 1 個)
-        w.WriteByte(0);   // use 起始
-        w.WriteByte(0);   // setup 起始
-        w.WriteByte(0);   // etc 起始
-        w.WriteByte(0);   // cash 起始
-        w.WriteByte(0);   // 最終結束
+        // 五袋真實道具（EQUIP/USE/SETUP/ETC/CASH，各以 0 結束）。對照 Java addInventoryInfo。
+        foreach (var type in new[] { InventoryType.Equip, InventoryType.Use, InventoryType.Setup, InventoryType.Etc, InventoryType.Cash })
+        {
+            foreach (var rec in chr.Items.Where(i => i.Type == (byte)type && i.Slot > 0).OrderBy(i => i.Slot))
+                AddBagItemInfo(w, rec);
+            w.WriteByte(0);
+        }
+    }
+
+    /// <summary>
+    /// 背包格內單一道具（正 slot）。對照 Java PacketHelper.addItemInfo：
+    /// 裝備分支 = position/type1/itemId/hasUid/expire/upgrade/level/15short/owner/flag/incSkill/itemLevel/itemExp/uid/time/-1；
+    /// 堆疊分支 = position/type2/itemId/hasUid/expire/quantity/owner/flag。MVP-0 裝備渲染零屬性(RawEquip)。
+    /// </summary>
+    private static void AddBagItemInfo(PacketWriter w, ItemRecord r)
+    {
+        w.WriteByte((byte)r.Slot);              // 位置（背包格＝正數）
+
+        if (r.IsEquip)
+        {
+            w.WriteByte(1);                     // type = equip
+            w.WriteInt(r.ItemId);
+            w.WriteByte(0);                     // hasUniqueId = 0
+            w.WriteLong(GetTime(r.Expiration));
+            w.WriteByte(r.UpgradeSlots);
+            w.WriteByte(r.Level);
+            w.WriteShort(r.Str); w.WriteShort(r.Dex); w.WriteShort(r.Int); w.WriteShort(r.Luk);
+            w.WriteShort(r.Hp); w.WriteShort(r.Mp); w.WriteShort(r.Watk); w.WriteShort(r.Matk);
+            w.WriteShort(r.Wdef); w.WriteShort(r.Mdef); w.WriteShort(r.Acc); w.WriteShort(r.Avoid);
+            w.WriteShort(r.Hands); w.WriteShort(r.Speed); w.WriteShort(r.Jump);
+            w.WriteMapleString(r.Owner);
+            w.WriteShort(r.Flag);
+            w.WriteByte(0);                     // incSkill
+            w.WriteByte(r.ItemLevel);
+            w.WriteInt(r.ItemExp);
+            w.WriteLong(r.UniqueId);
+            w.WriteLong(GetTime(-2));
+            w.WriteInt(-1);
+        }
+        else
+        {
+            w.WriteByte(2);                     // type = normal/stackable
+            w.WriteInt(r.ItemId);
+            w.WriteByte(0);                     // hasUniqueId = 0
+            w.WriteLong(GetTime(r.Expiration));
+            w.WriteShort(r.Quantity);
+            w.WriteMapleString(r.Owner);
+            w.WriteShort(r.Flag);
+        }
     }
 
     private static void AddEquipItemInfo(PacketWriter w, EquipEntry eq, bool zeroPosition)

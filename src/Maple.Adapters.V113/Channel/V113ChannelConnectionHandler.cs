@@ -120,6 +120,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         if (!conversation.Active) conversation = null;
                         break;
 
+                    case V113ChannelRecvOp.ItemMove:
+                        if (player is null) break;
+                        await HandleItemMoveAsync(reader, player, s, token);
+                        break;
+
                     case V113ChannelRecvOp.Pong:
                         break;
 
@@ -249,6 +254,31 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn));
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
         _log.LogInformation("[Channel] 角色 {Name} warp → 地圖 {Map}", chr.Name, mapId);
+    }
+
+    // ── 背包（路線圖②後半）─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// c2s ITEM_MOVE：MVP-0 僅處理「格內移動」(src&gt;0,dst&gt;0)→Player 變動→flush→ModifyInventory(mode 2) 回包。
+    /// 穿脫裝(一端負)/丟棄(dst=0) defer（不回包，客戶端自行回滾，見設計 doc）。
+    /// </summary>
+    private async Task HandleItemMoveAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        var req = V113InventoryPackets.ParseItemMove(reader);
+        if (!req.IsValidBagType) return;
+
+        if (!req.IsWithinBagMove)
+        {
+            _log.LogDebug("[Channel] ITEM_MOVE 非格內移動(穿脫/丟棄) MVP-0 略過 type={T} src={S} dst={D}", req.RawType, req.Src, req.Dst);
+            return;
+        }
+
+        if (player.MoveItem(req.Type, req.Src, req.Dst))
+        {
+            player.FlushInventory();
+            await session.SendAsync(V113InventoryPackets.ModifyMove(req.Type, req.Src, req.Dst), ct);
+            _log.LogDebug("[Channel] ITEM_MOVE {T} {S}→{D}", req.Type, req.Src, req.Dst);
+        }
     }
 
     // ── Handlers ──────────────────────────────────────────────────────────────

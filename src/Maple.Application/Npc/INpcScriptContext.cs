@@ -26,6 +26,12 @@ public interface INpcScriptContext
     /// <summary>增減楓幣（cm.gainMeso）。</summary>
     void GainMeso(int amount);
 
+    /// <summary>取得道具到背包（cm.gainItem，依 itemId 自動判背包類型）。</summary>
+    void GainItem(int itemId, int quantity);
+
+    /// <summary>背包是否持有道具（cm.haveItem）。</summary>
+    bool HaveItem(int itemId);
+
     int GetJob();
     int GetMeso();
     int GetMap();

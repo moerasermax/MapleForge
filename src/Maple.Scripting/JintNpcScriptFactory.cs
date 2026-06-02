@@ -87,6 +87,8 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
             dispose = (Action)cm.Dispose,
             warp = (Action<int>)cm.Warp,
             gainMeso = (Action<int>)cm.GainMeso,
+            gainItem = (Action<int, int>)cm.GainItem,
+            haveItem = (Func<int, bool>)cm.HaveItem,
             getJob = (Func<int>)cm.GetJob,
             getMeso = (Func<int>)cm.GetMeso,
             getMap = (Func<int>)cm.GetMap,

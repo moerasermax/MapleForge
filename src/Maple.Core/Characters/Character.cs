@@ -1,3 +1,5 @@
+using Maple.Core.Inventory;
+
 namespace Maple.Core.Characters;
 
 /// <summary>
@@ -47,6 +49,9 @@ public sealed class Character
     /// <summary>持有楓幣（meso）。執行期由 <see cref="World.Player.GainMeso"/> 經富領域不變式變動。</summary>
     public int Meso { get; set; }
 
-    /// <summary>穿戴中的裝備清單（對照 EQUIPPED 槽）。</summary>
+    /// <summary>穿戴中的裝備清單（對照 EQUIPPED 槽，負 slot，驅動 char look）。equip/unequip 統一收攏留 MVP-1。</summary>
     public List<EquipEntry> Equips { get; set; } = new();
+
+    /// <summary>背包道具的持久扁平快照（正 slot，5 種背包）。執行期由 <see cref="World.Player"/> hydrate 成富 Inventories。</summary>
+    public List<ItemRecord> Items { get; set; } = new();
 }

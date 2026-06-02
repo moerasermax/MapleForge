@@ -1,3 +1,4 @@
+using Maple.Core.Inventory;
 using Maple.Core.World;
 
 namespace Maple.Application.Npcs;
@@ -51,6 +52,17 @@ public sealed class NpcContext : INpcScriptContext
     }
 
     public void GainMeso(int amount) => _player.GainMeso(amount);
+
+    public void GainItem(int itemId, int quantity) => _player.GainItem(InventoryTypeOf(itemId), itemId, (short)quantity);
+
+    public bool HaveItem(int itemId) => _player.HasItem(InventoryTypeOf(itemId), itemId);
+
+    /// <summary>itemId 前綴判背包類型（1xxxxxx=Equip…5xxxxxx=Cash，對照 GameConstants.getInventoryType）。</summary>
+    private static InventoryType InventoryTypeOf(int itemId)
+    {
+        var cat = itemId / 1_000_000;
+        return cat is >= 1 and <= 5 ? (InventoryType)cat : InventoryType.Etc;
+    }
 
     public int GetJob() => _player.Character.Job;
     public int GetMeso() => _player.Character.Meso;

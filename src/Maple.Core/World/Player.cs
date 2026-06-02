@@ -1,4 +1,5 @@
 using Maple.Core.Characters;
+using Maple.Core.Inventory;
 
 namespace Maple.Core.World;
 
@@ -20,10 +21,14 @@ public sealed class Player : IFieldObject
 
     public FieldObjectType Type => FieldObjectType.Player;
 
+    /// <summary>執行期富背包（由 Character.Items hydrate；所有變動經 Player，checkpoint 時 flush 回）。</summary>
+    public Inventories Inventory { get; }
+
     public Player(Character character, Position spawn)
     {
         Character = character;
         Position = spawn;
+        Inventory = Inventories.Hydrate(character.Items);
     }
 
     /// <summary>套用移動最終位置（由 Application 用例在解析客戶端移動後呼叫）。</summary>
@@ -40,4 +45,23 @@ public sealed class Player : IFieldObject
         if (next > int.MaxValue) next = int.MaxValue;
         Character.Meso = (int)next;
     }
+
+    /// <summary>取得道具到背包（cm.gainItem 入口）。回傳放入的 Item；背包滿回 null。裝備依 id 範圍判定。</summary>
+    public Item? GainItem(InventoryType type, int itemId, short quantity = 1)
+    {
+        var isEquip = type == InventoryType.Equip;
+        Item item = isEquip
+            ? new Equip { ItemId = itemId, Quantity = 1 }
+            : new Item { ItemId = itemId, Quantity = quantity };
+        return Inventory.By(type).Gain(item);
+    }
+
+    /// <summary>背包是否持有指定道具（cm.haveItem 入口）。</summary>
+    public bool HasItem(InventoryType type, int itemId) => Inventory.By(type).CountById(itemId) > 0;
+
+    /// <summary>格內移動道具（ITEM_MOVE 入口；變動唯一經 Player）。</summary>
+    public bool MoveItem(InventoryType type, short src, short dst) => Inventory.By(type).Move(src, dst);
+
+    /// <summary>把執行期背包 flush 回 Character.Items（checkpoint/換圖/登出時呼叫）。</summary>
+    public void FlushInventory() => Character.Items = Inventory.Flush();
 }
