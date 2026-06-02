@@ -69,11 +69,15 @@ try{
     # 完整登入：先點帳號框注入 testuser，再點密碼框注入 test1234，最後點登入鈕。
     # windower poll kbd.txt → 注入到「當前 focus 窗」→ 清空，故每框先點再寫檔。
     # 座標由 808x631 主窗截圖疊網格精算(2026-06-02)；先前 y 偏高約 0.1 全沒點中。
-    # 自繪登入框滑鼠點擊切不動內部焦點(帳號框是記憶帳號預設焦點)，改用 Tab 跳欄位：
-    # 帳號框(預設焦點)注入 testuser + Tab(跳密碼框) + test1234。
-    [WJ]::Click($g,0.56,0.45); Start-Sleep -Milliseconds 300
-    InjectType "testuser`ttest1234"; Shot $g "3-pw-injected"
-    [WJ]::Click($g,0.78,0.46); Start-Sleep -Milliseconds 3000; Shot $g "4-after-login"  # 登入鈕(0.73 偏左到鈕外→右移)
+    # 穩定化注入：每欄位先 Backspace 清空(建立確定起點，不靠記憶帳號反白)，
+    # 帳密分次注入、Tab 獨立步驟，避免高速連發掉字/錯位。
+    [WJ]::Click($g,0.56,0.45); Start-Sleep -Milliseconds 400        # 焦點到帳號框
+    InjectType ("`b" * 14)                                          # 清空帳號框(記憶帳號預填)
+    InjectType "testuser"; Shot $g "2-id-injected"                  # 打帳號
+    InjectType "`t"                                                 # Tab 跳密碼框
+    InjectType ("`b" * 14)                                          # 清空密碼框(保險)
+    InjectType "test1234"; Shot $g "3-pw-injected"                  # 打密碼
+    [WJ]::Click($g,0.78,0.46); Start-Sleep -Milliseconds 3000; Shot $g "4-after-login"  # 登入鈕
     Write-Host "=== 登入訊號 ==="; Write-Host ("  0x01(Login)={0} 0x17={1} 任意opcode={2}" -f (Hits 'opcode=0x01'),(Hits 'opcode=0x17'),(Hits 'opcode=0x'))
     if(Test-Path $Log){ Get-Content $Log | Select-String -Pattern "opcode=0x|登入|LOGIN|Login|帳號|密碼|認證|Auth|AuthSuccess|gender|GENDER|PIN|CHANNEL|角色|彈回" | Select-Object -Last 18 | %{ Write-Host "  SRV: $($_.Line)" } }
 
