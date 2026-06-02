@@ -3,6 +3,7 @@ using Maple.Application.Characters;
 using Maple.Application.Maps;
 using Maple.Core.Characters;
 using Maple.Core.IO;
+using Maple.Core.World;
 using Maple.Net;
 using Maple.Versioning;
 using Microsoft.Extensions.Logging;
@@ -46,11 +47,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         session.SetCiphers(recv, send);
         _log.LogInformation("[Channel] 握手送出 {Remote}", session.Remote);
 
-        // Per-connection context
+        // Per-connection context（player 持有執行期位置，見 Core/World）
         Character? chr = null;
-        short x = 0, y = 0;
-        byte stance = 0;
-        short foothold = 0;
+        Player? player = null;
 
         try
         {
@@ -66,23 +65,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         chr = await HandlePlayerLoggedInAsync(reader, s, token);
                         if (chr is not null)
                         {
-                            // Determine spawn position
-                            var spawnPortal = 0; // TODO: use chr.SpawnPoint
-                            x = 0; y = 0; stance = 0; foothold = 0;
+                            // 執行期玩家（持有位置；spawn 暫定 0,0，之後接 portal/SpawnPoint）
+                            player = new Player(chr, new Position(0, 0, 0, 0));
+                            var pos = player.Position;
 
-                            // Register in map registry
                             _mapRegistry.Register(chr.MapId, chr.Id, chr, (pkt, tkn) => s.SendAsync(pkt, tkn));
 
-                            // Notify existing players of new arrival
+                            // Notify existing players of new arrival（並讓新玩家看到現有玩家）
                             var others = _mapRegistry.GetOthers(chr.MapId, chr.Id);
                             foreach (var other in others)
                             {
-                                // Spawn new player for each existing player
-                                var spawnForOther = V113MapPackets.SpawnPlayer(chr, x, y, stance, foothold);
+                                var spawnForOther = V113MapPackets.SpawnPlayer(chr, pos.X, pos.Y, pos.Stance, pos.Foothold);
                                 await other.SendPacket(spawnForOther, token);
 
-                                // Spawn existing player for new arrival
-                                var spawnForNew = V113MapPackets.SpawnPlayer(other.Character, x, y, stance, foothold);
+                                var spawnForNew = V113MapPackets.SpawnPlayer(other.Character, 0, 0, 0, 0);
                                 await s.SendAsync(spawnForNew, token);
                             }
 
@@ -91,9 +87,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.MovePlayer:
-                        if (chr is null) break;
-                        HandleMovePlayer(body, chr, ref x, ref y, ref stance, ref foothold);
-                        await BroadcastToOthersAsync(chr, body, token);
+                        if (player is null) break;
+                        TryUpdateMovement(player, body);                              // 解析→更新 server 權威位置(Core)
+                        await BroadcastToOthersAsync(player.Character, body, token);  // 原始 blob 轉發(動畫擬真)
                         break;
 
                     case V113ChannelRecvOp.Pong:
@@ -146,14 +142,24 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         return chr;
     }
 
-    private static void HandleMovePlayer(byte[] body, Character chr, ref short x, ref short y, ref byte stance, ref short foothold)
+    /// <summary>
+    /// 解析客戶端 MOVE_PLAYER 的移動串，更新 server 端權威位置（Core <see cref="Player"/>）。
+    /// best-effort：解析失敗只記 log、不中斷連線（廣播仍走原始 blob）。
+    /// c2s 格式：[opcode 2][header 33][movement list(numCommands…)]。
+    /// </summary>
+    private void TryUpdateMovement(Player player, byte[] body)
     {
-        // Client MOVE_PLAYER format: [opcode 2][unknown 33][movement data]
-        // We update server-side position minimally (just track it)
-        // Full MovementParse is in M3-7 scope; for now we do basic relay
         const int HeaderSkip = 2 + 33;
         if (body.Length <= HeaderSkip) return;
-        // Movement data is forwarded as-is; position extraction is optional for M3-7
+        try
+        {
+            var result = V113MovementParser.Parse(new PacketReader(body, HeaderSkip));
+            player.MoveTo(new Position(result.X, result.Y, result.Stance, result.Foothold));
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogDebug("[Channel] 移動解析失敗(忽略,仍廣播) {Msg}", ex.Message);
+        }
     }
 
     private async Task BroadcastToOthersAsync(Character chr, byte[] body, CancellationToken ct)
