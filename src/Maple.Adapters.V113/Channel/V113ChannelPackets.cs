@@ -96,7 +96,7 @@ internal static class V113ChannelPackets
 
     private static void AddInventoryInfo(PacketWriter w, Character chr)
     {
-        w.WriteInt(0);                  // mesos
+        w.WriteInt(chr.Meso);           // mesos
         w.WriteInt(chr.Id);             // char id (repeated for some reason)
         w.WriteInt(0);                  // beans
         w.WriteInt(0);

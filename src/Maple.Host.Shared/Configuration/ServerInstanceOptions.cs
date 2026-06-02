@@ -30,6 +30,9 @@ public sealed class ServerInstanceOptions
     /// <summary>WZ 遊戲資料目錄（含 Map.wz/Mob.wz/String.wz 等，對照 v113_Client 目錄）。</summary>
     public string WzDirectory { get; set; } = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
 
+    /// <summary>NPC/任務腳本根目錄（其下 npc/{npcId}.js）。暫指向舊 Java server 的 scripts；之後可搬入 repo。</summary>
+    public string ScriptsDirectory { get; set; } = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\TestMapleStoryV113_Server\scripts";
+
     /// <summary>帳號不存在時自動建帳（對照舊 settings.ini autoRegister；私服常開）。</summary>
     public bool AutoRegister { get; set; } = true;
 

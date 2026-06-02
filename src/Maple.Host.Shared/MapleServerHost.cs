@@ -3,7 +3,9 @@ using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
 using Maple.Application.Characters;
 using Maple.Application.Maps;
+using Maple.Application.Npcs;
 using Maple.Application.Security;
+using Maple.Scripting;
 using Maple.Content.Wz;
 using Maple.Core.Data;
 using Maple.Host.Shared.Configuration;
@@ -78,6 +80,14 @@ public static class MapleServerHost
             var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
             return new ChannelListenerSettings(o.Name, o.ListenIp, o.ChannelPort);
         });
+
+        // 路線圖②：NPC 對話腳本引擎（Jint 跑既有 OdinMS .js；CLR sandbox off）。
+        builder.Services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new NpcScriptOptions { ScriptsDirectory = o.ScriptsDirectory };
+        });
+        builder.Services.AddSingleton<INpcScriptFactory, JintNpcScriptFactory>();
 
         // v113 Channel 選項。
         builder.Services.AddSingleton(new V113ChannelOptions(ChannelIndex: 0));

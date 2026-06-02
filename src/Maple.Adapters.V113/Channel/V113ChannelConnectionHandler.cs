@@ -1,6 +1,7 @@
 using Maple.Adapters.V113.Crypto;
 using Maple.Application.Characters;
 using Maple.Application.Maps;
+using Maple.Application.Npcs;
 using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Core.World;
@@ -23,6 +24,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly CharacterService _charService;
     private readonly IMapSessionRegistry _mapRegistry;
     private readonly MapService _mapService;
+    private readonly INpcScriptFactory _npcScripts;
     private readonly V113ChannelOptions _options;
 
     public V113ChannelConnectionHandler(
@@ -30,12 +32,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CharacterService charService,
         IMapSessionRegistry mapRegistry,
         MapService mapService,
+        INpcScriptFactory npcScripts,
         V113ChannelOptions options)
     {
         _log = log;
         _charService = charService;
         _mapRegistry = mapRegistry;
         _mapService = mapService;
+        _npcScripts = npcScripts;
         _options = options;
     }
 
@@ -50,9 +54,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         session.SetCiphers(recv, send);
         _log.LogInformation("[Channel] 握手送出 {Remote}", session.Remote);
 
-        // Per-connection context（player 持有執行期位置，見 Core/World）
+        // Per-connection context（handler 是 singleton！這些狀態必須是連線區域變數）
         Character? chr = null;
         Player? player = null;
+        var npcOidToId = new Dictionary<int, int>();   // 地圖 NPC objectId → npcId（SpawnMapNpcs 時建）
+        NpcConversation? conversation = null;           // 當前對話（session-local，不進 registry）
 
         try
         {
@@ -85,8 +91,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 await s.SendAsync(spawnForNew, token);
                             }
 
-                            // 地圖物件同步：把該地圖的 NPC spawn 給剛進場的玩家
-                            await SpawnMapNpcsAsync(chr.MapId, s, token);
+                            // 地圖物件同步：把該地圖的 NPC spawn 給剛進場的玩家（同時建 oid→npcId）
+                            await SpawnMapNpcsAsync(chr.MapId, s, npcOidToId, token);
 
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
                         }
@@ -101,6 +107,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
                         await HandleGeneralChatAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.NpcTalk:
+                        if (player is null) break;
+                        conversation = await StartNpcConversationAsync(reader, player, npcOidToId, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.NpcTalkMore:
+                        if (conversation is null) break;
+                        await ContinueNpcConversationAsync(reader, conversation, token);
+                        if (!conversation.Active) conversation = null;
                         break;
 
                     case V113ChannelRecvOp.Pong:
@@ -139,17 +156,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// proper 每-Field 配發器待 IFieldRegistry 重構（見架構文件風險#5）。
     /// 跳過隱藏 NPC 與 PlayerNPC（id ≥ 9901000，對照 Java sendSpawnData 條件）。
     /// </summary>
-    private async Task SpawnMapNpcsAsync(int mapId, MapleSession session, CancellationToken ct)
+    private async Task SpawnMapNpcsAsync(int mapId, MapleSession session, Dictionary<int, int> oidToNpcId, CancellationToken ct)
     {
         var map = _mapService.LoadMap(mapId);
         var objectId = NpcObjectIdBase;
         var spawned = 0;
 
+        oidToNpcId.Clear();
         foreach (var def in map.Npcs)
         {
             if (def.Hide || def.NpcId >= 9901000) continue;
 
-            var npc = new Npc(def, objectId++);
+            var oid = objectId++;
+            var npc = new Npc(def, oid);
+            oidToNpcId[oid] = def.NpcId;   // 供 c2s NPC_TALK 的 oid 反查 npcId
             await session.SendAsync(V113MapPackets.SpawnNpc(npc), ct);
             await session.SendAsync(V113MapPackets.SpawnNpcRequestController(npc), ct);
             spawned++;
@@ -160,6 +180,76 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
     /// <summary>NPC 地圖物件 id 起始值（避開玩家以 charId 充當的小號 objectId）。</summary>
     private const int NpcObjectIdBase = 1000;
+
+    // ── NPC 對話（路線圖②）─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// c2s NPC_TALK：[int oid] → 反查 npcId → 建腳本對話、跑 start()、flush 第一則對話。
+    /// sink/warp 為語意化委派（編碼鎖本層；warp 重用進場序列）。回傳仍 active 的對話、否則 null。
+    /// </summary>
+    private async Task<NpcConversation?> StartNpcConversationAsync(
+        PacketReader reader, Player player, Dictionary<int, int> oidToNpcId, MapleSession session, CancellationToken ct)
+    {
+        var oid = reader.ReadInt();
+        if (!oidToNpcId.TryGetValue(oid, out var npcId))
+        {
+            _log.LogDebug("[Channel] NPC_TALK 未知 oid={Oid}", oid);
+            return null;
+        }
+
+        var ctx = new NpcContext(npcId, player);
+        var script = _npcScripts.TryCreate(npcId, ctx);
+        if (script is null)
+        {
+            _log.LogDebug("[Channel] NPC {Npc} 無對應腳本，略過", npcId);
+            return null;
+        }
+
+        var convo = new NpcConversation(
+            npcId, script, ctx,
+            sendDialog: (dlg, c) => session.SendAsync(V113NpcDialogEncoder.Encode(dlg), c),
+            warp: (mapId, c) => WarpAsync(player.Character, oidToNpcId, session, mapId, c));
+
+        await convo.StartAsync(ct);
+        _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
+        return convo.Active ? convo : null;
+    }
+
+    /// <summary>
+    /// c2s NPC_TALK_MORE：[byte lastMsg][byte action(mode)][selection]。
+    /// 對照 Java NPCMoreTalk：lastMsg==2(getText) 帶字串、否則 selection = 剩餘≥4 readInt / &gt;0 readByte / else -1。
+    /// </summary>
+    private static async Task ContinueNpcConversationAsync(PacketReader reader, NpcConversation convo, CancellationToken ct)
+    {
+        var lastMsg = reader.ReadByte();
+        int mode = (sbyte)reader.ReadByte();   // 1=下一步/是, 0=上一步/否, -1=ESC
+        int selection = -1;
+
+        if (lastMsg != 2)   // getText 的輸入字串 MVP 不消費（selection 維持 -1）
+        {
+            if (reader.Remaining >= 4) selection = reader.ReadInt();
+            else if (reader.Remaining > 0) selection = reader.ReadByte();
+        }
+
+        await convo.ContinueAsync(mode, lastMsg, selection, ct);
+    }
+
+    /// <summary>
+    /// cm.warp 的落地：換地圖（MVP 重用進場序列——deregister 舊圖 → 設 MapId → SET_FIELD → register 新圖 → spawn NPC）。
+    /// proper 的輕量 WarpToMap 封包 + login/warp 共用 IMapTransition 用例待後續重構。
+    /// </summary>
+    private async Task WarpAsync(Character chr, Dictionary<int, int> oidToNpcId, MapleSession session, int mapId, CancellationToken ct)
+    {
+        _mapRegistry.Deregister(chr.MapId, chr.Id);
+        chr.MapId = mapId;
+
+        var setField = V113ChannelPackets.SetField(chr, _options.ChannelIndex);
+        await session.SendAsync(setField, ct);
+
+        _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn));
+        await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
+        _log.LogInformation("[Channel] 角色 {Name} warp → 地圖 {Map}", chr.Name, mapId);
+    }
 
     // ── Handlers ──────────────────────────────────────────────────────────────
 

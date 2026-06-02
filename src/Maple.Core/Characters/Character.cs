@@ -44,6 +44,9 @@ public sealed class Character
 
     public byte SpawnPoint { get; set; }
 
+    /// <summary>持有楓幣（meso）。執行期由 <see cref="World.Player.GainMeso"/> 經富領域不變式變動。</summary>
+    public int Meso { get; set; }
+
     /// <summary>穿戴中的裝備清單（對照 EQUIPPED 槽）。</summary>
     public List<EquipEntry> Equips { get; set; } = new();
 }

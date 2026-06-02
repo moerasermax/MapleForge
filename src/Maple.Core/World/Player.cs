@@ -28,4 +28,16 @@ public sealed class Player : IFieldObject
 
     /// <summary>套用移動最終位置（由 Application 用例在解析客戶端移動後呼叫）。</summary>
     public void MoveTo(Position position) => Position = position;
+
+    /// <summary>
+    /// 增減楓幣（meso）。富領域不變式：餘額不為負（扣超過持有時夾到 0）、不溢位。
+    /// NPC 腳本 cm.gainMeso 等行為經此入口，而非直接寫 Character.Meso。
+    /// </summary>
+    public void GainMeso(int delta)
+    {
+        var next = (long)Character.Meso + delta;
+        if (next < 0) next = 0;
+        if (next > int.MaxValue) next = int.MaxValue;
+        Character.Meso = (int)next;
+    }
 }
