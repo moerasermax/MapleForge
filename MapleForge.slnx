@@ -15,6 +15,8 @@
     <Project Path="tests/Maple.Adapters.V113.Tests/Maple.Adapters.V113.Tests.csproj" />
     <Project Path="tests/Maple.Application.Tests/Maple.Application.Tests.csproj" />
     <Project Path="tests/Maple.Content.Tests/Maple.Content.Tests.csproj" />
+    <Project Path="tests/Maple.Core.Tests/Maple.Core.Tests.csproj" />
+    <Project Path="tests/Maple.Persistence.Tests/Maple.Persistence.Tests.csproj" />
     <Project Path="tests/Maple.Tools.PacketDecoder.Tests/Maple.Tools.PacketDecoder.Tests.csproj" />
     <Project Path="tests/Maple.Tools.HeadlessClient.Tests/Maple.Tools.HeadlessClient.Tests.csproj" />
   </Folder>

@@ -22,6 +22,12 @@ public sealed class AuthServiceTests
         private readonly Dictionary<string, Account> _store = new(StringComparer.Ordinal);
         private int _nextId = 1;
 
+        public Task<Account?> FindByIdAsync(int accountId, CancellationToken cancellationToken = default)
+        {
+            var account = _store.Values.FirstOrDefault(a => a.Id == accountId);
+            return Task.FromResult<Account?>(account);
+        }
+
         public Task<Account?> FindByNameAsync(string accountName, CancellationToken cancellationToken = default)
         {
             _store.TryGetValue(accountName, out var account);

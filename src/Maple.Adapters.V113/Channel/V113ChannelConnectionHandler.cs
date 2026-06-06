@@ -1,7 +1,11 @@
 using Maple.Adapters.V113.Crypto;
 using Maple.Application.Characters;
+using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
+using Maple.Application.Shops;
+using Maple.Application.Storage;
+using Maple.Core.Accounts;
 using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Core.World;
@@ -22,24 +26,39 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly IVersionCipherFactory _ciphers = new V113CipherFactory();
     private readonly ILogger<V113ChannelConnectionHandler> _log;
     private readonly CharacterService _charService;
+    private readonly IAccountRepository _accounts;
     private readonly IMapSessionRegistry _mapRegistry;
+    private readonly IFieldInstanceRegistry _fieldRegistry;
     private readonly MapService _mapService;
     private readonly INpcScriptFactory _npcScripts;
+    private readonly ShopService _shopService;
+    private readonly StorageService _storageService;
+    private readonly CombatService _combatService;
     private readonly V113ChannelOptions _options;
 
     public V113ChannelConnectionHandler(
         ILogger<V113ChannelConnectionHandler> log,
         CharacterService charService,
+        IAccountRepository accounts,
         IMapSessionRegistry mapRegistry,
+        IFieldInstanceRegistry fieldRegistry,
         MapService mapService,
         INpcScriptFactory npcScripts,
+        ShopService shopService,
+        StorageService storageService,
+        CombatService combatService,
         V113ChannelOptions options)
     {
         _log = log;
         _charService = charService;
+        _accounts = accounts;
         _mapRegistry = mapRegistry;
+        _fieldRegistry = fieldRegistry;
         _mapService = mapService;
         _npcScripts = npcScripts;
+        _shopService = shopService;
+        _storageService = storageService;
+        _combatService = combatService;
         _options = options;
     }
 
@@ -56,9 +75,45 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         // Per-connection context（handler 是 singleton！這些狀態必須是連線區域變數）
         Character? chr = null;
+        Account? account = null;
         Player? player = null;
+        FieldInstance? currentField = null;
+        int? storageNpcId = null;
         var npcOidToId = new Dictionary<int, int>();   // 地圖 NPC objectId → npcId（SpawnMapNpcs 時建）
         NpcConversation? conversation = null;           // 當前對話（session-local，不進 registry）
+
+        async Task OpenShopFromNpcAsync(int shopOrNpcId, CancellationToken token)
+        {
+            if (player is null) return;
+
+            var shop = _shopService.OpenShop(player, shopOrNpcId);
+            if (shop is null)
+            {
+                _log.LogDebug("[Channel] NPC shop not found shopOrNpcId={Id}", shopOrNpcId);
+                return;
+            }
+
+            await session.SendAsync(V113ShopPackets.OpenNpcShop(shop), token);
+        }
+
+        async Task OpenStorageFromNpcAsync(int npcId, CancellationToken token)
+        {
+            if (player is null) return;
+
+            storageNpcId = npcId;
+            var result = _storageService.Open(player);
+            var packet = V113StoragePackets.EncodeResult(result, npcId, player.Storage);
+            if (packet is not null)
+            {
+                await session.SendAsync(packet, token);
+            }
+        }
+
+        async Task WarpFromNpcAsync(int mapId, CancellationToken token)
+        {
+            if (player is null) return;
+            currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, token);
+        }
 
         try
         {
@@ -74,9 +129,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         chr = await HandlePlayerLoggedInAsync(reader, s, token);
                         if (chr is not null)
                         {
+                            account = await _accounts.FindByIdAsync(chr.AccountId, token);
+
                             // 執行期玩家（持有位置；spawn 暫定 0,0，之後接 portal/SpawnPoint）
                             player = new Player(chr, new Position(0, 0, 0, 0));
+                            if (account is not null)
+                            {
+                                player.AttachStorage(account);
+                            }
+                            else
+                            {
+                                _log.LogWarning("[Channel] 角色 {Name} 找不到 AccountId={AccountId}，倉庫不會持久化", chr.Name, chr.AccountId);
+                            }
+
                             var pos = player.Position;
+                            currentField = EnterField(chr.MapId, player);
 
                             _mapRegistry.Register(chr.MapId, chr.Id, chr, (pkt, tkn) => s.SendAsync(pkt, tkn));
 
@@ -91,8 +158,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 await s.SendAsync(spawnForNew, token);
                             }
 
-                            // 地圖物件同步：把該地圖的 NPC spawn 給剛進場的玩家（同時建 oid→npcId）
+                            // 地圖物件同步：把該地圖的 NPC / monster spawn 給剛進場的玩家。
                             await SpawnMapNpcsAsync(chr.MapId, s, npcOidToId, token);
+                            await SendFieldMonstersAsync(currentField, s, token);
 
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
                         }
@@ -104,6 +172,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await BroadcastToOthersAsync(player.Character, body, token);  // 原始 blob 轉發(動畫擬真)
                         break;
 
+                    case V113ChannelRecvOp.CloseRangeAttack:
+                        if (player is null || currentField is null) break;
+                        await HandleCloseRangeAttackAsync(reader, player, currentField, s, token);
+                        break;
+
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
                         await HandleGeneralChatAsync(reader, player, s, token);
@@ -111,13 +184,34 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.NpcTalk:
                         if (player is null) break;
-                        conversation = await StartNpcConversationAsync(reader, player, npcOidToId, s, token);
+                        conversation = await StartNpcConversationAsync(
+                            reader,
+                            player,
+                            npcOidToId,
+                            s,
+                            OpenShopFromNpcAsync,
+                            OpenStorageFromNpcAsync,
+                            WarpFromNpcAsync,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.NpcTalkMore:
                         if (conversation is null) break;
                         await ContinueNpcConversationAsync(reader, conversation, token);
                         if (!conversation.Active) conversation = null;
+                        break;
+
+                    case V113ChannelRecvOp.NpcShop:
+                        if (player is null) break;
+                        await HandleNpcShopAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.Storage:
+                        if (player is null) break;
+                        if (await HandleStorageAsync(reader, player, storageNpcId ?? 0, account, s, token))
+                        {
+                            storageNpcId = null;
+                        }
                         break;
 
                     case V113ChannelRecvOp.ItemMove:
@@ -136,6 +230,41 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
         finally
         {
+            if (player is not null)
+            {
+                player.FlushInventory();
+
+                if (account is not null)
+                {
+                    player.FlushStorage(account);
+                    try
+                    {
+                        await _accounts.UpdateAsync(account, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.LogWarning(ex, "[Channel] Account {AccountId} storage flush failed", account.Id);
+                    }
+                }
+
+                try
+                {
+                    await _charService.UpdateAsync(player.Character, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "[Channel] Character {CharId} flush failed", player.Character.Id);
+                }
+            }
+
+            if (currentField is not null && player is not null)
+            {
+                lock (currentField)
+                {
+                    currentField.Remove(player.ObjectId);
+                }
+            }
+
             // Cleanup: remove from map, notify others
             if (chr is not null)
             {
@@ -183,6 +312,43 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _log.LogInformation("[Channel] 地圖 {Map} 送出 {Count} 個 NPC spawn", mapId, spawned);
     }
 
+    private FieldInstance EnterField(int mapId, Player player)
+    {
+        var field = _fieldRegistry.GetOrCreate(mapId, out var created);
+        lock (field)
+        {
+            if (created)
+            {
+                var spawned = _combatService.SpawnMapMonsters(field, mapId);
+                _log.LogInformation("[Channel] 地圖 {Map} 初始化 {Count} 隻怪物", mapId, spawned.Count);
+            }
+
+            field.Add(player);
+        }
+
+        return field;
+    }
+
+    private async Task SendFieldMonstersAsync(FieldInstance field, MapleSession session, CancellationToken ct)
+    {
+        List<Mob> mobs;
+        lock (field)
+        {
+            mobs = field.Objects.OfType<Mob>().Where(static m => m.IsAlive).ToList();
+        }
+
+        foreach (var mob in mobs)
+        {
+            await session.SendAsync(V113CombatPackets.SpawnMonster(mob), ct);
+            await session.SendAsync(V113CombatPackets.SpawnMonsterControl(mob, newSpawn: true, aggro: false), ct);
+        }
+
+        if (mobs.Count > 0)
+        {
+            _log.LogInformation("[Channel] 地圖 {Map} replay {Count} 隻怪物", field.MapId, mobs.Count);
+        }
+    }
+
     /// <summary>NPC 地圖物件 id 起始值（避開玩家以 charId 充當的小號 objectId）。</summary>
     private const int NpcObjectIdBase = 1000;
 
@@ -193,7 +359,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// sink/warp 為語意化委派（編碼鎖本層；warp 重用進場序列）。回傳仍 active 的對話、否則 null。
     /// </summary>
     private async Task<NpcConversation?> StartNpcConversationAsync(
-        PacketReader reader, Player player, Dictionary<int, int> oidToNpcId, MapleSession session, CancellationToken ct)
+        PacketReader reader,
+        Player player,
+        Dictionary<int, int> oidToNpcId,
+        MapleSession session,
+        Func<int, CancellationToken, Task> openShop,
+        Func<int, CancellationToken, Task> openStorage,
+        Func<int, CancellationToken, Task> warp,
+        CancellationToken ct)
     {
         var oid = reader.ReadInt();
         if (!oidToNpcId.TryGetValue(oid, out var npcId))
@@ -213,7 +386,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var convo = new NpcConversation(
             npcId, script, ctx,
             sendDialog: (dlg, c) => session.SendAsync(V113NpcDialogEncoder.Encode(dlg), c),
-            warp: (mapId, c) => WarpAsync(player.Character, oidToNpcId, session, mapId, c));
+            warp: warp,
+            openShop: openShop,
+            openStorage: openStorage);
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -240,44 +415,180 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     }
 
     /// <summary>
-    /// cm.warp 的落地：換地圖（MVP 重用進場序列——deregister 舊圖 → 設 MapId → SET_FIELD → register 新圖 → spawn NPC）。
+    /// cm.warp 的落地：換地圖（MVP 重用進場序列——deregister 舊圖 → 設 MapId → SET_FIELD → register 新圖 → spawn NPC/monster）。
     /// proper 的輕量 WarpToMap 封包 + login/warp 共用 IMapTransition 用例待後續重構。
     /// </summary>
-    private async Task WarpAsync(Character chr, Dictionary<int, int> oidToNpcId, MapleSession session, int mapId, CancellationToken ct)
+    private async Task<FieldInstance> WarpAsync(
+        Player player,
+        FieldInstance? currentField,
+        Dictionary<int, int> oidToNpcId,
+        MapleSession session,
+        int mapId,
+        CancellationToken ct)
     {
-        _mapRegistry.Deregister(chr.MapId, chr.Id);
+        var chr = player.Character;
+        var oldMapId = chr.MapId;
+        _mapRegistry.Deregister(oldMapId, chr.Id);
+
+        if (currentField is not null)
+        {
+            lock (currentField)
+            {
+                currentField.Remove(player.ObjectId);
+            }
+        }
+
+        var removePacket = V113MapPackets.RemovePlayer(chr.Id);
+        var oldOthers = _mapRegistry.GetOthers(oldMapId, chr.Id);
+        foreach (var other in oldOthers)
+        {
+            try { await other.SendPacket(removePacket, ct); } catch { /* session 可能正在關 */ }
+        }
+
         chr.MapId = mapId;
 
         var setField = V113ChannelPackets.SetField(chr, _options.ChannelIndex);
         await session.SendAsync(setField, ct);
 
+        var field = EnterField(mapId, player);
         _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn));
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
+        await SendFieldMonstersAsync(field, session, ct);
         _log.LogInformation("[Channel] 角色 {Name} warp → 地圖 {Map}", chr.Name, mapId);
+        return field;
     }
 
-    // ── 背包（路線圖②後半）─────────────────────────────────────────────────────
+    // ── 背包 / 商店 / 倉庫 / 戰鬥 ─────────────────────────────────────────────
 
-    /// <summary>
-    /// c2s ITEM_MOVE：MVP-0 僅處理「格內移動」(src&gt;0,dst&gt;0)→Player 變動→flush→ModifyInventory(mode 2) 回包。
-    /// 穿脫裝(一端負)/丟棄(dst=0) defer（不回包，客戶端自行回滾，見設計 doc）。
-    /// </summary>
     private async Task HandleItemMoveAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
     {
-        var req = V113InventoryPackets.ParseItemMove(reader);
-        if (!req.IsValidBagType) return;
-
-        if (!req.IsWithinBagMove)
+        var result = V113InventoryMoveHandler.ApplyItemMove(reader, player);
+        if (result.Packet is not null)
         {
-            _log.LogDebug("[Channel] ITEM_MOVE 非格內移動(穿脫/丟棄) MVP-0 略過 type={T} src={S} dst={D}", req.RawType, req.Src, req.Dst);
-            return;
+            await session.SendAsync(result.Packet, ct);
         }
 
-        if (player.MoveItem(req.Type, req.Src, req.Dst))
+        if (result.Success)
         {
-            player.FlushInventory();
-            await session.SendAsync(V113InventoryPackets.ModifyMove(req.Type, req.Src, req.Dst), ct);
-            _log.LogDebug("[Channel] ITEM_MOVE {T} {S}→{D}", req.Type, req.Src, req.Dst);
+            _log.LogDebug("[Channel] ITEM_MOVE {Operation} type={Type} src={Src} dst={Dst}",
+                result.Operation,
+                result.Request.Type,
+                result.Request.Src,
+                result.Request.Dst);
+        }
+    }
+
+    private async Task HandleNpcShopAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        var req = V113ShopPackets.ParseNpcShop(reader);
+        switch (req.Action)
+        {
+            case V113NpcShopAction.Buy:
+            {
+                var result = _shopService.Buy(player, req.ItemId, req.Quantity);
+                if (result.Status == ShopTransactionStatus.Success && result.GainedItem is not null)
+                {
+                    await session.SendAsync(V113ShopPackets.ModifyInventoryAdd(Player.InventoryTypeOf(req.ItemId), result.GainedItem), ct);
+                    await session.SendAsync(V113ShopPackets.UpdateMeso(result.Meso), ct);
+                    await session.SendAsync(V113ShopPackets.ConfirmShopTransaction(V113ShopPackets.ConfirmBuy), ct);
+                }
+                else
+                {
+                    await session.SendAsync(V113ShopPackets.ConfirmShopTransaction(V113ShopPackets.ConfirmError), ct);
+                }
+                break;
+            }
+
+            case V113NpcShopAction.Sell:
+            {
+                var result = _shopService.Sell(player, req.Slot, req.ItemId, req.Quantity);
+                if (result.Status == ShopTransactionStatus.Success && result.Mutation is not null)
+                {
+                    await session.SendAsync(V113ShopPackets.ModifyInventoryQuantity(result.Mutation), ct);
+                    await session.SendAsync(V113ShopPackets.UpdateMeso(result.Meso), ct);
+                    await session.SendAsync(V113ShopPackets.ConfirmShopTransaction(V113ShopPackets.ConfirmSell), ct);
+                }
+                else
+                {
+                    await session.SendAsync(V113ShopPackets.ConfirmShopTransaction(V113ShopPackets.ConfirmError), ct);
+                }
+                break;
+            }
+
+            case V113NpcShopAction.Recharge:
+            default:
+                await session.SendAsync(V113ShopPackets.ConfirmShopTransaction(V113ShopPackets.ConfirmError), ct);
+                break;
+        }
+    }
+
+    private async Task<bool> HandleStorageAsync(
+        PacketReader reader,
+        Player player,
+        int npcId,
+        Account? account,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        var req = V113StoragePackets.Parse(reader);
+        if (!req.HasValidType)
+        {
+            return false;
+        }
+
+        var result = req.Mode switch
+        {
+            StorageClientMode.TakeOut => _storageService.TakeOut(player, req.Type, req.StorageSlot),
+            StorageClientMode.Store => _storageService.Store(player, req.Type, req.InventorySlot, req.Quantity, req.ItemId),
+            StorageClientMode.Arrange => _storageService.Arrange(player),
+            StorageClientMode.Meso => _storageService.MoveMeso(player, req.Meso),
+            StorageClientMode.Close => _storageService.Close(player),
+            _ => StorageResult.None,
+        };
+
+        if (result.Kind == StorageResultKind.Closed && account is not null)
+        {
+            player.FlushStorage(account);
+            await _accounts.UpdateAsync(account, ct);
+        }
+
+        var packet = V113StoragePackets.EncodeResult(result, npcId, player.Storage);
+        if (packet is not null)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        return result.Kind == StorageResultKind.Closed;
+    }
+
+    private async Task HandleCloseRangeAttackAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        var attack = V113CombatPackets.ParseCloseRangeAttack(reader);
+        var attackBroadcast = V113CombatPackets.CloseRangeAttackBroadcast(player.Character.Id, attack, player.Character.Level);
+        await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
+
+        CombatAttackResult result;
+        lock (field)
+        {
+            result = _combatService.ApplyAttack(field, player, attack.ToCombatAttack());
+        }
+
+        foreach (var hit in result.Hits)
+        {
+            if (hit.AppliedDamage > 0)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.DamageMonster(hit.ObjectId, hit.AppliedDamage), ct);
+            }
+
+            if (hit.Killed)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(hit.ObjectId), ct);
+            }
         }
     }
 
@@ -340,12 +651,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         var packet = V113MapPackets.ChatText(player.Character.Id, text, show);
         await session.SendAsync(packet, ct);                  // 自己看到泡泡
-
-        var others = _mapRegistry.GetOthers(player.Character.MapId, player.Character.Id);
-        foreach (var other in others)
-        {
-            try { await other.SendPacket(packet, ct); } catch { /* session 可能正在關 */ }
-        }
+        await BroadcastPacketToOthersAsync(player.Character, packet, ct);
         _log.LogInformation("[Channel] 角色 {Name} 地圖聊天「{Text}」", player.Character.Name, text);
     }
 
@@ -356,16 +662,26 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         var rawMovement = body.AsSpan(HeaderSkip);
         var broadcast = V113MapPackets.MovePlayerBroadcast(chr.Id, rawMovement);
+        await BroadcastPacketToOthersAsync(chr, broadcast, ct);
+    }
 
+    private async Task BroadcastPacketToOthersAsync(Character chr, byte[] packet, CancellationToken ct)
+    {
         var others = _mapRegistry.GetOthers(chr.MapId, chr.Id);
         foreach (var other in others)
         {
             try
             {
-                await other.SendPacket(broadcast, ct);
+                await other.SendPacket(packet, ct);
             }
             catch { /* ignore failed broadcasts */ }
         }
+    }
+
+    private async Task BroadcastPacketToMapAsync(Character chr, MapleSession session, byte[] packet, CancellationToken ct)
+    {
+        await session.SendAsync(packet, ct);
+        await BroadcastPacketToOthersAsync(chr, packet, ct);
     }
 
     // ── Hello ──────────────────────────────────────────────────────────────────

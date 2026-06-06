@@ -21,6 +21,13 @@ public sealed class LiteDbAccountRepository : IAccountRepository
     }
 
     /// <inheritdoc/>
+    public Task<Account?> FindByIdAsync(int accountId, CancellationToken cancellationToken = default)
+    {
+        var account = _collection.FindById(accountId);
+        return Task.FromResult<Account?>(account);
+    }
+
+    /// <inheritdoc/>
     public Task<Account?> FindByNameAsync(string accountName, CancellationToken cancellationToken = default)
     {
         var account = _collection.FindOne(a => a.AccountName == accountName);

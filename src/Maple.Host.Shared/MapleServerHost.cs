@@ -2,12 +2,17 @@ using Maple.Adapters.V113.Channel;
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
 using Maple.Application.Characters;
+using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
 using Maple.Application.Security;
+using Maple.Application.Shops;
+using Maple.Application.Storage;
+using Maple.Content.Shops;
 using Maple.Scripting;
 using Maple.Content.Wz;
 using Maple.Core.Data;
+using Maple.Core.Shops;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
 using Maple.Persistence;
@@ -43,7 +48,14 @@ public static class MapleServerHost
         builder.Services.AddMaplePersistence(sp =>
         {
             var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
-            return new MapleDatabaseOptions { DataDirectory = o.DataDirectory, InstanceName = o.Name };
+            return new MapleDatabaseOptions
+            {
+                Provider = ParseDatabaseProvider(builder.Configuration["Persistence:Provider"]),
+                InstanceName = o.Name,
+                DataDirectory = o.DataDirectory,
+                MongoConnectionString = builder.Configuration["Persistence:MongoConnectionString"] ?? "mongodb://localhost:27017",
+                MongoDatabaseName = builder.Configuration["Persistence:MongoDatabaseName"] ?? string.Empty,
+            };
         });
 
         // M2：帳密驗證 + 角色服務。
@@ -61,6 +73,13 @@ public static class MapleServerHost
 
         // M3-7：地圖 session 登記表（thread-safe process 單例）。
         builder.Services.AddSingleton<IMapSessionRegistry, InMemoryMapSessionRegistry>();
+        builder.Services.AddSingleton<IFieldInstanceRegistry, InMemoryFieldInstanceRegistry>();
+
+        // NPC 商店 / 倉庫 / 戰鬥用例。
+        builder.Services.AddSingleton<IShopCatalog>(_ => new JsonShopCatalog(ResolveShopCatalogPath(builder)));
+        builder.Services.AddSingleton<ShopService>();
+        builder.Services.AddSingleton<StorageService>();
+        builder.Services.AddSingleton<CombatService>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>
@@ -97,5 +116,40 @@ public static class MapleServerHost
         builder.Services.AddHostedService<TcpChannelListener>();
 
         return builder;
+    }
+
+    private static MapleDatabaseProvider ParseDatabaseProvider(string? value)
+        => Enum.TryParse<MapleDatabaseProvider>(value, ignoreCase: true, out var provider)
+            ? provider
+            : MapleDatabaseProvider.MongoDb;
+
+    private static string ResolveShopCatalogPath(IHostApplicationBuilder builder)
+    {
+        var configured = builder.Configuration["Content:ShopCatalogPath"]
+            ?? builder.Configuration["Shops:CatalogPath"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var fromOutput = Path.Combine(AppContext.BaseDirectory, "Shops", "npc-shops.v113.json");
+        if (File.Exists(fromOutput))
+        {
+            return fromOutput;
+        }
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "src", "Maple.Content", "Shops", "npc-shops.v113.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return fromOutput;
     }
 }

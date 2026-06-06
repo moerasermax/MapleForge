@@ -26,6 +26,9 @@ public class LoginPipelineIntegrationTests
         private readonly Dictionary<string, Account> _byName = new(StringComparer.OrdinalIgnoreCase);
         private int _nextId = 1;
 
+        public Task<Account?> FindByIdAsync(int accountId, CancellationToken ct = default)
+            => Task.FromResult(_byName.Values.FirstOrDefault(a => a.Id == accountId));
+
         public Task<Account?> FindByNameAsync(string accountName, CancellationToken ct = default)
             => Task.FromResult(_byName.TryGetValue(accountName, out var a) ? a : null);
 

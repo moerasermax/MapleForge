@@ -206,6 +206,9 @@ public class LoginGenderFlowTests
 
         public void Seed(Account a) { a.Id = _nextId++; _store[a.AccountName] = a; }
 
+        public Task<Account?> FindByIdAsync(int accountId, CancellationToken ct = default)
+            => Task.FromResult(_store.Values.FirstOrDefault(a => a.Id == accountId));
+
         public Task<Account?> FindByNameAsync(string accountName, CancellationToken ct = default)
             => Task.FromResult(_store.TryGetValue(accountName, out var a) ? a : (Account?)null);
 

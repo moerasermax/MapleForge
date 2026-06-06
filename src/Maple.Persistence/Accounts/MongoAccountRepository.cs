@@ -24,6 +24,14 @@ public sealed class MongoAccountRepository : IAccountRepository
         _collection.Indexes.CreateOne(accountNameIndex);
     }
 
+    public async Task<Account?> FindByIdAsync(int accountId, CancellationToken cancellationToken = default)
+    {
+        return await _collection
+            .Find(a => a.Id == accountId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<Account?> FindByNameAsync(string accountName, CancellationToken cancellationToken = default)
     {
         return await _collection

@@ -20,6 +20,10 @@ public sealed class CharacterService
     public Task<Character?> GetByIdAsync(int characterId, CancellationToken ct = default)
         => _repo.FindByIdAsync(characterId, ct);
 
+    /// <summary>更新角色文件。</summary>
+    public Task UpdateAsync(Character character, CancellationToken ct = default)
+        => _repo.UpdateAsync(character, ct);
+
     /// <summary>名稱是否可用（未被使用 + 格式合法）。</summary>
     public async Task<bool> IsNameAvailableAsync(string name, CancellationToken ct = default)
     {

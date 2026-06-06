@@ -7,6 +7,9 @@ namespace Maple.Core.Accounts;
 /// </summary>
 public interface IAccountRepository
 {
+    /// <summary>依帳號 ID 查詢；找不到時回傳 null。</summary>
+    Task<Account?> FindByIdAsync(int accountId, CancellationToken cancellationToken = default);
+
     /// <summary>依帳號名稱查詢；找不到時回傳 null。</summary>
     Task<Account?> FindByNameAsync(string accountName, CancellationToken cancellationToken = default);
 
