@@ -32,6 +32,12 @@ public interface INpcScriptContext
     /// <summary>背包是否持有道具（cm.haveItem）。</summary>
     bool HaveItem(int itemId);
 
+    /// <summary>開啟帳號倉庫（cm.openStorage）。</summary>
+    void OpenStorage();
+
+    /// <summary>舊 OdinMS 腳本常用名稱：cm.sendStorage。</summary>
+    void SendStorage();
+
     int GetJob();
     int GetMeso();
     int GetMap();

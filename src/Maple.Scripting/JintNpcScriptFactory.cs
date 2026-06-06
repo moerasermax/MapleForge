@@ -89,6 +89,8 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
             gainMeso = (Action<int>)cm.GainMeso,
             gainItem = (Action<int, int>)cm.GainItem,
             haveItem = (Func<int, bool>)cm.HaveItem,
+            openStorage = (Action)cm.OpenStorage,
+            sendStorage = (Action)cm.SendStorage,
             getJob = (Func<int>)cm.GetJob,
             getMeso = (Func<int>)cm.GetMeso,
             getMap = (Func<int>)cm.GetMap,

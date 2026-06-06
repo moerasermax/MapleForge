@@ -14,6 +14,7 @@ public sealed class NpcConversation
     private readonly NpcContext _ctx;
     private readonly Func<NpcDialog, CancellationToken, Task> _sendDialog;
     private readonly Func<int, CancellationToken, Task> _warp;
+    private readonly Func<int, CancellationToken, Task> _openStorage;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -23,13 +24,15 @@ public sealed class NpcConversation
         INpcScript script,
         NpcContext ctx,
         Func<NpcDialog, CancellationToken, Task> sendDialog,
-        Func<int, CancellationToken, Task> warp)
+        Func<int, CancellationToken, Task> warp,
+        Func<int, CancellationToken, Task>? openStorage = null)
     {
         NpcId = npcId;
         _script = script;
         _ctx = ctx;
         _sendDialog = sendDialog;
         _warp = warp;
+        _openStorage = openStorage ?? ((_, _) => Task.CompletedTask);
     }
 
     /// <summary>進入對話（呼叫 start() 並 flush 第一則對話）。</summary>
@@ -56,6 +59,9 @@ public sealed class NpcConversation
 
         if (_ctx.PendingWarp is { } mapId)
             await _warp(mapId, ct);
+
+        if (_ctx.PendingStorageNpcId is { } npcId)
+            await _openStorage(npcId, ct);
 
         if (_ctx.Ended)
             Active = false;
