@@ -21,6 +21,8 @@ public sealed class Inventory
 
     public Item? Get(short slot) => _slots.GetValueOrDefault(slot);
 
+    public bool Contains(short slot) => _slots.ContainsKey(slot);
+
     /// <summary>第一個空格（1..SlotLimit），滿了回 null。</summary>
     public short? FirstFreeSlot()
     {
@@ -34,6 +36,27 @@ public sealed class Inventory
     {
         item.Slot = item.Slot <= 0 ? (FirstFreeSlot() ?? item.Slot) : item.Slot;
         _slots[item.Slot] = item;
+    }
+
+    /// <summary>移除指定正格並取出道具；供跨聚合原子操作使用。</summary>
+    public bool TryTake(short slot, out Item? item)
+    {
+        item = null;
+        if (slot <= 0 || !_slots.TryGetValue(slot, out var found)) return false;
+
+        _slots.Remove(slot);
+        item = found;
+        return true;
+    }
+
+    /// <summary>把道具放進指定正格；目標已占用時不覆寫。</summary>
+    public bool TryPut(short slot, Item item)
+    {
+        if (slot <= 0 || slot > SlotLimit || _slots.ContainsKey(slot)) return false;
+
+        item.Slot = slot;
+        _slots[slot] = item;
+        return true;
     }
 
     /// <summary>取得道具到背包：找空格放入，滿了回 null。可堆疊道具的合併留呼叫端（MVP-0 簡化：新格）。</summary>

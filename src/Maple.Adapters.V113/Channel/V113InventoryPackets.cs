@@ -11,6 +11,12 @@ internal readonly record struct ItemMoveRequest(byte RawType, short Src, short D
 
     /// <summary>格內移動（兩端皆背包正格；非穿脫/丟棄）。MVP-0 僅處理此類。</summary>
     public bool IsWithinBagMove => Src > 0 && Dst > 0;
+
+    public bool IsEquipMove => RawType == (byte)InventoryType.Equip && Src > 0 && Dst < 0;
+
+    public bool IsUnequipMove => RawType == (byte)InventoryType.Equip && Src < 0 && Dst > 0;
+
+    public bool IsDropMove => Dst == 0;
 }
 
 /// <summary>
@@ -32,11 +38,12 @@ internal static class V113InventoryPackets
 
     /// <summary>
     /// MODIFY_INVENTORY_ITEM：單筆「移動(mode 2)」。
-    /// [opcode][byte updateTick=1][byte modCount=1][byte mode=2][byte type][short oldPos][short newPos]。
+    /// [opcode][byte updateTick=1][byte modCount=1][byte mode=2][byte type][short oldPos][short newPos][movement?]。
+    /// Java 對負 slot 會在所有 mods 後補 movement byte：oldPos&lt;0 為 1（脫裝），newPos&lt;0 為 2（穿裝）。
     /// </summary>
     public static byte[] ModifyMove(InventoryType type, short src, short dst)
     {
-        var w = new PacketWriter(12);
+        var w = new PacketWriter(13);
         w.WriteShort(V113ChannelSendOp.ModifyInventoryItem);
         w.WriteByte(1);              // updateTick
         w.WriteByte(1);              // mod count
@@ -44,6 +51,8 @@ internal static class V113InventoryPackets
         w.WriteByte((byte)type);
         w.WriteShort(src);           // old position
         w.WriteShort(dst);           // new position
+        if (src < 0 || dst < 0)
+            w.WriteByte(src < 0 ? 1 : 2);
         return w.ToArray();
     }
 }
