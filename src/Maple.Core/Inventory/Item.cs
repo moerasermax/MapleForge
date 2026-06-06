@@ -14,6 +14,17 @@ public class Item
     public long UniqueId { get; set; }
 
     public virtual bool IsEquip => false;
+
+    public virtual Item Copy() => new()
+    {
+        ItemId = ItemId,
+        Slot = Slot,
+        Quantity = Quantity,
+        Owner = Owner,
+        Expiration = Expiration,
+        Flag = Flag,
+        UniqueId = UniqueId,
+    };
 }
 
 /// <summary>
@@ -43,4 +54,34 @@ public sealed class Equip : Item
     public short Hands { get; set; }
     public short Speed { get; set; }
     public short Jump { get; set; }
+
+    public override Item Copy() => new Equip
+    {
+        ItemId = ItemId,
+        Slot = Slot,
+        Quantity = 1,
+        Owner = Owner,
+        Expiration = Expiration,
+        Flag = Flag,
+        UniqueId = UniqueId,
+        UpgradeSlots = UpgradeSlots,
+        Level = Level,
+        ItemLevel = ItemLevel,
+        ItemExp = ItemExp,
+        Str = Str,
+        Dex = Dex,
+        Int = Int,
+        Luk = Luk,
+        Hp = Hp,
+        Mp = Mp,
+        Watk = Watk,
+        Matk = Matk,
+        Wdef = Wdef,
+        Mdef = Mdef,
+        Acc = Acc,
+        Avoid = Avoid,
+        Hands = Hands,
+        Speed = Speed,
+        Jump = Jump,
+    };
 }

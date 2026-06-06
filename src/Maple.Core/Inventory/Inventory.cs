@@ -77,6 +77,33 @@ public sealed class Inventory
         return n;
     }
 
+    /// <summary>從指定背包格取出指定數量；裝備只能整件取出。</summary>
+    public bool TryTake(short slot, short quantity, out Item? item)
+    {
+        item = null;
+        if (slot <= 0 || quantity <= 0) return false;
+        if (!_slots.TryGetValue(slot, out var source)) return false;
+
+        if (source.IsEquip)
+        {
+            if (quantity != 1) return false;
+            _slots.Remove(slot);
+            item = source;
+            return true;
+        }
+
+        if (source.Quantity < quantity) return false;
+
+        item = source.Copy();
+        item.Quantity = quantity;
+        if (source.Quantity == quantity)
+            _slots.Remove(slot);
+        else
+            source.Quantity = (short)(source.Quantity - quantity);
+
+        return true;
+    }
+
     /// <summary>
     /// 格內移動：src→dst。dst 空＝搬移；dst 同 id 可堆疊＝合併（MVP-0 全量併，不處理上限分裂）；否則＝交換。
     /// 回傳是否成功（src 無物或越界＝false）。

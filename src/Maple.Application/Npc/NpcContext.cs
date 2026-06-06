@@ -24,6 +24,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     internal NpcDialog? PendingDialog { get; private set; }
     internal int? PendingWarp { get; private set; }
     internal int? PendingShop { get; private set; }
+    internal int? PendingStorageNpcId { get; private set; }
     internal bool Ended { get; private set; }
 
     internal void ClearPending()
@@ -31,6 +32,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingDialog = null;
         PendingWarp = null;
         PendingShop = null;
+        PendingStorageNpcId = null;
     }
 
     // ── cm surface（暴露給腳本）────────────────────────────────────────────────
@@ -64,6 +66,14 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public void GainItem(int itemId, int quantity) => _player.GainItem(InventoryTypeOf(itemId), itemId, (short)quantity);
 
     public bool HaveItem(int itemId) => _player.HasItem(InventoryTypeOf(itemId), itemId);
+
+    public void OpenStorage()
+    {
+        PendingStorageNpcId = _npcId;
+        Ended = true;
+    }
+
+    public void SendStorage() => OpenStorage();
 
     /// <summary>itemId 前綴判背包類型（1xxxxxx=Equip…5xxxxxx=Cash，對照 GameConstants.getInventoryType）。</summary>
     private static InventoryType InventoryTypeOf(int itemId) => Player.InventoryTypeOf(itemId);

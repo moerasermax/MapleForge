@@ -1,3 +1,5 @@
+using Maple.Core.Storage;
+
 namespace Maple.Core.Accounts;
 
 /// <summary>
@@ -32,4 +34,7 @@ public sealed class Account
 
     /// <summary>第二密碼（PIN）。null=尚未設定；新帳號需在 CHOOSE_GENDER 流程中設定。</summary>
     public string? SecondPassword { get; set; }
+
+    /// <summary>帳號層級倉庫快照（所有角色共用）；執行期由 <see cref="World.Player"/> hydrate 成 StorageBox。</summary>
+    public AccountStorage Storage { get; set; } = new();
 }
