@@ -68,6 +68,10 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
             .MaxStatements(200_000)
             .TimeoutInterval(TimeSpan.FromSeconds(2)));
 
+        Action<int> openShop = cm is INpcShopScriptContext shopContext
+            ? shopContext.OpenShop
+            : _ => { };
+
         // 殘留 Java-ism 的 no-op shim（剝不乾淨時不炸）
         engine.SetValue("load", new Action<object?>(_ => { }));
         engine.SetValue("importPackage", new Action<object?>(_ => { }));
@@ -86,6 +90,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
             sendGetNumber = (Action<string, int, int, int>)cm.SendGetNumber,
             dispose = (Action)cm.Dispose,
             warp = (Action<int>)cm.Warp,
+            openShop,
             gainMeso = (Action<int>)cm.GainMeso,
             gainItem = (Action<int, int>)cm.GainItem,
             haveItem = (Func<int, bool>)cm.HaveItem,

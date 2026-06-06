@@ -14,6 +14,7 @@ public sealed class NpcConversation
     private readonly NpcContext _ctx;
     private readonly Func<NpcDialog, CancellationToken, Task> _sendDialog;
     private readonly Func<int, CancellationToken, Task> _warp;
+    private readonly Func<int, CancellationToken, Task>? _openShop;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -23,13 +24,15 @@ public sealed class NpcConversation
         INpcScript script,
         NpcContext ctx,
         Func<NpcDialog, CancellationToken, Task> sendDialog,
-        Func<int, CancellationToken, Task> warp)
+        Func<int, CancellationToken, Task> warp,
+        Func<int, CancellationToken, Task>? openShop = null)
     {
         NpcId = npcId;
         _script = script;
         _ctx = ctx;
         _sendDialog = sendDialog;
         _warp = warp;
+        _openShop = openShop;
     }
 
     /// <summary>進入對話（呼叫 start() 並 flush 第一則對話）。</summary>
@@ -53,6 +56,9 @@ public sealed class NpcConversation
     {
         if (_ctx.PendingDialog is { } dialog)
             await _sendDialog(dialog, ct);
+
+        if (_ctx.PendingShop is { } shopOrNpcId && _openShop is not null)
+            await _openShop(shopOrNpcId, ct);
 
         if (_ctx.PendingWarp is { } mapId)
             await _warp(mapId, ct);

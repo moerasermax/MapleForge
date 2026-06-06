@@ -9,7 +9,7 @@ namespace Maple.Application.Npcs;
 /// 領域類即時走 Core 富領域行為。coordinator-facing 成員為 <c>internal</c>，故 Jint 反射看不到、
 /// 腳本只見 <see cref="INpcScriptContext"/> 介面方法（surface 乾淨）。
 /// </summary>
-public sealed class NpcContext : INpcScriptContext
+public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 {
     private readonly int _npcId;
     private readonly Player _player;
@@ -23,12 +23,14 @@ public sealed class NpcContext : INpcScriptContext
     // ── coordinator-facing（internal：不外洩給 JS）──────────────────────────────
     internal NpcDialog? PendingDialog { get; private set; }
     internal int? PendingWarp { get; private set; }
+    internal int? PendingShop { get; private set; }
     internal bool Ended { get; private set; }
 
     internal void ClearPending()
     {
         PendingDialog = null;
         PendingWarp = null;
+        PendingShop = null;
     }
 
     // ── cm surface（暴露給腳本）────────────────────────────────────────────────
@@ -51,6 +53,12 @@ public sealed class NpcContext : INpcScriptContext
         Ended = true;   // warp 後對話結束（對照 OdinMS：warp 通常緊接 dispose）
     }
 
+    public void OpenShop(int shopOrNpcId)
+    {
+        PendingShop = shopOrNpcId;
+        Ended = true;
+    }
+
     public void GainMeso(int amount) => _player.GainMeso(amount);
 
     public void GainItem(int itemId, int quantity) => _player.GainItem(InventoryTypeOf(itemId), itemId, (short)quantity);
@@ -58,11 +66,7 @@ public sealed class NpcContext : INpcScriptContext
     public bool HaveItem(int itemId) => _player.HasItem(InventoryTypeOf(itemId), itemId);
 
     /// <summary>itemId 前綴判背包類型（1xxxxxx=Equip…5xxxxxx=Cash，對照 GameConstants.getInventoryType）。</summary>
-    private static InventoryType InventoryTypeOf(int itemId)
-    {
-        var cat = itemId / 1_000_000;
-        return cat is >= 1 and <= 5 ? (InventoryType)cat : InventoryType.Etc;
-    }
+    private static InventoryType InventoryTypeOf(int itemId) => Player.InventoryTypeOf(itemId);
 
     public int GetJob() => _player.Character.Job;
     public int GetMeso() => _player.Character.Meso;
