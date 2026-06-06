@@ -2,16 +2,19 @@ using Maple.Adapters.V113.Crypto;
 using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
+using Maple.Application.Drops;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
 using Maple.Application.Parties;
 using Maple.Application.Quests;
 using Maple.Application.Shops;
+using Maple.Application.Skills;
 using Maple.Application.Stats;
 using Maple.Application.Storage;
 using Maple.Core.Accounts;
 using Maple.Core.Characters;
 using Maple.Core.IO;
+using Maple.Core.Skills;
 using Maple.Core.World;
 using Maple.Net;
 using Maple.Versioning;
@@ -38,6 +41,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly ShopService _shopService;
     private readonly StorageService _storageService;
     private readonly CombatService _combatService;
+    private readonly SkillService _skillService;
+    private readonly DropService _dropService;
+    private readonly RangedMagicCombatService _rangedMagicCombatService;
     private readonly V113BuddyHandler _buddyHandler;
     private readonly V113PartyOperationHandler _partyOperationHandler;
     private readonly QuestService _questService;
@@ -55,6 +61,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         ShopService shopService,
         StorageService storageService,
         CombatService combatService,
+        SkillService skillService,
+        DropService dropService,
+        RangedMagicCombatService rangedMagicCombatService,
         V113BuddyHandler buddyHandler,
         V113PartyOperationHandler partyOperationHandler,
         QuestService questService,
@@ -71,6 +80,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _shopService = shopService;
         _storageService = storageService;
         _combatService = combatService;
+        _skillService = skillService;
+        _dropService = dropService;
+        _rangedMagicCombatService = rangedMagicCombatService;
         _buddyHandler = buddyHandler;
         _partyOperationHandler = partyOperationHandler;
         _questService = questService;
@@ -131,6 +143,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, token);
         }
 
+        async Task SendExpiredBuffCancelsAsync(MapleSession target, CancellationToken token)
+        {
+            if (player is null) return;
+
+            var packets = V113SkillMoveHandler.CancelExpiredBuffs(player, _skillService, DateTimeOffset.UtcNow);
+            foreach (var packet in packets)
+            {
+                await target.SendAsync(packet, token);
+            }
+        }
+
         try
         {
             await session.RunAsync(async (body, s, token) =>
@@ -138,6 +161,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 if (body.Length < 2) return;
                 var reader = new PacketReader(body);
                 var opcode = reader.ReadShort();
+
+                await SendExpiredBuffCancelsAsync(s, token);
 
                 switch (opcode)
                 {
@@ -183,6 +208,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             // 地圖物件同步：把該地圖的 NPC / monster spawn 給剛進場的玩家。
                             await SpawnMapNpcsAsync(chr.MapId, s, npcOidToId, token);
                             await SendFieldMonstersAsync(currentField, s, token);
+                            await SendFieldDropsAsync(currentField, s, token);
 
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
                         }
@@ -197,6 +223,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.CloseRangeAttack:
                         if (player is null || currentField is null) break;
                         await HandleCloseRangeAttackAsync(reader, player, currentField, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.RangedAttack:
+                        if (player is null || currentField is null) break;
+                        await HandleRangedAttackAsync(reader, player, currentField, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.MagicAttack:
+                        if (player is null || currentField is null) break;
+                        await HandleMagicAttackAsync(reader, player, currentField, s, token);
                         break;
 
                     case V113ChannelRecvOp.GeneralChat:
@@ -229,6 +265,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             s,
                             sendSkill: true,
                             token);
+                        break;
+
+                    case V113ChannelRecvOp.SpecialMove:
+                        if (player is null) break;
+                        await HandleSpecialMoveAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.CancelBuff:
+                        if (player is null) break;
+                        await HandleCancelBuffAsync(reader, player, s, token);
                         break;
 
                     case V113ChannelRecvOp.QuestAction:
@@ -299,6 +345,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.ItemMove:
                         if (player is null) break;
                         await HandleItemMoveAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.ItemPickup:
+                        if (player is null || currentField is null) break;
+                        await HandleItemPickupAsync(reader, player, currentField, s, token);
                         break;
 
                     case V113ChannelRecvOp.Pong:
@@ -433,6 +484,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    private async Task SendFieldDropsAsync(FieldInstance field, MapleSession session, CancellationToken ct)
+    {
+        List<MapDrop> drops;
+        lock (field)
+        {
+            drops = field.Objects.OfType<MapDrop>().Where(static d => !d.IsPickedUp).ToList();
+        }
+
+        foreach (var drop in drops)
+        {
+            await session.SendAsync(V113DropPackets.DropItemFromMapObject(drop, mode: 2), ct);
+        }
+
+        if (drops.Count > 0)
+        {
+            _log.LogInformation("[Channel] 地圖 {Map} replay {Count} 個掉落物", field.MapId, drops.Count);
+        }
+    }
+
     /// <summary>NPC 地圖物件 id 起始值（避開玩家以 charId 充當的小號 objectId）。</summary>
     private const int NpcObjectIdBase = 1000;
 
@@ -540,6 +610,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn));
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
         await SendFieldMonstersAsync(field, session, ct);
+        await SendFieldDropsAsync(field, session, ct);
         _log.LogInformation("[Channel] 角色 {Name} warp → 地圖 {Map}", chr.Name, mapId);
         return field;
     }
@@ -653,6 +724,98 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    private async Task HandleSpecialMoveAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        V113SkillHandleResult handled;
+        try
+        {
+            handled = V113SkillMoveHandler.HandleSpecialMove(reader, player, _skillService, DateTimeOffset.UtcNow);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        if (handled.Packet is not null)
+        {
+            await session.SendAsync(handled.Packet, ct);
+        }
+
+        if (handled.Cast is { Status: not SkillCastStatus.Success } cast)
+        {
+            _log.LogDebug("[Channel] SPECIAL_MOVE ignored skill={SkillId} status={Status}", cast.SkillId, cast.Status);
+        }
+    }
+
+    private async Task HandleCancelBuffAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        V113SkillHandleResult handled;
+        try
+        {
+            handled = V113SkillMoveHandler.HandleCancelBuff(reader, player, _skillService);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        if (handled.Packet is not null)
+        {
+            await session.SendAsync(handled.Packet, ct);
+        }
+
+        if (handled.Cancel?.Status == CancelBuffStatus.ChargeSkill)
+        {
+            _log.LogDebug("[Channel] CANCEL_BUFF charge skill cancel broadcast not wired source={SourceId}", handled.SourceId);
+        }
+    }
+
+    private async Task HandleItemPickupAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        V113ItemPickupRequest req;
+        try
+        {
+            req = V113DropPackets.ParseItemPickup(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        DropPickupResult result;
+        lock (field)
+        {
+            result = _dropService.TryPickup(field, player, req.ObjectId);
+        }
+
+        if (!result.Success || result.Drop is null)
+        {
+            return;
+        }
+
+        await BroadcastPacketToMapAsync(
+            player.Character,
+            session,
+            V113DropPackets.RemoveItemFromMap(result.Drop.ObjectId, animation: 2, characterId: player.Character.Id),
+            ct);
+
+        if (result.GainedItem is not null && result.InventoryType is not null)
+        {
+            await session.SendAsync(V113DropPackets.ModifyInventoryAdd(result.InventoryType.Value, result.GainedItem), ct);
+            await session.SendAsync(V113DropPackets.ShowItemGain(result.GainedItem.ItemId, result.GainedItem.Quantity), ct);
+        }
+        else if (result.GainedMeso > 0)
+        {
+            await session.SendAsync(V113DropPackets.UpdateMeso(player.Character.Meso), ct);
+            await session.SendAsync(V113DropPackets.ShowMesoGain(result.GainedMeso), ct);
+        }
+    }
+
     private async Task HandleNpcShopAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
     {
         var req = V113ShopPackets.ParseNpcShop(reader);
@@ -743,7 +906,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MapleSession session,
         CancellationToken ct)
     {
-        var attack = V113CombatPackets.ParseCloseRangeAttack(reader);
+        V113CloseRangeAttack attack;
+        try
+        {
+            attack = V113CombatPackets.ParseCloseRangeAttack(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
         var attackBroadcast = V113CombatPackets.CloseRangeAttackBroadcast(player.Character.Id, attack, player.Character.Level);
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
@@ -753,18 +925,169 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             result = _combatService.ApplyAttack(field, player, attack.ToCombatAttack());
         }
 
-        foreach (var hit in result.Hits)
+        await SendCombatHitsAsync(result.Hits, player, session, ct);
+    }
+
+    private async Task HandleRangedAttackAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        V113RangedAttack attack;
+        try
+        {
+            attack = V113RangedMagicAttackPackets.ParseRangedAttack(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        RangedAttackApplyResult result;
+        lock (field)
+        {
+            result = _rangedMagicCombatService.ApplyRangedAttack(
+                field,
+                player,
+                attack.ToCombatRangedAttack(),
+                GetRangedConsumables(player));
+        }
+
+        if (!result.Applied)
+        {
+            _log.LogDebug("[Channel] RANGED_ATTACK ignored status={Status}", result.Status);
+            return;
+        }
+
+        foreach (var mutation in result.InventoryMutations)
+        {
+            await session.SendAsync(V113RangedMagicAttackPackets.ModifyInventoryQuantity(mutation), ct);
+        }
+
+        var skillLevel = GetSkillLevelByte(player, attack.SkillId);
+        var attackBroadcast = V113RangedMagicAttackPackets.RangedAttackBroadcast(
+            player.Character.Id,
+            attack,
+            player.Character.Level,
+            result.VisualProjectileItemId,
+            skillLevel);
+        await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
+
+        await SendCombatHitsAsync(result.Combat.Hits, player, session, ct);
+    }
+
+    private async Task HandleMagicAttackAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (!player.IsAlive)
+        {
+            return;
+        }
+
+        V113MagicAttack attack;
+        try
+        {
+            attack = V113RangedMagicAttackPackets.ParseMagicAttack(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        CombatAttackResult result;
+        lock (field)
+        {
+            result = _rangedMagicCombatService.ApplyMagicAttack(field, player, attack.ToCombatAttack());
+        }
+
+        var attackBroadcast = V113RangedMagicAttackPackets.MagicAttackBroadcast(
+            player.Character.Id,
+            attack,
+            player.Character.Level,
+            GetSkillLevelByte(player, attack.SkillId));
+        await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
+
+        await SendCombatHitsAsync(result.Hits, player, session, ct);
+    }
+
+    private async Task SendCombatHitsAsync(
+        IReadOnlyList<CombatMobHit> hits,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        foreach (var hit in hits)
         {
             if (hit.AppliedDamage > 0)
             {
-                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.DamageMonster(hit.ObjectId, hit.AppliedDamage), ct);
+                await BroadcastPacketToMapAsync(
+                    player.Character,
+                    session,
+                    V113CombatPackets.DamageMonster(hit.ObjectId, hit.AppliedDamage),
+                    ct);
             }
 
             if (hit.Killed)
             {
                 await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(hit.ObjectId), ct);
+
+                if (hit.Rewards is { } rewards)
+                {
+                    await SendMobKillRewardsAsync(player, session, rewards, ct);
+                }
             }
         }
+    }
+
+    private async Task SendMobKillRewardsAsync(
+        Player player,
+        MapleSession session,
+        MobKillRewards rewards,
+        CancellationToken ct)
+    {
+        if (rewards.StatsMutation is { } mutation)
+        {
+            if (V113StatsHandlers.EncodeUpdateStats(mutation) is { } statsPacket)
+            {
+                await session.SendAsync(statsPacket, ct);
+            }
+        }
+        else if (rewards.ExpGained > 0)
+        {
+            await session.SendAsync(V113DropPackets.UpdateExp(player.Character.Exp), ct);
+        }
+
+        if (rewards.ExpGained > 0)
+        {
+            await session.SendAsync(V113DropPackets.ShowExpGainMonster(rewards.ExpGained), ct);
+        }
+
+        foreach (var drop in rewards.SpawnedDrops)
+        {
+            await BroadcastPacketToMapAsync(
+                player.Character,
+                session,
+                V113DropPackets.DropItemFromMapObject(drop, mode: 1),
+                ct);
+        }
+    }
+
+    private static byte GetSkillLevelByte(Player player, int skillId)
+        => skillId > 0 ? (byte)Math.Clamp(player.GetSkillLevel(skillId), byte.MinValue, byte.MaxValue) : (byte)0;
+
+    private static RangedAttackConsumableOptions GetRangedConsumables(Player player)
+    {
+        var active = player.ActiveBuffs.Select(static b => b.Stat).ToHashSet();
+        return new RangedAttackConsumableOptions(
+            HasShadowPartner: active.Contains(MapleBuffStat.SHADOWPARTNER),
+            HasSoulArrow: active.Contains(MapleBuffStat.SOULARROW),
+            HasSpiritClaw: active.Contains(MapleBuffStat.SPIRIT_CLAW));
     }
 
     // ── Handlers ──────────────────────────────────────────────────────────────

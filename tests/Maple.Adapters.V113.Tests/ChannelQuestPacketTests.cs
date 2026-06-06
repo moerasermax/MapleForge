@@ -3,6 +3,7 @@ using Maple.Application.Quests;
 using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Core.Quests;
+using Maple.Core.Skills;
 
 namespace Maple.Adapters.V113.Tests;
 
@@ -79,7 +80,7 @@ public sealed class ChannelQuestPacketTests
     }
 
     [Fact]
-    public void SetField_WritesBuddyQuestAndQuestInfoPacketInJavaCharacterInfoOrder()
+    public void SetField_WritesBuddySkillQuestAndQuestInfoPacketInJavaCharacterInfoOrder()
     {
         var character = new Character
         {
@@ -106,6 +107,11 @@ public sealed class ChannelQuestPacketTests
             [
                 new QuestInfoRecord { QuestId = 20015, Data = "info" },
             ],
+            Skills =
+            [
+                new CharacterSkillRecord { SkillId = 2001002, Level = 3, MasterLevel = 20 },
+                new CharacterSkillRecord { SkillId = 1121000, Level = 5, MasterLevel = 10 },
+            ],
         };
 
         var reader = new PacketReader(V113ChannelPackets.SetField(character, channelIndex: 0));
@@ -120,7 +126,12 @@ public sealed class ChannelQuestPacketTests
         reader.Skip(8);                     // login time
         reader.Skip(36);                    // empty inventory section
 
-        Assert.Equal(0, reader.ReadShort()); // skills
+        Assert.Equal(2, reader.ReadShort()); // skills: Java addSkillInfo sits between inventory and cooldown
+        Assert.Equal(2001002, reader.ReadInt());
+        Assert.Equal(3, reader.ReadInt());
+        Assert.Equal(1121000, reader.ReadInt());
+        Assert.Equal(5, reader.ReadInt());
+        Assert.Equal(10, reader.ReadInt());
         Assert.Equal(0, reader.ReadShort()); // cooldowns
 
         Assert.Equal(1, reader.ReadShort()); // started quests

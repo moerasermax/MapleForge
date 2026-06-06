@@ -43,7 +43,7 @@ public sealed class PlayerStatsTests
         Assert.Equal((short)2, player.Character.RemainingSp);
         Assert.Equal(1000000, result.SkillId);
         Assert.Equal((byte)1, result.SkillLevel);
-        Assert.Equal((byte)1, player.GetSkillLevel(1000000));
+        Assert.Equal(1, player.GetSkillLevel(1000000));
         Assert.Contains(result.Updates, u => u.Kind == PlayerStatKind.AvailableSp && u.Value == 2);
     }
 
@@ -56,7 +56,7 @@ public sealed class PlayerStatsTests
 
         Assert.True(result.Applied);
         Assert.Equal((short)0, player.Character.RemainingSp);
-        Assert.Equal((byte)1, player.GetSkillLevel(1000));
+        Assert.Equal(1, player.GetSkillLevel(1000));
         Assert.Empty(result.Updates);
     }
 

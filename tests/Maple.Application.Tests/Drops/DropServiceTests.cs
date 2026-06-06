@@ -24,6 +24,8 @@ public sealed class DropServiceTests
         var rewards = service.OnMobKilled(field, player, mob);
 
         Assert.Equal(7, rewards.ExpGained);
+        Assert.NotNull(rewards.StatsMutation);
+        Assert.Contains(rewards.StatsMutation!.Updates, u => u.Kind == PlayerStatKind.Exp && u.Value == 7);
         Assert.Equal(7, player.Character.Exp);
         Assert.Equal(2, rewards.SpawnedDrops.Count);
 
@@ -43,6 +45,27 @@ public sealed class DropServiceTests
         Assert.Equal(1, mesoDrop.Meso);
         Assert.Equal((short)5, mesoDrop.Position.X);
         Assert.Same(mesoDrop, field.Get(mesoDrop.ObjectId));
+    }
+
+    [Fact]
+    public void OnMobKilled_UsesStatsExperienceEntryAndCanLevelUp()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        player.Character.Exp = 14;
+        var mob = MakeMob(level: 1, exp: 2);
+        field.Add(player);
+        field.Add(mob);
+
+        var rewards = service.OnMobKilled(field, player, mob);
+
+        Assert.Equal(2, rewards.ExpGained);
+        Assert.NotNull(rewards.StatsMutation);
+        Assert.Equal(2, player.Character.Level);
+        Assert.Equal(1, player.Character.Exp);
+        Assert.Contains(rewards.StatsMutation!.Updates, u => u.Kind == PlayerStatKind.Level && u.Value == 2);
+        Assert.Contains(rewards.StatsMutation.Updates, u => u.Kind == PlayerStatKind.Exp && u.Value == 1);
     }
 
     [Fact]

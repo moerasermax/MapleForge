@@ -49,7 +49,7 @@ internal static class V113ChannelPackets
         w.WriteLong(GetTime());
 
         AddInventoryInfo(w, chr);
-        AddSkillInfo(w);
+        AddSkillInfo(w, chr);
         AddCoolDownInfo(w);
         AddQuestInfo(w, chr);
         AddRingInfo(w);
@@ -205,7 +205,7 @@ internal static class V113ChannelPackets
         w.WriteInt(-1);                 // -1
     }
 
-    private static void AddSkillInfo(PacketWriter w) => w.WriteShort(0);
+    private static void AddSkillInfo(PacketWriter w, Character chr) => V113SkillPackets.AddCharacterSkillInfo(w, chr);
 
     private static void AddCoolDownInfo(PacketWriter w) => w.WriteShort(0);
 

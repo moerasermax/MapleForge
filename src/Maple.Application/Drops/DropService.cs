@@ -9,7 +9,10 @@ public sealed record DropServiceOptions(
     int MesoRate = 1,
     int DropObjectIdBase = 1_000_000);
 
-public sealed record MobKillRewards(int ExpGained, IReadOnlyList<MapDrop> SpawnedDrops)
+public sealed record MobKillRewards(
+    int ExpGained,
+    IReadOnlyList<MapDrop> SpawnedDrops,
+    PlayerStatsMutation? StatsMutation = null)
 {
     public static MobKillRewards Empty => new(0, Array.Empty<MapDrop>());
 }
@@ -58,12 +61,15 @@ public sealed class DropService : IMobKillHandler
         ArgumentNullException.ThrowIfNull(killer);
         ArgumentNullException.ThrowIfNull(mob);
 
-        var expGained = killer.GainExp(ScalePositive(mob.Stats.Exp, _options.ExpRate));
+        var expGained = ScalePositive(mob.Stats.Exp, _options.ExpRate);
+        var statsMutation = expGained > 0
+            ? killer.GainExperience(expGained)
+            : null;
         var drops = SpawnDropsFromMonster(field, killer, mob);
 
         return expGained == 0 && drops.Count == 0
             ? MobKillRewards.Empty
-            : new MobKillRewards(expGained, drops);
+            : new MobKillRewards(expGained, drops, statsMutation);
     }
 
     public DropPickupResult TryPickup(FieldInstance field, Player player, int dropObjectId)

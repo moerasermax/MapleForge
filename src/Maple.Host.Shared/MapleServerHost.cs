@@ -4,12 +4,14 @@ using Maple.Application.Accounts;
 using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
+using Maple.Application.Drops;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
 using Maple.Application.Parties;
 using Maple.Application.Quests;
 using Maple.Application.Security;
 using Maple.Application.Shops;
+using Maple.Application.Skills;
 using Maple.Application.Stats;
 using Maple.Application.Storage;
 using Maple.Content.Quests;
@@ -19,6 +21,7 @@ using Maple.Content.Wz;
 using Maple.Core.Data;
 using Maple.Core.Quests;
 using Maple.Core.Shops;
+using Maple.Core.Skills;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
 using Maple.Persistence;
@@ -85,7 +88,22 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IShopCatalog>(_ => new JsonShopCatalog(ResolveShopCatalogPath(builder)));
         builder.Services.AddSingleton<ShopService>();
         builder.Services.AddSingleton<StorageService>();
+        builder.Services.AddSingleton<ISkillCatalog>(_ => new InMemorySkillCatalog(Array.Empty<MapleSkill>()));
+        builder.Services.AddSingleton<SkillService>();
+        builder.Services.AddSingleton<IMonsterDropCatalog>(_ =>
+            new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>()));
+        builder.Services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new DropServiceOptions(
+                ExpRate: o.Rates.Exp,
+                DropRate: o.Rates.Drop,
+                MesoRate: o.Rates.Meso);
+        });
+        builder.Services.AddSingleton<DropService>();
+        builder.Services.AddSingleton<IMobKillHandler>(sp => sp.GetRequiredService<DropService>());
         builder.Services.AddSingleton<CombatService>();
+        builder.Services.AddSingleton<RangedMagicCombatService>();
         builder.Services.AddSingleton<IBuddyOnlineRegistry, InMemoryBuddyOnlineRegistry>();
         builder.Services.AddSingleton<BuddyService>();
         builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();
