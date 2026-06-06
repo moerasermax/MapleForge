@@ -1,4 +1,5 @@
 using Maple.Application.Guilds;
+using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Core.Characters;
 
@@ -16,37 +17,21 @@ public sealed record ChatRecipient(int CharacterId, string Name, int Channel, Ch
 
 public sealed class ChatService
 {
-    private readonly IChatOnlineRegistry _online;
+    private readonly IOnlinePlayerRegistry _online;
     private readonly IPartyRegistry _parties;
     private readonly IGuildRegistry _guilds;
 
-    public ChatService(IChatOnlineRegistry online, IPartyRegistry parties, IGuildRegistry guilds)
+    public ChatService(IOnlinePlayerRegistry online, IPartyRegistry parties, IGuildRegistry guilds)
     {
         _online = online;
         _parties = parties;
         _guilds = guilds;
     }
 
-    public void RegisterOnline(
-        Character character,
-        int channel,
-        Func<byte[], CancellationToken, Task> sendPacket)
-    {
-        _online.Register(new ChatOnlinePlayer(
-            character.Id,
-            character.Name,
-            channel,
-            character,
-            sendPacket));
-    }
-
-    public ChatOnlinePlayer? DeregisterOnline(int characterId) =>
-        _online.Deregister(characterId);
-
-    public ChatOnlinePlayer? FindOnlineByName(string characterName) =>
+    public OnlinePlayer? FindOnlineByName(string characterName) =>
         _online.FindByName(characterName);
 
-    public ChatOnlinePlayer? FindOnlineById(int characterId) =>
+    public OnlinePlayer? FindOnlineById(int characterId) =>
         _online.FindById(characterId);
 
     public async ValueTask<IReadOnlyList<ChatRecipient>> GetRecipientsAsync(
@@ -151,6 +136,6 @@ public sealed class ChatService
         return recipients;
     }
 
-    private static ChatRecipient ToRecipient(ChatOnlinePlayer player) =>
+    private static ChatRecipient ToRecipient(OnlinePlayer player) =>
         new(player.CharacterId, player.Name, player.Channel, player.Character);
 }

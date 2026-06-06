@@ -15,19 +15,6 @@ public sealed class V113ChatHandler
         _sessions = sessions;
     }
 
-    public void OnPlayerLoggedIn(
-        Player player,
-        int channel,
-        Func<byte[], CancellationToken, Task> sendPacket)
-    {
-        _chats.RegisterOnline(player.Character, channel, sendPacket);
-    }
-
-    public void OnPlayerLoggedOut(Player player)
-    {
-        _chats.DeregisterOnline(player.Character.Id);
-    }
-
     public async Task HandleWhisperFindAsync(
         PacketReader reader,
         Player player,

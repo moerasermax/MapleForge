@@ -1,13 +1,13 @@
-using Maple.Application.Buddies;
+using Maple.Application.OnlinePlayers;
 using Maple.Core.Guilds;
 
 namespace Maple.Adapters.V113.Channel;
 
 public sealed class CentralGuildSessionHook : IV113GuildSessionHook
 {
-    private readonly IBuddyOnlineRegistry _online;
+    private readonly IOnlinePlayerRegistry _online;
 
-    public CentralGuildSessionHook(IBuddyOnlineRegistry online)
+    public CentralGuildSessionHook(IOnlinePlayerRegistry online)
     {
         _online = online;
     }

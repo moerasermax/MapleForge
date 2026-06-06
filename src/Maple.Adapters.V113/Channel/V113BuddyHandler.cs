@@ -43,8 +43,7 @@ public sealed class V113BuddyHandler
     {
         var result = _buddies.LogOn(
             player.Character,
-            channel,
-            (packet, token) => session.SendAsync(packet, token));
+            channel);
 
         await SendResultAsync(result, session, ct);
     }

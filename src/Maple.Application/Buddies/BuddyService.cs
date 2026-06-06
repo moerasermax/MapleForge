@@ -1,3 +1,4 @@
+using Maple.Application.OnlinePlayers;
 using Maple.Core.Characters;
 
 namespace Maple.Application.Buddies;
@@ -23,12 +24,12 @@ public sealed record BuddySelfResponse(
     BuddyEntry? PendingRequest);
 
 public sealed record BuddyRemoteRequest(
-    BuddyOnlinePlayer Target,
+    OnlinePlayer Target,
     int CharacterIdFrom,
     string NameFrom);
 
 public sealed record BuddyRemoteChannelUpdate(
-    BuddyOnlinePlayer Target,
+    OnlinePlayer Target,
     int CharacterId,
     int ChannelForClient);
 
@@ -50,9 +51,9 @@ public sealed class BuddyService
     public const byte MessageTargetNotFound = 15;
 
     private readonly ICharacterRepository _characters;
-    private readonly IBuddyOnlineRegistry _online;
+    private readonly IOnlinePlayerRegistry _online;
 
-    public BuddyService(ICharacterRepository characters, IBuddyOnlineRegistry online)
+    public BuddyService(ICharacterRepository characters, IOnlinePlayerRegistry online)
     {
         _characters = characters;
         _online = online;
@@ -60,11 +61,9 @@ public sealed class BuddyService
 
     public BuddyServiceResult LogOn(
         Character character,
-        int channel,
-        Func<byte[], CancellationToken, Task> sendPacket)
+        int channel)
     {
         character.BuddyList.ResetRuntimeState();
-        _online.Register(new BuddyOnlinePlayer(character.Id, character.Name, channel, character, sendPacket));
         RefreshBuddyChannels(character);
 
         return new BuddyServiceResult(
@@ -77,7 +76,6 @@ public sealed class BuddyService
     {
         var current = _online.FindById(character.Id);
         var updates = PresenceUpdates(character, current?.Channel ?? -1, online: false);
-        _online.Deregister(character.Id);
         character.BuddyList.ResetRuntimeState();
 
         return new BuddyServiceResult(
