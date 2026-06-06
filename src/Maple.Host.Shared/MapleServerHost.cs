@@ -1,17 +1,23 @@
 using Maple.Adapters.V113.Channel;
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
+using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
+using Maple.Application.Parties;
+using Maple.Application.Quests;
 using Maple.Application.Security;
 using Maple.Application.Shops;
+using Maple.Application.Stats;
 using Maple.Application.Storage;
+using Maple.Content.Quests;
 using Maple.Content.Shops;
 using Maple.Scripting;
 using Maple.Content.Wz;
 using Maple.Core.Data;
+using Maple.Core.Quests;
 using Maple.Core.Shops;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
@@ -80,6 +86,16 @@ public static class MapleServerHost
         builder.Services.AddSingleton<ShopService>();
         builder.Services.AddSingleton<StorageService>();
         builder.Services.AddSingleton<CombatService>();
+        builder.Services.AddSingleton<IBuddyOnlineRegistry, InMemoryBuddyOnlineRegistry>();
+        builder.Services.AddSingleton<BuddyService>();
+        builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();
+        builder.Services.AddSingleton<PartyService>();
+        builder.Services.AddSingleton<IV113PartySessionHook, CentralPartySessionHook>();
+        builder.Services.AddSingleton<IQuestCatalog, MinimalQuestCatalog>();
+        builder.Services.AddSingleton<QuestService>();
+        builder.Services.AddSingleton<StatsService>();
+        builder.Services.AddSingleton<V113BuddyHandler>();
+        builder.Services.AddSingleton<V113PartyOperationHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>

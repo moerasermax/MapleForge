@@ -1,4 +1,5 @@
 using Maple.Core.Inventory;
+using Maple.Core.Quests;
 
 namespace Maple.Core.Characters;
 
@@ -42,6 +43,9 @@ public sealed class Character
 
     public int GachExp { get; set; }
 
+    /// <summary>Known skill levels. Full WZ skill metadata remains an adapter/application concern.</summary>
+    public List<CharacterSkill> Skills { get; set; } = new();
+
     public int MapId { get; set; }
 
     public byte SpawnPoint { get; set; }
@@ -54,4 +58,13 @@ public sealed class Character
 
     /// <summary>背包道具的持久扁平快照（正 slot，5 種背包）。執行期由 <see cref="World.Player"/> hydrate 成富 Inventories。</summary>
     public List<ItemRecord> Items { get; set; } = new();
+
+    /// <summary>好友清單（容量 + entries）。Mongo/LiteDB 以整份 Character 文件持久化。</summary>
+    public BuddyList BuddyList { get; set; } = new();
+
+    /// <summary>任務進度快照（對照 Java MapleQuestStatus；Mongo/LiteDB 整份角色文件序列化自動帶出）。</summary>
+    public List<QuestRecord> Quests { get; set; } = new();
+
+    /// <summary>任務資訊字串（對照 Java MapleCharacter.questinfo / QuestInfoPacket）。</summary>
+    public List<QuestInfoRecord> QuestInfo { get; set; } = new();
 }

@@ -78,29 +78,50 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         engine.SetValue("Packages", new { });
 
         // cm facade：lowercase 名＝腳本 API。送對話類只記 pending、領域類即時委派。
-        engine.SetValue("cm", new
-        {
-            sendNext = (Action<string>)cm.SendNext,
-            sendPrev = (Action<string>)cm.SendPrev,
-            sendNextPrev = (Action<string>)cm.SendNextPrev,
-            sendOk = (Action<string>)cm.SendOk,
-            sendYesNo = (Action<string>)cm.SendYesNo,
-            sendSimple = (Action<string>)cm.SendSimple,
-            sendGetText = (Action<string>)cm.SendGetText,
-            sendGetNumber = (Action<string, int, int, int>)cm.SendGetNumber,
-            dispose = (Action)cm.Dispose,
-            warp = (Action<int>)cm.Warp,
-            openShop,
-            gainMeso = (Action<int>)cm.GainMeso,
-            gainItem = (Action<int, int>)cm.GainItem,
-            haveItem = (Func<int, bool>)cm.HaveItem,
-            openStorage = (Action)cm.OpenStorage,
-            sendStorage = (Action)cm.SendStorage,
-            getJob = (Func<int>)cm.GetJob,
-            getMeso = (Func<int>)cm.GetMeso,
-            getMap = (Func<int>)cm.GetMap,
-        });
+        engine.SetValue("cm", new CmFacade(cm, openShop));
 
         return engine;
+    }
+
+    private sealed class CmFacade
+    {
+        private readonly INpcScriptContext _cm;
+        private readonly Action<int> _openShop;
+
+        public CmFacade(INpcScriptContext cm, Action<int> openShop)
+        {
+            _cm = cm;
+            _openShop = openShop;
+        }
+
+        public void sendNext(string text) => _cm.SendNext(text);
+        public void sendPrev(string text) => _cm.SendPrev(text);
+        public void sendNextPrev(string text) => _cm.SendNextPrev(text);
+        public void sendOk(string text) => _cm.SendOk(text);
+        public void sendYesNo(string text) => _cm.SendYesNo(text);
+        public void sendSimple(string text) => _cm.SendSimple(text);
+        public void sendGetText(string text) => _cm.SendGetText(text);
+        public void sendGetNumber(string text, int def, int min, int max) => _cm.SendGetNumber(text, def, min, max);
+        public void dispose() => _cm.Dispose();
+        public void warp(int mapId) => _cm.Warp(mapId);
+        public void openShop(int shopOrNpcId) => _openShop(shopOrNpcId);
+        public void gainMeso(int amount) => _cm.GainMeso(amount);
+        public void gainItem(int itemId, int quantity) => _cm.GainItem(itemId, quantity);
+        public bool haveItem(int itemId) => _cm.HaveItem(itemId);
+        public void openStorage() => _cm.OpenStorage();
+        public void sendStorage() => _cm.SendStorage();
+        public void startQuest(int questId) => _cm.StartQuest(questId);
+        public void forceStartQuest(int questId, int npcId = 0, string? customData = null) => _cm.ForceStartQuest(questId, npcId, customData);
+        public void completeQuest(int questId) => _cm.CompleteQuest(questId);
+        public void forceCompleteQuest(int questId, int npcId = 0) => _cm.ForceCompleteQuest(questId, npcId);
+        public int getQuestStatus(int questId) => _cm.GetQuestStatus(questId);
+        public string getQuestCustomData(int questId) => _cm.GetQuestCustomData(questId);
+        public void setQuestCustomData(int questId, string? customData) => _cm.SetQuestCustomData(questId, customData);
+        public string getInfoQuest(int questId) => _cm.GetInfoQuest(questId);
+        public void updateInfoQuest(int questId, string? data) => _cm.UpdateInfoQuest(questId, data);
+        public void clearInfoQuest(int questId) => _cm.ClearInfoQuest(questId);
+        public int getJob() => _cm.GetJob();
+        public int getMeso() => _cm.GetMeso();
+        public int getMap() => _cm.GetMap();
     }
 }

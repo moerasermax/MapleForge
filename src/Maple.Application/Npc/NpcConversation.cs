@@ -1,3 +1,5 @@
+using Maple.Application.Quests;
+
 namespace Maple.Application.Npcs;
 
 /// <summary>
@@ -16,6 +18,8 @@ public sealed class NpcConversation
     private readonly Func<int, CancellationToken, Task> _warp;
     private readonly Func<int, CancellationToken, Task>? _openShop;
     private readonly Func<int, CancellationToken, Task>? _openStorage;
+    private readonly Func<QuestTransactionResult, CancellationToken, Task>? _sendQuestResult;
+    private readonly Func<int, string, CancellationToken, Task>? _sendInfoQuestUpdate;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -27,7 +31,9 @@ public sealed class NpcConversation
         Func<NpcDialog, CancellationToken, Task> sendDialog,
         Func<int, CancellationToken, Task> warp,
         Func<int, CancellationToken, Task>? openShop = null,
-        Func<int, CancellationToken, Task>? openStorage = null)
+        Func<int, CancellationToken, Task>? openStorage = null,
+        Func<QuestTransactionResult, CancellationToken, Task>? sendQuestResult = null,
+        Func<int, string, CancellationToken, Task>? sendInfoQuestUpdate = null)
     {
         NpcId = npcId;
         _script = script;
@@ -36,6 +42,8 @@ public sealed class NpcConversation
         _warp = warp;
         _openShop = openShop;
         _openStorage = openStorage;
+        _sendQuestResult = sendQuestResult;
+        _sendInfoQuestUpdate = sendInfoQuestUpdate;
     }
 
     /// <summary>進入對話（呼叫 start() 並 flush 第一則對話）。</summary>
@@ -57,6 +65,22 @@ public sealed class NpcConversation
 
     private async Task FlushAsync(CancellationToken ct)
     {
+        if (_sendQuestResult is not null)
+        {
+            foreach (var result in _ctx.PendingQuestResults)
+            {
+                await _sendQuestResult(result, ct);
+            }
+        }
+
+        if (_sendInfoQuestUpdate is not null)
+        {
+            foreach (var (questId, data) in _ctx.PendingInfoQuestUpdates)
+            {
+                await _sendInfoQuestUpdate(questId, data, ct);
+            }
+        }
+
         if (_ctx.PendingDialog is { } dialog)
             await _sendDialog(dialog, ct);
 

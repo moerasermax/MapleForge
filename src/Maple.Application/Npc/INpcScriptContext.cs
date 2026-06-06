@@ -38,6 +38,17 @@ public interface INpcScriptContext
     /// <summary>舊 OdinMS 腳本常用名稱：cm.sendStorage。</summary>
     void SendStorage();
 
+    void StartQuest(int questId);
+    void ForceStartQuest(int questId, int npcId = 0, string? customData = null);
+    void CompleteQuest(int questId);
+    void ForceCompleteQuest(int questId, int npcId = 0);
+    int GetQuestStatus(int questId);
+    string GetQuestCustomData(int questId);
+    void SetQuestCustomData(int questId, string? customData);
+    string GetInfoQuest(int questId);
+    void UpdateInfoQuest(int questId, string? data);
+    void ClearInfoQuest(int questId);
+
     int GetJob();
     int GetMeso();
     int GetMap();

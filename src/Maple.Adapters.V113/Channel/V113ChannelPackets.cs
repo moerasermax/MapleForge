@@ -1,6 +1,7 @@
 using Maple.Core.Characters;
 using Maple.Core.Inventory;
 using Maple.Core.IO;
+using Maple.Core.Quests;
 
 namespace Maple.Adapters.V113.Channel;
 
@@ -42,7 +43,7 @@ internal static class V113ChannelPackets
 
         AddCharStats(w, chr);
 
-        w.WriteByte(20);                // buddy list capacity
+        w.WriteByte(chr.BuddyList.Capacity); // buddy list capacity
         w.WriteByte(0);                 // no blessOfFairy
 
         w.WriteLong(GetTime());
@@ -50,12 +51,12 @@ internal static class V113ChannelPackets
         AddInventoryInfo(w, chr);
         AddSkillInfo(w);
         AddCoolDownInfo(w);
-        AddQuestInfo(w);
+        AddQuestInfo(w, chr);
         AddRingInfo(w);
         AddRocksInfo(w);
         AddMonsterBookInfo(w);
+        AddQuestInfoPacket(w, chr);
 
-        w.WriteShort(0);                // quest info packet count
         w.WriteShort(0);
         w.WriteShort(0);
         w.WriteShort(0);
@@ -208,10 +209,42 @@ internal static class V113ChannelPackets
 
     private static void AddCoolDownInfo(PacketWriter w) => w.WriteShort(0);
 
-    private static void AddQuestInfo(PacketWriter w)
+    private static void AddQuestInfo(PacketWriter w, Character chr)
     {
-        w.WriteShort(0);   // active quests
-        w.WriteShort(0);   // completed quests
+        var started = chr.Quests
+            .Where(q => q.Status == (byte)QuestStatus.Started)
+            .OrderBy(q => q.QuestId)
+            .ToArray();
+        w.WriteShort(started.Length);
+        foreach (var q in started)
+        {
+            w.WriteShort(q.QuestId);
+            w.WriteMapleString(q.CustomData ?? string.Empty);
+        }
+
+        var completed = chr.Quests
+            .Where(q => q.Status == (byte)QuestStatus.Completed)
+            .OrderBy(q => q.QuestId)
+            .ToArray();
+        w.WriteShort(completed.Length);
+        foreach (var q in completed)
+        {
+            var time = GetQuestTimestamp(q.CompletionTimeUnixMillis);
+            w.WriteShort(q.QuestId);
+            w.WriteInt(time);
+            w.WriteInt(time);
+        }
+    }
+
+    private static void AddQuestInfoPacket(PacketWriter w, Character chr)
+    {
+        var info = chr.QuestInfo.OrderBy(q => q.QuestId).ToArray();
+        w.WriteShort(info.Length);
+        foreach (var q in info)
+        {
+            w.WriteShort(q.QuestId);
+            w.WriteMapleString(q.Data ?? string.Empty);
+        }
     }
 
     private static void AddRingInfo(PacketWriter w)
@@ -247,5 +280,13 @@ internal static class V113ChannelPackets
         }
 
         return KoreanEpochOffset + (now * 10000);
+    }
+
+    private static int GetQuestTimestamp(long unixMillis)
+    {
+        const int questUnixAge = 27111908;
+        var millis = unixMillis > 0 ? unixMillis : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var minutes = (int)(millis / 1000 / 60);
+        return (int)(minutes * 0.1396987) + questUnixAge;
     }
 }

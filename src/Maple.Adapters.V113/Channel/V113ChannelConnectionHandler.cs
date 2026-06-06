@@ -1,9 +1,13 @@
 using Maple.Adapters.V113.Crypto;
+using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
+using Maple.Application.Parties;
+using Maple.Application.Quests;
 using Maple.Application.Shops;
+using Maple.Application.Stats;
 using Maple.Application.Storage;
 using Maple.Core.Accounts;
 using Maple.Core.Characters;
@@ -34,6 +38,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly ShopService _shopService;
     private readonly StorageService _storageService;
     private readonly CombatService _combatService;
+    private readonly V113BuddyHandler _buddyHandler;
+    private readonly V113PartyOperationHandler _partyOperationHandler;
+    private readonly QuestService _questService;
+    private readonly StatsService _statsService;
     private readonly V113ChannelOptions _options;
 
     public V113ChannelConnectionHandler(
@@ -47,6 +55,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         ShopService shopService,
         StorageService storageService,
         CombatService combatService,
+        V113BuddyHandler buddyHandler,
+        V113PartyOperationHandler partyOperationHandler,
+        QuestService questService,
+        StatsService statsService,
         V113ChannelOptions options)
     {
         _log = log;
@@ -59,6 +71,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _shopService = shopService;
         _storageService = storageService;
         _combatService = combatService;
+        _buddyHandler = buddyHandler;
+        _partyOperationHandler = partyOperationHandler;
+        _questService = questService;
+        _statsService = statsService;
         _options = options;
     }
 
@@ -142,6 +158,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 _log.LogWarning("[Channel] 角色 {Name} 找不到 AccountId={AccountId}，倉庫不會持久化", chr.Name, chr.AccountId);
                             }
 
+                            await _buddyHandler.OnPlayerLoggedInAsync(
+                                player,
+                                s,
+                                _options.ChannelIndex + 1,
+                                token);
+
                             var pos = player.Position;
                             currentField = EnterField(chr.MapId, player);
 
@@ -180,6 +202,66 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
                         await HandleGeneralChatAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.DistributeAp:
+                        if (player is null) break;
+                        await HandleStatsMutationAsync(
+                            V113StatsHandlers.HandleDistributeAp(reader, player, _statsService),
+                            s,
+                            sendSkill: false,
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.HealOverTime:
+                        if (player is null) break;
+                        await HandleStatsMutationAsync(
+                            V113StatsHandlers.HandleHealOverTime(reader, player, _statsService),
+                            s,
+                            sendSkill: false,
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.DistributeSp:
+                        if (player is null) break;
+                        await HandleStatsMutationAsync(
+                            V113StatsHandlers.HandleDistributeSp(reader, player, _statsService),
+                            s,
+                            sendSkill: true,
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.QuestAction:
+                        if (player is null) break;
+                        await HandleQuestActionAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.PartyOperation:
+                        if (player is null) break;
+                        await _partyOperationHandler.HandlePartyOperationAsync(
+                            reader,
+                            player,
+                            _options.ChannelIndex,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.BuddyListModify:
+                        if (player is null) break;
+                        await _buddyHandler.HandleModifyAsync(
+                            reader,
+                            player,
+                            s,
+                            _options.ChannelIndex + 1,
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.UpdateQuest:
+                        if (player is null) break;
+                        await HandleUpdateQuestAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.UseItemQuest:
                         break;
 
                     case V113ChannelRecvOp.NpcTalk:
@@ -232,6 +314,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             if (player is not null)
             {
+                await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+
                 player.FlushInventory();
 
                 if (account is not null)
@@ -375,7 +459,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return null;
         }
 
-        var ctx = new NpcContext(npcId, player);
+        var ctx = new NpcContext(npcId, player, _questService);
         var script = _npcScripts.TryCreate(npcId, ctx);
         if (script is null)
         {
@@ -388,7 +472,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendDialog: (dlg, c) => session.SendAsync(V113NpcDialogEncoder.Encode(dlg), c),
             warp: warp,
             openShop: openShop,
-            openStorage: openStorage);
+            openStorage: openStorage,
+            sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
+            sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -458,7 +544,96 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         return field;
     }
 
-    // ── 背包 / 商店 / 倉庫 / 戰鬥 ─────────────────────────────────────────────
+    // ── Quest / Stats / 背包 / 商店 / 倉庫 / 戰鬥 ─────────────────────────────
+
+    private static async Task HandleStatsMutationAsync(
+        PlayerStatsMutation mutation,
+        MapleSession session,
+        bool sendSkill,
+        CancellationToken ct)
+    {
+        if (V113StatsHandlers.EncodeUpdateStats(mutation) is { } statsPacket)
+        {
+            await session.SendAsync(statsPacket, ct);
+        }
+
+        if (sendSkill && V113StatsHandlers.EncodeUpdateSkill(mutation) is { } skillPacket)
+        {
+            await session.SendAsync(skillPacket, ct);
+        }
+    }
+
+    private async Task HandleQuestActionAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        QuestClientAction action;
+        try
+        {
+            action = V113QuestPackets.ParseQuestAction(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        var result = _questService.HandleClientAction(player, action);
+        await SendQuestTransactionResultAsync(result, session, ct);
+    }
+
+    private async Task HandleUpdateQuestAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        int questId;
+        try
+        {
+            questId = V113QuestPackets.ParseUpdateQuest(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        var result = _questService.UpdateQuest(player, questId);
+        await SendQuestTransactionResultAsync(result, session, ct);
+    }
+
+    private static async Task SendQuestTransactionResultAsync(
+        QuestTransactionResult result,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (result.Quest is { } quest)
+        {
+            await session.SendAsync(V113QuestPackets.UpdateQuest(quest), ct);
+        }
+
+        foreach (var item in result.GainedItems)
+        {
+            await session.SendAsync(
+                V113QuestPackets.ModifyInventoryAdd(Player.InventoryTypeOf(item.ItemId), item),
+                ct);
+        }
+
+        foreach (var mutation in result.InventoryMutations)
+        {
+            await session.SendAsync(V113QuestPackets.ModifyInventoryQuantity(mutation), ct);
+        }
+
+        if (result.MesoChanged)
+        {
+            await session.SendAsync(V113QuestPackets.UpdateMeso(result.Meso), ct);
+        }
+
+        if (result.ShowQuestCompletionId is { } completedQuestId)
+        {
+            await session.SendAsync(V113QuestPackets.ShowQuestCompletion(completedQuestId), ct);
+        }
+
+        if (result is { Quest: { } completed, NextQuestId: { } nextQuestId })
+        {
+            await session.SendAsync(
+                V113QuestPackets.UpdateQuestFinish(completed.QuestId, completed.Npc, nextQuestId),
+                ct);
+        }
+    }
 
     private async Task HandleItemMoveAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
     {
