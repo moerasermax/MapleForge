@@ -1,5 +1,6 @@
 using Maple.Core.Data;
 using Maple.Core.Maps;
+using Maple.Core.World;
 
 namespace Maple.Application.Maps;
 
@@ -36,6 +37,7 @@ public sealed class MapService
         var portals = LoadPortals(mapImg["portal"]);
         var footholds = LoadFootholds(mapImg["foothold"]);
         var npcs = LoadNpcs(mapImg["life"]);
+        var monsters = LoadMonsters(mapImg["life"]);
 
         return new MapData
         {
@@ -45,7 +47,38 @@ public sealed class MapService
             Portals = portals,
             Footholds = footholds,
             Npcs = npcs,
+            Monsters = monsters,
         };
+    }
+
+    /// <summary>從 Mob.wz 載入怪物模板數值；找不到時回傳 null。</summary>
+    public MobStats? LoadMobStats(int monsterId)
+    {
+        var mobImg = _data.GetAt("Mob", $"{monsterId:D7}.img");
+        var info = mobImg?["info"];
+        if (info is null)
+        {
+            return null;
+        }
+
+        var maxHp = Math.Max(1, GetLong(info, "maxHP", 1));
+        var maxMp = Math.Max(0, GetInt(info, "maxMP", 0));
+        var level = (short)Math.Clamp(GetInt(info, "level", 1), short.MinValue, short.MaxValue);
+        var exp = Math.Max(0, GetInt(info, "exp", 0));
+        var boss = GetInt(info, "boss", 0) > 0 || monsterId is 8810018 or 9410066 || (monsterId >= 8810118 && monsterId <= 8810122);
+        var friendly = GetInt(info, "damagedByMob", 0) > 0;
+        var mobile = mobImg?["move"] is not null || mobImg?["fly"] is not null;
+
+        return new MobStats(
+            MonsterId: monsterId,
+            MaxHp: maxHp,
+            MaxMp: maxMp,
+            Level: level,
+            Exp: exp,
+            Boss: boss,
+            Mobile: mobile,
+            Friendly: friendly,
+            HpDisplayType: GetHpDisplayType(monsterId, boss, friendly));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -60,7 +93,31 @@ public sealed class MapService
     private static int GetInt(IDataNode? node, string key, int defaultValue)
     {
         var child = node?[key];
-        return child?.Value is int v ? v : defaultValue;
+        return child?.Value switch
+        {
+            int v => v,
+            short v => v,
+            long v when v <= int.MaxValue && v >= int.MinValue => (int)v,
+            byte v => v,
+            sbyte v => v,
+            string s when int.TryParse(s, out var parsed) => parsed,
+            _ => defaultValue,
+        };
+    }
+
+    private static long GetLong(IDataNode? node, string key, long defaultValue)
+    {
+        var child = node?[key];
+        return child?.Value switch
+        {
+            long v => v,
+            int v => v,
+            short v => v,
+            byte v => v,
+            sbyte v => v,
+            string s when long.TryParse(s, out var parsed) => parsed,
+            _ => defaultValue,
+        };
     }
 
     private static string GetString(IDataNode? node, string key, string defaultValue = "")
@@ -136,6 +193,47 @@ public sealed class MapService
         return npcs;
     }
 
+    /// <summary>
+    /// 從 WZ <c>life</c> 節點載入怪物出生點（type 首字 &quot;m&quot;）。
+    /// 對照 Java MapleMapFactory.loadLife：怪物位置用 x/y；cy 保留但 spawn 封包不用 cy。
+    /// </summary>
+    private static IReadOnlyList<MapMonster> LoadMonsters(IDataNode? lifeNode)
+    {
+        if (lifeNode is null) return Array.Empty<MapMonster>();
+
+        var monsters = new List<MapMonster>();
+        var i = 0;
+
+        while (true)
+        {
+            var entry = lifeNode[$"{i}"];
+            if (entry is null) break;
+            i++;
+
+            var type = GetString(entry, "type");
+            if (type.Length == 0 || char.ToLowerInvariant(type[0]) != 'm') continue;
+
+            if (!int.TryParse(GetString(entry, "id"), out var monsterId)) continue;
+
+            monsters.Add(new MapMonster
+            {
+                MonsterId = monsterId,
+                X = GetInt(entry, "x", 0),
+                Y = GetInt(entry, "y", 0),
+                Cy = GetInt(entry, "cy", 0),
+                F = GetInt(entry, "f", 0),
+                Fh = GetInt(entry, "fh", 0),
+                Rx0 = GetInt(entry, "rx0", 0),
+                Rx1 = GetInt(entry, "rx1", 0),
+                MobTime = GetInt(entry, "mobTime", 0),
+                Team = (sbyte)Math.Clamp(GetInt(entry, "team", -1), sbyte.MinValue, sbyte.MaxValue),
+                Hide = GetInt(entry, "hide", 0) == 1,
+            });
+        }
+
+        return monsters;
+    }
+
     private static IReadOnlyList<MapFoothold> LoadFootholds(IDataNode? fhNode)
     {
         if (fhNode is null) return Array.Empty<MapFoothold>();
@@ -164,5 +262,12 @@ public sealed class MapService
         }
 
         return footholds;
+    }
+
+    private static byte GetHpDisplayType(int monsterId, bool boss, bool friendly)
+    {
+        if (friendly) return 1;
+        if (monsterId >= 9300184 && monsterId <= 9300215) return 2;
+        return !boss || monsterId == 9410066 ? (byte)3 : (byte)0;
     }
 }
