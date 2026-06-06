@@ -1,4 +1,5 @@
 using Maple.Application.Maps;
+using Maple.Application.Drops;
 using Maple.Core.World;
 
 namespace Maple.Application.Combat;
@@ -16,7 +17,8 @@ public sealed record CombatMobHit(
     long RequestedDamage,
     long AppliedDamage,
     long RemainingHp,
-    bool Killed);
+    bool Killed,
+    MobKillRewards? Rewards = null);
 
 public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits)
 {
@@ -29,10 +31,12 @@ public sealed class CombatService
     public const int DefaultMobObjectIdBase = 100_000;
 
     private readonly MapService _maps;
+    private readonly IMobKillHandler? _mobKillHandler;
 
-    public CombatService(MapService maps)
+    public CombatService(MapService maps, IMobKillHandler? mobKillHandler = null)
     {
         _maps = maps;
+        _mobKillHandler = mobKillHandler;
     }
 
     /// <summary>
@@ -88,13 +92,18 @@ public sealed class CombatService
             }
 
             var result = mob.TakeDamage(target.TotalDamage);
+            var rewards = result.Killed
+                ? _mobKillHandler?.OnMobKilled(field, attacker, mob)
+                : null;
+
             hits.Add(new CombatMobHit(
                 result.ObjectId,
                 result.MonsterId,
                 result.RequestedDamage,
                 result.AppliedDamage,
                 result.RemainingHp,
-                result.Killed));
+                result.Killed,
+                rewards));
 
             if (result.Killed)
             {
