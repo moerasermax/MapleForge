@@ -1,5 +1,6 @@
 using Maple.Core.Inventory;
 using Maple.Core.Quests;
+using Maple.Core.Skills;
 
 namespace Maple.Core.Characters;
 
@@ -43,8 +44,8 @@ public sealed class Character
 
     public int GachExp { get; set; }
 
-    /// <summary>Known skill levels. Full WZ skill metadata remains an adapter/application concern.</summary>
-    public List<CharacterSkill> Skills { get; set; } = new();
+    /// <summary>角色技能等級清單；SET_FIELD 的 skill info 由版本 adapter 編碼。</summary>
+    public List<CharacterSkillRecord> Skills { get; set; } = new();
 
     public int MapId { get; set; }
 

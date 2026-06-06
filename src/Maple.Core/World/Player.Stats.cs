@@ -1,4 +1,5 @@
 using Maple.Core.Characters;
+using Maple.Core.Skills;
 
 namespace Maple.Core.World;
 
@@ -261,9 +262,6 @@ public sealed partial class Player
         return new PlayerStatsMutation(PlayerStatsFailure.None, updates);
     }
 
-    public byte GetSkillLevel(int skillId)
-        => Character.Skills.FirstOrDefault(s => s.SkillId == skillId)?.Level ?? 0;
-
     private void ApplyLevelUp(Func<int, int, int> rollInclusive, List<PlayerStatUpdate> updates)
     {
         var oldLevel = Character.Level;
@@ -331,7 +329,7 @@ public sealed partial class Player
         return true;
     }
 
-    private CharacterSkill GetOrCreateSkill(int skillId)
+    private CharacterSkillRecord GetOrCreateSkill(int skillId)
     {
         var skill = Character.Skills.FirstOrDefault(s => s.SkillId == skillId);
         if (skill is not null)
@@ -339,7 +337,7 @@ public sealed partial class Player
             return skill;
         }
 
-        skill = new CharacterSkill { SkillId = skillId };
+        skill = new CharacterSkillRecord { SkillId = skillId };
         Character.Skills.Add(skill);
         return skill;
     }
