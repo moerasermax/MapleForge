@@ -8,7 +8,7 @@ namespace Maple.Core.World;
 /// 而非擴充 Character（持久文件不被每 tick 變動污染）。Core 富領域、**零傳輸**（不持 socket/送包委派）。
 /// 之後擴充：即時 HP/MP(Vitals)、buff、行為(TakeDamage/Heal/ApplyBuff…)。
 /// </summary>
-public sealed class Player : IFieldObject
+public sealed partial class Player : IFieldObject
 {
     /// <summary>持久角色資料（唯一在存檔/換圖/登出時由 Player 回寫）。</summary>
     public Character Character { get; }
