@@ -78,7 +78,7 @@ public class WinAPI {
 }
 "@
 
-$Root    = "D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\MapleForge"
+$Root    = (Resolve-Path "$PSScriptRoot\..\..").Path
 $CliDir  = "D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"
 $CliExe  = "$CliDir\MapleStory.exe"
 $Log     = "$Root\live.log"

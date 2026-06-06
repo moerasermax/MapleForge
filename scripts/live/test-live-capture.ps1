@@ -5,7 +5,7 @@
 # so windower.dll inside the client process reads the capture flag, and the server
 # also runs its dual-track capture (slice 2). Uses $PSScriptRoot to avoid hardcoding
 # a path with non-ASCII chars (which mis-decodes under Windows PowerShell 5.1).
-$Root = $PSScriptRoot
+$Root = (Resolve-Path "$PSScriptRoot\..\..").Path
 
 $env:MAPLEFORGE_CAPTURE = "1"
 $env:MAPLEFORGE_WINDOWER_CAPTURE = "1"
@@ -16,4 +16,4 @@ Write-Host "  MAPLEFORGE_CAPTURE=$($env:MAPLEFORGE_CAPTURE)" -ForegroundColor Da
 Write-Host "  MAPLEFORGE_WINDOWER_CAPTURE=$($env:MAPLEFORGE_WINDOWER_CAPTURE)" -ForegroundColor DarkMagenta
 Write-Host "  WINDOWER_CAPTURE_DIR=$($env:MAPLEFORGE_WINDOWER_CAPTURE_DIR)" -ForegroundColor DarkMagenta
 
-& (Join-Path $Root "test-live.ps1") -Mode Auto
+& (Join-Path $PSScriptRoot "test-live.ps1") -Mode Auto

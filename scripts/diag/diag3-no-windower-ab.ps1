@@ -21,7 +21,7 @@ public class W3 {
     public static int RestoreDisplay(){ return ChangeDisplaySettings(IntPtr.Zero,0); }
 }
 "@
-$Root="$PSScriptRoot"; $CliDir="D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"; $CliExe="$CliDir\MapleStory.exe"
+$Root=(Resolve-Path "$PSScriptRoot\..\..").Path; $CliDir="D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"; $CliExe="$CliDir\MapleStory.exe"
 $Log="$Root\live-ab.log"
 $env:MAPLEFORGE_CAPTURE="1"
 $origRes=(Get-CimInstance Win32_VideoController|?{$_.CurrentHorizontalResolution}|Select -First 1|%{"$($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)"})

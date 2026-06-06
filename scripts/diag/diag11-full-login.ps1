@@ -30,7 +30,7 @@ public class WJ {
 }
 "@
 Add-Type -AssemblyName System.Drawing
-$Root="$PSScriptRoot"; $CliDir="D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"; $CliExe="$CliDir\MapleStory.exe"
+$Root=(Resolve-Path "$PSScriptRoot\..\..").Path; $CliDir="D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"; $CliExe="$CliDir\MapleStory.exe"
 $WHost="$Root\tools\windower\bin\windower_host.exe"; $Log="$Root\live-inject-diag.log"; $Shot="$Root\diag-shots"
 $KbdFile="$Root\tools\windower\captures\kbd.txt"
 $Inj="$Root\tools\windower\captures\windower_inject.log"

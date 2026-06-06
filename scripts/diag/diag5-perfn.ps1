@@ -20,7 +20,7 @@ public class WP {
     public static int RestoreDisplay(){ return ChangeDisplaySettings(IntPtr.Zero,0); }
 }
 "@
-$Root="$PSScriptRoot"; $CliDir="D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"; $CliExe="$CliDir\MapleStory.exe"
+$Root=(Resolve-Path "$PSScriptRoot\..\..").Path; $CliDir="D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"; $CliExe="$CliDir\MapleStory.exe"
 $WHost="$Root\tools\windower\bin\windower_host.exe"
 $origRes=(Get-CimInstance Win32_VideoController|?{$_.CurrentHorizontalResolution}|Select -First 1|%{"$($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)"})
 function Clear-Stale { Get-Process MapleStory,windower_host -EA SilentlyContinue|Stop-Process -Force -EA SilentlyContinue; Get-Process -Name "Maple.Host.Login" -EA SilentlyContinue|Stop-Process -Force -EA SilentlyContinue; Start-Sleep 1 }

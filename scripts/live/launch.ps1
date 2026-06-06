@@ -1,7 +1,7 @@
 # MapleForge 一鍵啟動腳本
 # 啟動順序：DxWnd（視窗化 hook）→ MapleForge server → MapleStory 客戶端
 
-$ServerRoot = $PSScriptRoot
+$ServerRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $ClientDir  = "D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client"
 $DxWndExe   = Join-Path $ClientDir "視窗化\dxwnd.exe"
 $ClientExe  = Join-Path $ClientDir "MapleStory.exe"
