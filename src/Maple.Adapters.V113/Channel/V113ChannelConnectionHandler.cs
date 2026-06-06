@@ -6,6 +6,7 @@ using Maple.Application.Drops;
 using Maple.Application.Guilds;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
+using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Application.Quests;
 using Maple.Application.Shops;
@@ -35,6 +36,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly ILogger<V113ChannelConnectionHandler> _log;
     private readonly CharacterService _charService;
     private readonly IAccountRepository _accounts;
+    private readonly IOnlinePlayerRegistry _onlinePlayers;
     private readonly IMapSessionRegistry _mapRegistry;
     private readonly IFieldInstanceRegistry _fieldRegistry;
     private readonly MapService _mapService;
@@ -59,6 +61,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         ILogger<V113ChannelConnectionHandler> log,
         CharacterService charService,
         IAccountRepository accounts,
+        IOnlinePlayerRegistry onlinePlayers,
         IMapSessionRegistry mapRegistry,
         IFieldInstanceRegistry fieldRegistry,
         MapService mapService,
@@ -82,6 +85,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _log = log;
         _charService = charService;
         _accounts = accounts;
+        _onlinePlayers = onlinePlayers;
         _mapRegistry = mapRegistry;
         _fieldRegistry = fieldRegistry;
         _mapService = mapService;
@@ -196,20 +200,23 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 _log.LogWarning("[Channel] 角色 {Name} 找不到 AccountId={AccountId}，倉庫不會持久化", chr.Name, chr.AccountId);
                             }
 
+                            var channel = _options.ChannelIndex + 1;
+                            _onlinePlayers.Register(new OnlinePlayer(
+                                chr.Id,
+                                chr.Name,
+                                channel,
+                                chr,
+                                (pkt, tkn) => s.SendAsync(pkt, tkn)));
+
                             await _buddyHandler.OnPlayerLoggedInAsync(
                                 player,
                                 s,
-                                _options.ChannelIndex + 1,
+                                channel,
                                 token);
-
-                            _chatHandler.OnPlayerLoggedIn(
-                                player,
-                                _options.ChannelIndex + 1,
-                                (pkt, tkn) => s.SendAsync(pkt, tkn));
 
                             await _guildOperationHandler.OnPlayerLoggedInAsync(
                                 player,
-                                _options.ChannelIndex + 1,
+                                channel,
                                 (pkt, tkn) => s.SendAsync(pkt, tkn),
                                 token);
 
@@ -442,7 +449,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
                 await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
-                _chatHandler.OnPlayerLoggedOut(player);
+                _onlinePlayers.Deregister(player.Character.Id);
 
                 player.FlushInventory();
 

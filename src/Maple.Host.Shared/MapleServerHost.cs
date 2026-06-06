@@ -10,6 +10,7 @@ using Maple.Application.Drops;
 using Maple.Application.Guilds;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
+using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Application.Quests;
 using Maple.Application.Security;
@@ -111,7 +112,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IMobKillHandler>(sp => sp.GetRequiredService<DropService>());
         builder.Services.AddSingleton<CombatService>();
         builder.Services.AddSingleton<RangedMagicCombatService>();
-        builder.Services.AddSingleton<IBuddyOnlineRegistry, InMemoryBuddyOnlineRegistry>();
+        builder.Services.AddSingleton<IOnlinePlayerRegistry, InMemoryOnlinePlayerRegistry>();
         builder.Services.AddSingleton<BuddyService>();
         builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();
         builder.Services.AddSingleton<PartyService>();
@@ -119,7 +120,6 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IGuildRegistry, InMemoryGuildRegistry>();
         builder.Services.AddSingleton<GuildService>();
         builder.Services.AddSingleton<IV113GuildSessionHook, CentralGuildSessionHook>();
-        builder.Services.AddSingleton<IChatOnlineRegistry, InMemoryChatOnlineRegistry>();
         builder.Services.AddSingleton<ChatService>();
         builder.Services.AddSingleton<IV113ChatSessionHook, CentralChatSessionHook>();
         builder.Services.AddSingleton<IQuestCatalog, MinimalQuestCatalog>();

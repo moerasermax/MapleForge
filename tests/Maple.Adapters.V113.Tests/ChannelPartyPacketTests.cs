@@ -1,5 +1,6 @@
 using System.Text;
 using Maple.Adapters.V113.Channel;
+using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Core.Characters;
 using Maple.Core.IO;
@@ -86,6 +87,35 @@ public sealed class ChannelPartyPacketTests
         Assert.Single(selfPackets);
         AssertJoinPacket(leaderPacket.Packet, "Guest");
         AssertJoinPacket(selfPackets[0], "Guest");
+    }
+
+    [Fact]
+    public async Task CentralPartySessionHook_UsesOnlineRegistryForLookupAndSend()
+    {
+        var online = new InMemoryOnlinePlayerRegistry();
+        var player = Player(2, "Guest", channelIndexMap: 100000000);
+        var sentPackets = new List<byte[]>();
+        online.Register(new OnlinePlayer(
+            player.Character.Id,
+            player.Character.Name,
+            Channel: 2,
+            Character: player.Character,
+            SendPacket: (packet, _) =>
+            {
+                sentPackets.Add(packet);
+                return Task.CompletedTask;
+            }));
+        var hook = new CentralPartySessionHook(online);
+
+        var found = await hook.FindOnlinePlayerByNameAsync("guest", CancellationToken.None);
+
+        Assert.NotNull(found);
+        Assert.Equal(player.Character.Id, found.CharacterId);
+        Assert.Equal(1, found.ChannelIndex);
+
+        var packet = new byte[] { 0x01, 0x02 };
+        await hook.SendToCharacterAsync(player.Character.Id, packet, CancellationToken.None);
+        Assert.Same(packet, Assert.Single(sentPackets));
     }
 
     private static void AssertJoinPacket(byte[] packet, string expectedTargetName)

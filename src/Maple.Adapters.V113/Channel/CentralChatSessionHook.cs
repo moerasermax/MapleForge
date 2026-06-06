@@ -1,4 +1,4 @@
-using Maple.Application.Chats;
+using Maple.Application.OnlinePlayers;
 
 namespace Maple.Adapters.V113.Channel;
 
@@ -9,9 +9,9 @@ public interface IV113ChatSessionHook
 
 public sealed class CentralChatSessionHook : IV113ChatSessionHook
 {
-    private readonly IChatOnlineRegistry _online;
+    private readonly IOnlinePlayerRegistry _online;
 
-    public CentralChatSessionHook(IChatOnlineRegistry online)
+    public CentralChatSessionHook(IOnlinePlayerRegistry online)
     {
         _online = online;
     }

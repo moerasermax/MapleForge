@@ -1,6 +1,7 @@
 using System.Text;
 using Maple.Adapters.V113.Channel;
 using Maple.Application.Guilds;
+using Maple.Application.OnlinePlayers;
 using Maple.Core.Characters;
 using Maple.Core.Guilds;
 using Maple.Core.IO;
@@ -138,6 +139,47 @@ public sealed class ChannelGuildPacketTests
         var leaderPacket = Assert.Single(hook.SentPackets);
         Assert.Equal(leader.Character.Id, leaderPacket.CharacterId);
         AssertNewGuildMember(leaderPacket.Packet, guest.Character.Id, "Guest");
+    }
+
+    [Fact]
+    public async Task CentralGuildSessionHook_UsesOnlineRegistryForLookupSendAndStatusUpdate()
+    {
+        var online = new InMemoryOnlinePlayerRegistry();
+        var player = Player(2, "Guest");
+        player.JoinGuild(25, Guild.DefaultMemberRank);
+        var sentPackets = new List<byte[]>();
+        online.Register(new OnlinePlayer(
+            player.Character.Id,
+            player.Character.Name,
+            Channel: 3,
+            Character: player.Character,
+            SendPacket: (packet, _) =>
+            {
+                sentPackets.Add(packet);
+                return Task.CompletedTask;
+            }));
+        var hook = new CentralGuildSessionHook(online);
+
+        var found = await hook.FindOnlinePlayerByNameAsync("guest", CancellationToken.None);
+
+        Assert.NotNull(found);
+        Assert.Equal(player.Character.Id, found.CharacterId);
+        Assert.Equal(25, found.GuildId);
+        Assert.Equal(3, found.Channel);
+
+        await hook.UpdateGuildStatusAsync(
+            player.Character.Id,
+            guildId: 40,
+            guildRank: Guild.JuniorMasterRank,
+            allianceRank: 0,
+            CancellationToken.None);
+        Assert.Equal(40, player.Character.GuildId);
+        Assert.Equal(Guild.JuniorMasterRank, player.Character.GuildRank);
+        Assert.Equal(Guild.DefaultAllianceRank, player.Character.AllianceRank);
+
+        var packet = new byte[] { 0x03, 0x04 };
+        await hook.SendToCharacterAsync(player.Character.Id, packet, CancellationToken.None);
+        Assert.Same(packet, Assert.Single(sentPackets));
     }
 
     private static void AssertShowGuildInfo(byte[] packet)

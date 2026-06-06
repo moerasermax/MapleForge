@@ -1,6 +1,7 @@
 using Maple.Adapters.V113.Channel;
 using Maple.Application.Chats;
 using Maple.Application.Guilds;
+using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Core.Characters;
 using Maple.Core.Guilds;
@@ -67,14 +68,14 @@ public sealed class ChannelMultiChatPacketTests
     [Fact]
     public async Task WhisperHandler_SendsWhisperToTargetAndSuccessReplyToSender()
     {
-        var (handler, _) = CreateHandler();
+        var (handler, _, online) = CreateHandler();
         var sender = Player(1, "Alice");
         var target = Player(2, "Bob");
         var selfPackets = new List<byte[]>();
         var targetPackets = new List<byte[]>();
 
-        handler.OnPlayerLoggedIn(sender, channel: 1, SendTo(selfPackets));
-        handler.OnPlayerLoggedIn(target, channel: 2, SendTo(targetPackets));
+        Register(online, sender, channel: 1, selfPackets);
+        Register(online, target, channel: 2, targetPackets);
 
         var request = new PacketWriter()
             .WriteByte((byte)V113WhisperClientMode.Whisper)
@@ -96,11 +97,11 @@ public sealed class ChannelMultiChatPacketTests
     [Fact]
     public async Task WhisperHandler_ReturnsNotFoundWhenTargetOffline()
     {
-        var (handler, _) = CreateHandler();
+        var (handler, _, online) = CreateHandler();
         var sender = Player(1, "Alice");
         var selfPackets = new List<byte[]>();
 
-        handler.OnPlayerLoggedIn(sender, channel: 1, SendTo(selfPackets));
+        Register(online, sender, channel: 1, selfPackets);
 
         var request = new PacketWriter()
             .WriteByte((byte)V113WhisperClientMode.Whisper)
@@ -121,14 +122,14 @@ public sealed class ChannelMultiChatPacketTests
     [Fact]
     public async Task PartyChat_BroadcastsToOnlinePartyMembersExceptSender()
     {
-        var (handler, parties) = CreateHandler(firstPartyId: 40);
+        var (handler, parties, online) = CreateHandler(firstPartyId: 40);
         var sender = Player(1, "Alice");
         var target = Player(2, "Bob");
         var selfPackets = new List<byte[]>();
         var targetPackets = new List<byte[]>();
 
-        handler.OnPlayerLoggedIn(sender, channel: 1, SendTo(selfPackets));
-        handler.OnPlayerLoggedIn(target, channel: 1, SendTo(targetPackets));
+        Register(online, sender, channel: 1, selfPackets);
+        Register(online, target, channel: 1, targetPackets);
         parties.CreateParty(PartyMember.FromCharacter(sender.Character, channelIndex: 0));
         parties.JoinParty(40, PartyMember.FromCharacter(target.Character, channelIndex: 0));
 
@@ -143,7 +144,7 @@ public sealed class ChannelMultiChatPacketTests
     [Fact]
     public async Task BuddyChat_SendsOnlyWhenRecipientHasVisibleSenderBuddy()
     {
-        var (handler, _) = CreateHandler();
+        var (handler, _, online) = CreateHandler();
         var sender = Player(1, "Alice");
         var visibleTarget = Player(2, "Bob");
         var hiddenTarget = Player(3, "Carol");
@@ -163,9 +164,9 @@ public sealed class ChannelMultiChatPacketTests
             Visible = false,
         });
 
-        handler.OnPlayerLoggedIn(sender, channel: 1, SendTo(new List<byte[]>()));
-        handler.OnPlayerLoggedIn(visibleTarget, channel: 1, SendTo(visiblePackets));
-        handler.OnPlayerLoggedIn(hiddenTarget, channel: 1, SendTo(hiddenPackets));
+        Register(online, sender, channel: 1, new List<byte[]>());
+        Register(online, visibleTarget, channel: 1, visiblePackets);
+        Register(online, hiddenTarget, channel: 1, hiddenPackets);
 
         var request = GroupChatRequest(
             GroupChatKind.Buddy,
@@ -181,7 +182,7 @@ public sealed class ChannelMultiChatPacketTests
     [Fact]
     public async Task GuildChat_BroadcastsToOnlineGuildMembersExceptSender()
     {
-        var online = new InMemoryChatOnlineRegistry();
+        var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry();
         var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 60);
         var chatService = new ChatService(online, partyRegistry, guildRegistry);
@@ -203,8 +204,8 @@ public sealed class ChannelMultiChatPacketTests
             GuildMember.FromCharacter(target.Character, channel: 1, rank: Guild.DefaultMemberRank, guildId: guildId),
             CancellationToken.None);
 
-        handler.OnPlayerLoggedIn(sender, channel: 1, SendTo(new List<byte[]>()));
-        handler.OnPlayerLoggedIn(target, channel: 1, SendTo(targetPackets));
+        Register(online, sender, channel: 1, new List<byte[]>());
+        Register(online, target, channel: 1, targetPackets);
 
         var request = GroupChatRequest(GroupChatKind.Guild, [target.Character.Id], "guild hi");
 
@@ -213,13 +214,23 @@ public sealed class ChannelMultiChatPacketTests
         AssertMultiChat(Assert.Single(targetPackets), GroupChatKind.Guild, "Alice", "guild hi");
     }
 
-    private static (V113ChatHandler Handler, PartyService Parties) CreateHandler(int firstPartyId = 1)
+    private static (V113ChatHandler Handler, PartyService Parties, IOnlinePlayerRegistry Online) CreateHandler(int firstPartyId = 1)
     {
-        var online = new InMemoryChatOnlineRegistry();
+        var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry(firstPartyId);
         var chatService = new ChatService(online, partyRegistry, new InMemoryGuildRegistry(new FakeGuildRepository()));
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
-        return (handler, new PartyService(partyRegistry));
+        return (handler, new PartyService(partyRegistry), online);
+    }
+
+    private static void Register(IOnlinePlayerRegistry online, Player player, int channel, List<byte[]> packets)
+    {
+        online.Register(new OnlinePlayer(
+            player.Character.Id,
+            player.Character.Name,
+            channel,
+            player.Character,
+            SendTo(packets)));
     }
 
     private static byte[] GroupChatRequest(GroupChatKind kind, IReadOnlyList<int> recipientIds, string text)

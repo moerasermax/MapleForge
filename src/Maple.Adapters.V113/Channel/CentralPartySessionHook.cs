@@ -1,12 +1,12 @@
-using Maple.Application.Buddies;
+using Maple.Application.OnlinePlayers;
 
 namespace Maple.Adapters.V113.Channel;
 
 public sealed class CentralPartySessionHook : IV113PartySessionHook
 {
-    private readonly IBuddyOnlineRegistry _online;
+    private readonly IOnlinePlayerRegistry _online;
 
-    public CentralPartySessionHook(IBuddyOnlineRegistry online)
+    public CentralPartySessionHook(IOnlinePlayerRegistry online)
     {
         _online = online;
     }
