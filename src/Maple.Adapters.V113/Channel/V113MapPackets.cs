@@ -11,6 +11,9 @@ internal sealed record V113SpawnGuildInfo(
     short Logo,
     byte LogoColor);
 
+/// <summary>CHANGE_MAP (c2s 0x1E) 解析結果。Mode：1=死亡 2=一般 portal；TargetId：一般腳走 portal = -1。</summary>
+internal readonly record struct V113ChangeMapRequest(byte Mode, int TargetId, string PortalName);
+
 /// <summary>
 /// v113 地圖相關封包：SPAWN_PLAYER / REMOVE_PLAYER_FROM_MAP / MOVE_PLAYER 廣播。
 /// 封包格式來自舊 Java MaplePacketCreator.spawnPlayerMapobject / removePlayerFromMap / movePlayer。
@@ -168,6 +171,22 @@ internal static class V113MapPackets
         w.WriteShort(V113ChannelSendOp.RemoveNpc);
         w.WriteInt(objectId);
         return w.ToArray();
+    }
+
+    /// <summary>
+    /// 解析 CHANGE_MAP (c2s 0x1E) body（2-byte opcode 已讀掉）。對照 Java PlayerHandler.ChangeMap。
+    /// 結構：byte(1=死亡 2=一般 portal) + int targetId(一般腳走 foot portal = -1) +
+    ///       MapleAsciiString portalName + skip(1) + short wheel(原地復活輪，MVP 不處理)。
+    /// 尾端精確消費（team consult：避免影響死亡分支判斷/除錯）。
+    /// </summary>
+    public static V113ChangeMapRequest ParseChangeMap(PacketReader r)
+    {
+        byte mode = r.ReadByte();
+        int targetId = r.ReadInt();
+        string portalName = r.ReadMapleString();
+        if (r.Remaining >= 1) r.ReadByte();    // skip(1)
+        if (r.Remaining >= 2) r.ReadShort();   // wheel
+        return new V113ChangeMapRequest(mode, targetId, portalName);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

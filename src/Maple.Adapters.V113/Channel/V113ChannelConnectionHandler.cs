@@ -161,6 +161,52 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, sessionToken, token);
         }
 
+        // 腳走地圖傳送點（CHANGE_MAP 0x1E）。對照 Java PlayerHandler.ChangeMap 正常 portal 分支。
+        async Task HandleChangeMapAsync(PacketReader r, CancellationToken token)
+        {
+            if (player is null || chr is null) return;
+            var req = V113MapPackets.ParseChangeMap(r);
+
+            if (req.TargetId == -1)
+            {
+                // 一般腳走傳送點：查當前圖 portal(by name) → 取目標圖(tm)+目標 portal(tn) → 換圖落地
+                var map = _mapService.LoadMap(chr.MapId);
+                var portal = map.Portals.FirstOrDefault(p => p.Name == req.PortalName);
+                if (portal is null || portal.TargetMapId == NoTargetMapId || !string.IsNullOrEmpty(portal.Script))
+                {
+                    // 查不到 / 無目標 / script portal(MVP 未實作 PortalScript) → 放行不卡（不改角色狀態）
+                    if (portal is not null && !string.IsNullOrEmpty(portal.Script))
+                        _log.LogInformation("[Channel] script portal '{Portal}'(地圖 {Map}) 尚未實作，放行", req.PortalName, chr.MapId);
+                    else
+                        _log.LogDebug("[Channel] portal '{Portal}'(地圖 {Map}) 無目標/不存在，放行", req.PortalName, chr.MapId);
+                    await session.SendAsync(V113StatsPackets.EnableActions(), token);
+                    return;
+                }
+
+                // 目標 portal id → 客戶端據 SET_FIELD 的 SpawnPoint byte 落地（tn 找不到 fallback 0）
+                var targetMap = _mapService.LoadMap(portal.TargetMapId);
+                var targetPortal = targetMap.Portals.FirstOrDefault(p => p.Name == portal.TargetPortalName);
+                int spawnPortalId = targetPortal?.Id ?? 0;
+
+                currentField = await WarpAsync(player, currentField, npcOidToId, session, portal.TargetMapId, sessionToken, token, spawnPortalId);
+                _log.LogInformation("[Channel] {Name} 走 portal '{Portal}' → 地圖 {Map}（落地 portal {Pid}）", chr.Name, req.PortalName, portal.TargetMapId, spawnPortalId);
+            }
+            else
+            {
+                // 死亡/特殊 targetid：MVP 回當前圖的 ReturnMap portal 0（不卡死）；無效則放行
+                var map = _mapService.LoadMap(chr.MapId);
+                if (map.ReturnMapId is not (0 or NoTargetMapId) && map.ReturnMapId != chr.MapId)
+                {
+                    currentField = await WarpAsync(player, currentField, npcOidToId, session, map.ReturnMapId, sessionToken, token, 0);
+                    _log.LogInformation("[Channel] {Name} 死亡/特殊換圖 → ReturnMap {Map}", chr.Name, map.ReturnMapId);
+                }
+                else
+                {
+                    await session.SendAsync(V113StatsPackets.EnableActions(), token);
+                }
+            }
+        }
+
         async Task SendExpiredBuffCancelsAsync(MapleSession target, CancellationToken token)
         {
             if (player is null) return;
@@ -251,6 +297,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         if (player is null) break;
                         TryUpdateMovement(player, body);                              // 解析→更新 server 權威位置(Core)
                         await BroadcastToOthersAsync(player.Character, body, token);  // 原始 blob 轉發(動畫擬真)
+                        break;
+
+                    case V113ChannelRecvOp.ChangeMap:
+                        if (player is null) break;
+                        await HandleChangeMapAsync(reader, token);                    // 腳走傳送點換圖
                         break;
 
                     case V113ChannelRecvOp.CloseRangeAttack:
@@ -624,6 +675,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// <summary>NPC 地圖物件 id 起始值（避開玩家以 charId 充當的小號 objectId）。</summary>
     private const int NpcObjectIdBase = 1000;
 
+    /// <summary>WZ portal 無目標地圖的哨兵值（對照 MapService.LoadPortals 的 tm 預設）。</summary>
+    private const int NoTargetMapId = 999999999;
+
     // ── NPC 對話（路線圖②）─────────────────────────────────────────────────────
 
     /// <summary>
@@ -699,7 +753,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MapleSession session,
         int mapId,
         object sessionToken,
-        CancellationToken ct)
+        CancellationToken ct,
+        int spawnPortalId = 0)
     {
         var chr = player.Character;
         var oldMapId = chr.MapId;
@@ -724,6 +779,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         chr.MapId = mapId;
+        chr.SpawnPoint = (byte)spawnPortalId;   // 客戶端據 SET_FIELD 此 byte 把玩家放到目標 portal
 
         var setField = V113ChannelPackets.SetField(chr, _options.ChannelIndex);
         await session.SendAsync(setField, ct);

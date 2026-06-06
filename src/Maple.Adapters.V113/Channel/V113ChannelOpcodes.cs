@@ -4,6 +4,7 @@ namespace Maple.Adapters.V113.Channel;
 internal static class V113ChannelRecvOp
 {
     public const short PlayerLoggedIn = 0x07;
+    public const short ChangeMap = 0x1E;     // 腳走地圖傳送點 / 死亡復活換圖（CHANGE_MAP）
     public const short MovePlayer = 0x21;
     public const short CloseRangeAttack = 0x25;
     public const short RangedAttack = 0x26;
