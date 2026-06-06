@@ -35,6 +35,12 @@ public sealed class Account
     /// <summary>第二密碼（PIN）。null=尚未設定；新帳號需在 CHOOSE_GENDER 流程中設定。</summary>
     public string? SecondPassword { get; set; }
 
+    /// <summary>帳號層級現金點數。對照 Java getCSPoints(1) / Accounts.Acash。</summary>
+    public int CashPoints { get; set; }
+
+    /// <summary>帳號層級楓葉點數。對照 Java getCSPoints(2) / accounts.mPoints。</summary>
+    public int MaplePoints { get; set; }
+
     /// <summary>帳號層級倉庫快照（所有角色共用）；執行期由 <see cref="World.Player"/> hydrate 成 StorageBox。</summary>
     public AccountStorage Storage { get; set; } = new();
 }

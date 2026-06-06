@@ -1,0 +1,45 @@
+{
+  "_source": "Minimal hand-curated v113 Cash Shop seed from Java sql/testms.sql cashshop_items; replace with WZ/DB import for full shop.",
+  "items": [
+    {
+      "serialNumber": 10000001,
+      "itemId": 5350000,
+      "count": 10,
+      "price": 45,
+      "periodDays": 0,
+      "gender": 2,
+      "class": -1,
+      "onSale": true
+    },
+    {
+      "serialNumber": 10000003,
+      "itemId": 5150041,
+      "count": 1,
+      "price": 50,
+      "periodDays": 0,
+      "gender": 2,
+      "class": -1,
+      "onSale": true
+    },
+    {
+      "serialNumber": 10100004,
+      "itemId": 1702388,
+      "count": 1,
+      "price": 199,
+      "periodDays": 0,
+      "gender": 2,
+      "class": -1,
+      "onSale": true
+    },
+    {
+      "serialNumber": 10100033,
+      "itemId": 1112135,
+      "count": 1,
+      "price": 99,
+      "periodDays": 0,
+      "gender": 2,
+      "class": -1,
+      "onSale": false
+    }
+  ]
+}
