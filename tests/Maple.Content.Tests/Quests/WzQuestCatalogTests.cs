@@ -1,4 +1,5 @@
 using Maple.Content.Quests;
+using Maple.Content.Wz;
 using Maple.Core.Data;
 using Maple.Core.Quests;
 
@@ -6,6 +7,8 @@ namespace Maple.Content.Tests.Quests;
 
 public sealed class WzQuestCatalogTests
 {
+    private const string WzDir = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
+
     [Fact]
     public void GetQuest_ParsesQuestInfoCheckAndActNodes()
     {
@@ -44,6 +47,17 @@ public sealed class WzQuestCatalogTests
         Assert.Contains(quest.CompleteActions, a => a.Kind == QuestActionKind.Money && a.IntValue == 50);
         var itemAction = Assert.Single(quest.CompleteActions, a => a.Kind == QuestActionKind.Item);
         Assert.Equal(2000000, Assert.Single(itemAction.Items!).ItemId);
+    }
+
+    [Fact]
+    public void GetQuest_LoadsQuest1000FromRealQuestWz()
+    {
+        using var provider = new WzDataProvider(WzDir);
+        var quest = new WzQuestCatalog(provider).GetQuest(1000);
+
+        Assert.NotNull(quest);
+        Assert.Equal(1000, quest.Id);
+        Assert.NotEmpty(quest.Name);
     }
 
     private sealed class FakeDataProvider : IDataProvider

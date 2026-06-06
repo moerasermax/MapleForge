@@ -76,6 +76,17 @@ public sealed class WzDataProviderTests : IDisposable
     }
 
     [Fact]
+    public void GetAt_Traverses_QuestInfo_With_Long_Unicode_String()
+    {
+        var node = _provider.GetAt("Quest", "QuestInfo.img/10001/1");
+
+        Assert.NotNull(node);
+        var text = Assert.IsType<string>(node.Value);
+        Assert.Equal(177, text.Length);
+        Assert.Contains("特殊幹員O", text);
+    }
+
+    [Fact]
     public void GetAt_Returns_Null_For_Missing_Path()
     {
         var node = _provider.GetAt("String", "Eqp.img/DoesNotExist/Nope");

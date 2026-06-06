@@ -343,7 +343,7 @@ public sealed class WzFile : IDisposable
             0x05 => _reader.ReadDouble(),
             0x08 => ReadWzStringBlock(),
             0x09 => ReadExtendedProperty(),
-            _ => throw new InvalidDataException($"Unsupported property type: 0x{type:X2}.")
+            _ => throw new InvalidDataException($"Unsupported property type: 0x{type:X2} at 0x{_stream.Position - 1:X}.")
         };
     }
 
@@ -477,7 +477,7 @@ public sealed class WzFile : IDisposable
         {
             0 or 0x73 => ReadWzString(),
             1 or 0x1B => ReadWzStringAtOffset(_currentStringBaseOffset + _reader.ReadInt32()),
-            _ => throw new InvalidDataException($"Unsupported string block marker: 0x{marker:X2}.")
+            _ => throw new InvalidDataException($"Unsupported string block marker: 0x{marker:X2} at 0x{_stream.Position - 1:X}.")
         };
     }
 
@@ -496,8 +496,8 @@ public sealed class WzFile : IDisposable
         return marker switch
         {
             0 => string.Empty,
-            127 => DecodeAsciiString(_reader.ReadInt32()),
-            -128 => DecodeUnicodeString(_reader.ReadInt32()),
+            127 => DecodeUnicodeString(_reader.ReadInt32()),
+            -128 => DecodeAsciiString(_reader.ReadInt32()),
             > 0 => DecodeUnicodeString(marker),
             < 0 and > -128 => DecodeAsciiString(-marker)
         };
