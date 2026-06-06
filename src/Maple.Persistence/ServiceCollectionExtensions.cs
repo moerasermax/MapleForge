@@ -1,8 +1,10 @@
 using LiteDB;
 using Maple.Core.Accounts;
 using Maple.Core.Characters;
+using Maple.Core.Guilds;
 using Maple.Persistence.Accounts;
 using Maple.Persistence.Characters;
+using Maple.Persistence.Guilds;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
 
@@ -50,8 +52,10 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<LiteDbAccountRepository>();
         services.AddSingleton<LiteDbCharacterRepository>();
+        services.AddSingleton<LiteDbGuildRepository>();
         services.AddSingleton<MongoAccountRepository>();
         services.AddSingleton<MongoCharacterRepository>();
+        services.AddSingleton<MongoGuildRepository>();
 
         services.AddSingleton<IAccountRepository>(sp =>
         {
@@ -70,6 +74,16 @@ public static class ServiceCollectionExtensions
             {
                 MapleDatabaseProvider.LiteDb => sp.GetRequiredService<LiteDbCharacterRepository>(),
                 _ => sp.GetRequiredService<MongoCharacterRepository>(),
+            };
+        });
+
+        services.AddSingleton<IGuildRepository>(sp =>
+        {
+            var opts = sp.GetRequiredService<MapleDatabaseOptions>();
+            return opts.Provider switch
+            {
+                MapleDatabaseProvider.LiteDb => sp.GetRequiredService<LiteDbGuildRepository>(),
+                _ => sp.GetRequiredService<MongoGuildRepository>(),
             };
         });
 

@@ -68,4 +68,13 @@ public sealed class Character
 
     /// <summary>任務資訊字串（對照 Java MapleCharacter.questinfo / QuestInfoPacket）。</summary>
     public List<QuestInfoRecord> QuestInfo { get; set; } = new();
+
+    /// <summary>公會 id（對照 Java characters.guildid；0 = 無公會）。</summary>
+    public int GuildId { get; set; }
+
+    /// <summary>公會階級（對照 Java characters.guildrank；1 = 會長，5 = 一般成員）。</summary>
+    public byte GuildRank { get; set; } = 5;
+
+    /// <summary>聯盟階級（對照 Java characters.allianceRank；未加入聯盟預設 5）。</summary>
+    public byte AllianceRank { get; set; } = 5;
 }
