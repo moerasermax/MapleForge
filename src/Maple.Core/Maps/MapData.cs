@@ -17,6 +17,9 @@ public sealed class MapData
     /// <summary>地圖靜態 NPC（從 WZ life 節點載入）。</summary>
     public IReadOnlyList<MapNpc> Npcs { get; init; } = Array.Empty<MapNpc>();
 
+    /// <summary>地圖靜態怪物出生點（從 WZ life 節點載入）。</summary>
+    public IReadOnlyList<MapMonster> Monsters { get; init; } = Array.Empty<MapMonster>();
+
     /// <summary>依序號取得出生點；找不到時回最近的出生點或 null。</summary>
     public MapPortal? GetSpawnPoint(byte spawnPoint)
     {
