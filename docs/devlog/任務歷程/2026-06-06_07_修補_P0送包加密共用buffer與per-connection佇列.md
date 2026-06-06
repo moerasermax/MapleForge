@@ -2,12 +2,12 @@
 編號: 2026-06-06_07
 標題: 修 P0 送包 bug — SendAsync 原地加密共用廣播 buffer + 無 per-connection 送包佇列
 類型: 修補
-狀態: 🚧 執行中
+狀態: ✅ 完成
 建立: 2026-06-06
 更新: 2026-06-06
 關聯里程碑: PerfAudit task #16
 關聯記憶: current-state-resume, proactive-checkpoints-anti-crash, default-collaborate-with-ai-team
-關聯commit: 待填
+關聯commit: b35e108(A+B) / dbb0bf1(C) / d95681c(merge)
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）
@@ -33,12 +33,12 @@
 
 ## 🪜 計畫步驟
 
-- [ ] 1. 建檔寫死目標（本步）。
-- [ ] 2. 團隊 consult outbound queue 設計取捨（有界 vs 無界 Channel／背壓滿了 drop or 斷線／dispose 時 drain）。
-- [ ] 3. Part A 正確性修補（中央自己做，零設計風險）：SendAsync 改 copy-then-crypt-copy + 回歸測試。
-- [ ] 4. Part B per-connection queue（按團隊定案，可派 Codex）+ 整合。
-- [ ] 5. Part C cleanup session token（可派 Codex 另檔）+ 整合。
-- [ ] 6. 全測試綠 → commit + push → 回填三本帳。
+- [x] 1. 建檔寫死目標。
+- [x] 2. 團隊 consult outbound queue 設計取捨 → gpt-5.5 + Gemini 3.1 Pro 高度一致。
+- [x] 3. Part A 正確性修補：SendAsync copy-then-crypt-copy。
+- [x] 4. Part B per-connection bounded Channel(256)+單 pump（統籌自做）+ 回歸測試。
+- [x] 5. Part C cleanup session token（Codex worktree）+ merge。
+- [x] 6. 受影響測試全綠 → commit + push → 回填三本帳。
 
 ## 📜 執行歷程（邊做邊追加，附時間）
 
@@ -51,12 +51,22 @@
 
 ## ⏯️ 接手點（★崩潰救命行★ — 永遠保持最新一行）
 
-> 下一步：①等 Codex(PID 34484) 完成 Part C（worktree ../MapleForge-wt-p0c）→ 審 diff → merge 進 master → 跑 Application+Adapters.V113 測試。②Part A+B 已自成 checkpoint，待 commit。Part A/B 改在主樹 src/Maple.Net/MapleSession.cs（已編譯+測試綠）。基線 HEAD=7584a40。若此刻斷線：Part A+B 程式碼+測試都在主樹未 commit，先 `git add -A && git commit` 保住，再處理 Part C。
+> ✅ 本任務完成並 push（master HEAD=d95681c）。worktree 已清。下一步回到 TaskList：剩 #12 真客戶端 smoke 驗 SET_FIELD/SPAWN_PLAYER（需使用者在場，本機無 mongod→設 Persistence:Provider=LiteDb）→ 才續 batch-5。
 
 ## ✅ 結果與結論
 
-> 待填。
+判準全達標：
+1. ✅ 正確性：廣播同封包給多 session，每人各自只加密一次正確還原（loopback 測試守門，修前第 2 收件人會拿到二次加密垃圾）。
+2. ✅ 隔離：有界 Channel(256)+單 pump；SendAsync 入列即返回；滿了主動斷線；關閉序 TryComplete→drain(5s 逾時取消)→Dispose。
+3. ✅ P0-2：每連線 session token，Deregister 原子條件移除；token 不吻合跳過 logout/廣播但 DB flush 永遠執行。
+4. ✅ 受影響測試全綠：Maple.Net.Tests 2（新）/ Application 72 / Adapters.V113 110。零-static、北極星維持。
+
+**心法**：①核心熱點檔（MapleSession）統籌自做、獨立區域（registry/handler token）派 Codex worktree，零檔案重疊→merge 乾淨，平行又無衝突。②設計取捨先 consult 團隊（gpt-5.5+Gemini 一致）再動手，避免盲走。③Bash tool 在 Windows 是 bash 不是 PS，commit message 用 `git commit -F - <<'EOF'` heredoc，別用 PS here-string `@'...'@`（會把 @ 混進 subject）。
 
 ## 🔗 產出
 
-> 待填。
+- src/Maple.Net/MapleSession.cs（Part A+B 重構）
+- tests/Maple.Net.Tests/*（新專案，已入 slnx）
+- src/Maple.Application/OnlinePlayers/*、Maps/*（token 簽章）
+- src/Maple.Adapters.V113/Channel/V113ChannelConnectionHandler.cs（sessionToken 接線）
+- commit b35e108(A+B) / dbb0bf1(C) / merge d95681c。記憶 current-state-resume 已更新。
