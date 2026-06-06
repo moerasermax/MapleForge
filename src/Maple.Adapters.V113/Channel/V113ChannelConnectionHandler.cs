@@ -119,6 +119,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _log.LogInformation("[Channel] 握手送出 {Remote}", session.Remote);
 
         // Per-connection context（handler 是 singleton！這些狀態必須是連線區域變數）
+        var sessionToken = new object();
         Character? chr = null;
         Account? account = null;
         Player? player = null;
@@ -157,7 +158,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         async Task WarpFromNpcAsync(int mapId, CancellationToken token)
         {
             if (player is null) return;
-            currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, token);
+            currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, sessionToken, token);
         }
 
         async Task SendExpiredBuffCancelsAsync(MapleSession target, CancellationToken token)
@@ -206,7 +207,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 chr.Name,
                                 channel,
                                 chr,
-                                (pkt, tkn) => s.SendAsync(pkt, tkn)));
+                                (pkt, tkn) => s.SendAsync(pkt, tkn)),
+                                sessionToken);
 
                             await _buddyHandler.OnPlayerLoggedInAsync(
                                 player,
@@ -223,7 +225,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             var pos = player.Position;
                             currentField = EnterField(chr.MapId, player);
 
-                            _mapRegistry.Register(chr.MapId, chr.Id, chr, (pkt, tkn) => s.SendAsync(pkt, tkn));
+                            _mapRegistry.Register(chr.MapId, chr.Id, chr, (pkt, tkn) => s.SendAsync(pkt, tkn), sessionToken);
 
                             // Notify existing players of new arrival（並讓新玩家看到現有玩家）
                             var others = _mapRegistry.GetOthers(chr.MapId, chr.Id);
@@ -447,9 +449,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             if (player is not null)
             {
-                await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
-                await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
-                _onlinePlayers.Deregister(player.Character.Id);
+                var deregisteredPlayer = _onlinePlayers.Deregister(player.Character.Id, sessionToken);
+                if (deregisteredPlayer is not null)
+                {
+                    await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+                    await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+                }
 
                 player.FlushInventory();
 
@@ -487,18 +492,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             // Cleanup: remove from map, notify others
             if (chr is not null)
             {
-                _mapRegistry.Deregister(chr.MapId, chr.Id);
-                var removePacket = V113MapPackets.RemovePlayer(chr.Id);
-                var remainingOthers = _mapRegistry.GetOthers(chr.MapId, chr.Id);
-                foreach (var other in remainingOthers)
+                var removedFromMap = _mapRegistry.Deregister(chr.MapId, chr.Id, sessionToken);
+                if (removedFromMap)
                 {
-                    try
+                    var removePacket = V113MapPackets.RemovePlayer(chr.Id);
+                    var remainingOthers = _mapRegistry.GetOthers(chr.MapId, chr.Id);
+                    foreach (var other in remainingOthers)
                     {
-                        await other.SendPacket(removePacket, CancellationToken.None);
+                        try
+                        {
+                            await other.SendPacket(removePacket, CancellationToken.None);
+                        }
+                        catch { /* session might be closing */ }
                     }
-                    catch { /* session might be closing */ }
+                    _log.LogInformation("[Channel] 角色 {Name} 離開地圖 {Map}", chr.Name, chr.MapId);
                 }
-                _log.LogInformation("[Channel] 角色 {Name} 離開地圖 {Map}", chr.Name, chr.MapId);
             }
         }
     }
@@ -690,11 +698,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         Dictionary<int, int> oidToNpcId,
         MapleSession session,
         int mapId,
+        object sessionToken,
         CancellationToken ct)
     {
         var chr = player.Character;
         var oldMapId = chr.MapId;
-        _mapRegistry.Deregister(oldMapId, chr.Id);
+        var removedFromOldMap = _mapRegistry.Deregister(oldMapId, chr.Id, sessionToken);
 
         if (currentField is not null)
         {
@@ -704,11 +713,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
-        var removePacket = V113MapPackets.RemovePlayer(chr.Id);
-        var oldOthers = _mapRegistry.GetOthers(oldMapId, chr.Id);
-        foreach (var other in oldOthers)
+        if (removedFromOldMap)
         {
-            try { await other.SendPacket(removePacket, ct); } catch { /* session 可能正在關 */ }
+            var removePacket = V113MapPackets.RemovePlayer(chr.Id);
+            var oldOthers = _mapRegistry.GetOthers(oldMapId, chr.Id);
+            foreach (var other in oldOthers)
+            {
+                try { await other.SendPacket(removePacket, ct); } catch { /* session 可能正在關 */ }
+            }
         }
 
         chr.MapId = mapId;
@@ -717,7 +729,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await session.SendAsync(setField, ct);
 
         var field = EnterField(mapId, player);
-        _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn));
+        _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn), sessionToken);
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
         await SendFieldMonstersAsync(field, session, ct);
         await SendFieldDropsAsync(field, session, ct);

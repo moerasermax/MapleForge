@@ -11,18 +11,27 @@ public sealed class InMemoryMapSessionRegistry : IMapSessionRegistry
 {
     private readonly ConcurrentDictionary<int, ConcurrentDictionary<int, MapPlayerEntry>> _maps = new();
 
-    public void Register(int mapId, int charId, Character character, Func<byte[], CancellationToken, Task> sendPacket)
+    public void Register(int mapId, int charId, Character character, Func<byte[], CancellationToken, Task> sendPacket, object token)
     {
+        ArgumentNullException.ThrowIfNull(token);
+
         var map = _maps.GetOrAdd(mapId, _ => new ConcurrentDictionary<int, MapPlayerEntry>());
-        map[charId] = new MapPlayerEntry(charId, character, sendPacket);
+        map[charId] = new MapPlayerEntry(charId, character, sendPacket, token);
     }
 
-    public void Deregister(int mapId, int charId)
+    public bool Deregister(int mapId, int charId, object token)
     {
-        if (_maps.TryGetValue(mapId, out var map))
+        ArgumentNullException.ThrowIfNull(token);
+
+        if (!_maps.TryGetValue(mapId, out var map) ||
+            !map.TryGetValue(charId, out var entry) ||
+            !ReferenceEquals(entry.Token, token))
         {
-            map.TryRemove(charId, out _);
+            return false;
         }
+
+        var pair = new KeyValuePair<int, MapPlayerEntry>(charId, entry);
+        return ((ICollection<KeyValuePair<int, MapPlayerEntry>>)map).Remove(pair);
     }
 
     public IReadOnlyList<MapPlayerEntry> GetOthers(int mapId, int charId)

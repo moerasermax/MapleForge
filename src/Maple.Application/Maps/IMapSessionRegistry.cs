@@ -12,10 +12,10 @@ public interface IMapSessionRegistry
     /// 玩家進入地圖時登記（必須在 SET_FIELD 之後呼叫）。
     /// sendPacket 是該 session 的封包送出函式（thread-safe lambda）。
     /// </summary>
-    void Register(int mapId, int charId, Character character, Func<byte[], CancellationToken, Task> sendPacket);
+    void Register(int mapId, int charId, Character character, Func<byte[], CancellationToken, Task> sendPacket, object token);
 
     /// <summary>玩家離開地圖時取消登記。</summary>
-    void Deregister(int mapId, int charId);
+    bool Deregister(int mapId, int charId, object token);
 
     /// <summary>取得同地圖其他玩家（不包含 charId 自己）。</summary>
     IReadOnlyList<MapPlayerEntry> GetOthers(int mapId, int charId);
@@ -25,4 +25,5 @@ public interface IMapSessionRegistry
 public sealed record MapPlayerEntry(
     int CharId,
     Character Character,
-    Func<byte[], CancellationToken, Task> SendPacket);
+    Func<byte[], CancellationToken, Task> SendPacket,
+    object Token);

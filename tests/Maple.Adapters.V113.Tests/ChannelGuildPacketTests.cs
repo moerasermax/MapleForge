@@ -157,7 +157,8 @@ public sealed class ChannelGuildPacketTests
             {
                 sentPackets.Add(packet);
                 return Task.CompletedTask;
-            }));
+            }),
+            new object());
         var hook = new CentralGuildSessionHook(online);
 
         var found = await hook.FindOnlinePlayerByNameAsync("guest", CancellationToken.None);
