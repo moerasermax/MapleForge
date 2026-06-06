@@ -11,9 +11,9 @@ public sealed record OnlinePlayer(
 
 public interface IOnlinePlayerRegistry
 {
-    void Register(OnlinePlayer player);
+    void Register(OnlinePlayer player, object token);
 
-    OnlinePlayer? Deregister(int characterId);
+    OnlinePlayer? Deregister(int characterId, object token);
 
     OnlinePlayer? FindById(int characterId);
 

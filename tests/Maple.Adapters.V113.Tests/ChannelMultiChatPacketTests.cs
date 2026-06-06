@@ -230,7 +230,8 @@ public sealed class ChannelMultiChatPacketTests
             player.Character.Name,
             channel,
             player.Character,
-            SendTo(packets)));
+            SendTo(packets)),
+            new object());
     }
 
     private static byte[] GroupChatRequest(GroupChatKind kind, IReadOnlyList<int> recipientIds, string text)

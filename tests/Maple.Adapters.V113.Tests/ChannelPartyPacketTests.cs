@@ -104,7 +104,8 @@ public sealed class ChannelPartyPacketTests
             {
                 sentPackets.Add(packet);
                 return Task.CompletedTask;
-            }));
+            }),
+            new object());
         var hook = new CentralPartySessionHook(online);
 
         var found = await hook.FindOnlinePlayerByNameAsync("guest", CancellationToken.None);
