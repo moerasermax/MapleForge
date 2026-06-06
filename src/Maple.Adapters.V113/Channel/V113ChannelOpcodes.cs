@@ -16,7 +16,11 @@ internal static class V113ChannelRecvOp
     public const short HealOverTime = 0x53;
     public const short DistributeSp = 0x54;
     public const short QuestAction = 0x65;
+    public const short PartyChat = 0x70;
+    public const short Whisper = 0x71;
     public const short PartyOperation = 0x74;
+    public const short GuildOperation = 0x76;
+    public const short DenyGuildRequest = 0x77;
     public const short BuddyListModify = 0x7A;
     public const short UpdateQuest = 0x10B;
     public const short UseItemQuest = 0x10D;
@@ -26,6 +30,7 @@ internal static class V113ChannelRecvOp
     public const short Storage = 0x37;
     public const short ItemMove = 0x41;      // 背包格內移動 / 穿脫裝 / 丟棄（dst=0）
     public const short ItemPickup = unchecked((short)0xC6);
+    public const short CashShopOperation = unchecked((short)0xE6);
     public const short Pong = 0x0E;
 }
 
@@ -45,6 +50,9 @@ internal static class V113ChannelSendOp
     public const short ShowQuestCompletion = 0x2E;
     public const short PartyOperation = 0x37;
     public const short BuddyList = 0x38;
+    public const short GuildOperation = 0x3A;
+    public const short MultiChat = 0x84;
+    public const short Whisper = 0x85;
     public const short SpawnNpc = unchecked((short)0xF9);              // SPAWN_NPC
     public const short RemoveNpc = unchecked((short)0xFA);            // REMOVE_NPC
     public const short SpawnNpcRequestController = unchecked((short)0xFB);  // SPAWN_NPC_REQUEST_CONTROLLER
@@ -59,6 +67,8 @@ internal static class V113ChannelSendOp
     public const short OpenNpcShop = 0x13D;
     public const short ConfirmShopTransaction = 0x13E;
     public const short OpenStorage = 0x141;
+    public const short CashShopUpdate = 0x157;
+    public const short CashShopOperation = 0x158;
     public const short SpawnMonster = unchecked((short)0xE5);
     public const short KillMonster = unchecked((short)0xE6);
     public const short SpawnMonsterControl = unchecked((short)0xE7);

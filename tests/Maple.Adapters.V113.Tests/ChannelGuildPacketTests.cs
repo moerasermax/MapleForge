@@ -68,6 +68,37 @@ public sealed class ChannelGuildPacketTests
     }
 
     [Fact]
+    public void SpawnPlayer_WritesGuildDisplayBeforeBuffMasks()
+    {
+        var character = new Character
+        {
+            Id = 9,
+            Name = "Hero",
+            Level = 12,
+        };
+        var guild = new V113SpawnGuildInfo(
+            "Forge",
+            LogoBackground: 7,
+            LogoBackgroundColor: 2,
+            Logo: 9,
+            LogoColor: 4);
+
+        var reader = new PacketReader(V113MapPackets.SpawnPlayer(character, 10, 20, 0, 30, guild));
+
+        Assert.Equal(unchecked((short)0x99), reader.ReadShort());
+        Assert.Equal(9, reader.ReadInt());
+        Assert.Equal(12, reader.ReadByte());
+        Assert.Equal("Hero", reader.ReadMapleString());
+        Assert.Equal("Forge", reader.ReadMapleString());
+        Assert.Equal(7, reader.ReadShort());
+        Assert.Equal(2, reader.ReadByte());
+        Assert.Equal(9, reader.ReadShort());
+        Assert.Equal(4, reader.ReadByte());
+        Assert.Equal(0, reader.ReadInt());
+        Assert.Equal(0x00FFFC00, reader.ReadInt());
+    }
+
+    [Fact]
     public async Task AcceptedOperation_SendsFullInfoToSelfAndBroadcastsNewMember()
     {
         var characters = new FakeCharacterRepository();

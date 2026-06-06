@@ -1,3 +1,4 @@
+using Maple.Application.Guilds;
 using Maple.Application.Parties;
 using Maple.Core.Characters;
 
@@ -17,11 +18,13 @@ public sealed class ChatService
 {
     private readonly IChatOnlineRegistry _online;
     private readonly IPartyRegistry _parties;
+    private readonly IGuildRegistry _guilds;
 
-    public ChatService(IChatOnlineRegistry online, IPartyRegistry parties)
+    public ChatService(IChatOnlineRegistry online, IPartyRegistry parties, IGuildRegistry guilds)
     {
         _online = online;
         _parties = parties;
+        _guilds = guilds;
     }
 
     public void RegisterOnline(
@@ -46,20 +49,52 @@ public sealed class ChatService
     public ChatOnlinePlayer? FindOnlineById(int characterId) =>
         _online.FindById(characterId);
 
-    public IReadOnlyList<ChatRecipient> GetRecipients(
+    public async ValueTask<IReadOnlyList<ChatRecipient>> GetRecipientsAsync(
         Character sender,
         GroupChatKind kind,
-        IReadOnlyList<int> clientRecipientIds)
+        IReadOnlyList<int> clientRecipientIds,
+        CancellationToken ct = default)
     {
         return kind switch
         {
             GroupChatKind.Buddy => GetBuddyRecipients(sender, clientRecipientIds),
             GroupChatKind.Party => GetPartyRecipients(sender),
-            // Guild/alliance chat is reserved until guild runtime state is ported.
-            GroupChatKind.Guild => Array.Empty<ChatRecipient>(),
+            GroupChatKind.Guild => await GetGuildRecipientsAsync(sender, ct).ConfigureAwait(false),
+            // Alliance chat is reserved until alliance runtime state is ported.
             GroupChatKind.Alliance => Array.Empty<ChatRecipient>(),
             _ => Array.Empty<ChatRecipient>(),
         };
+    }
+
+    private async ValueTask<IReadOnlyList<ChatRecipient>> GetGuildRecipientsAsync(Character sender, CancellationToken ct)
+    {
+        if (sender.GuildId <= 0)
+        {
+            return Array.Empty<ChatRecipient>();
+        }
+
+        var guild = await _guilds.GetGuildForCharacterAsync(sender.Id, ct).ConfigureAwait(false);
+        if (guild is null)
+        {
+            return Array.Empty<ChatRecipient>();
+        }
+
+        var recipients = new List<ChatRecipient>(guild.Members.Count);
+        foreach (var member in guild.Members)
+        {
+            if (member.CharacterId == sender.Id)
+            {
+                continue;
+            }
+
+            var online = _online.FindById(member.CharacterId);
+            if (online is not null)
+            {
+                recipients.Add(ToRecipient(online));
+            }
+        }
+
+        return recipients;
     }
 
     private IReadOnlyList<ChatRecipient> GetPartyRecipients(Character sender)

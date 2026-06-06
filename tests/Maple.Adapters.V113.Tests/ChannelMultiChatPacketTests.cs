@@ -1,7 +1,9 @@
 using Maple.Adapters.V113.Channel;
 using Maple.Application.Chats;
+using Maple.Application.Guilds;
 using Maple.Application.Parties;
 using Maple.Core.Characters;
+using Maple.Core.Guilds;
 using Maple.Core.IO;
 using Maple.Core.Parties;
 using Maple.Core.World;
@@ -176,11 +178,46 @@ public sealed class ChannelMultiChatPacketTests
         Assert.Empty(hiddenPackets);
     }
 
+    [Fact]
+    public async Task GuildChat_BroadcastsToOnlineGuildMembersExceptSender()
+    {
+        var online = new InMemoryChatOnlineRegistry();
+        var partyRegistry = new InMemoryPartyRegistry();
+        var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 60);
+        var chatService = new ChatService(online, partyRegistry, guildRegistry);
+        var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
+        var sender = Player(1, "Alice");
+        var target = Player(2, "Bob");
+        var targetPackets = new List<byte[]>();
+
+        var created = await guildRegistry.CreateGuildAsync(
+            GuildMember.FromCharacter(sender.Character, channel: 1, rank: Guild.LeaderRank),
+            "Forge",
+            signature: 123,
+            CancellationToken.None);
+        var guildId = created.Guild!.Id;
+        sender.Character.GuildId = guildId;
+        target.Character.GuildId = guildId;
+        await guildRegistry.AddMemberAsync(
+            guildId,
+            GuildMember.FromCharacter(target.Character, channel: 1, rank: Guild.DefaultMemberRank, guildId: guildId),
+            CancellationToken.None);
+
+        handler.OnPlayerLoggedIn(sender, channel: 1, SendTo(new List<byte[]>()));
+        handler.OnPlayerLoggedIn(target, channel: 1, SendTo(targetPackets));
+
+        var request = GroupChatRequest(GroupChatKind.Guild, [target.Character.Id], "guild hi");
+
+        await handler.HandleGroupChatAsync(new PacketReader(request), sender, CancellationToken.None);
+
+        AssertMultiChat(Assert.Single(targetPackets), GroupChatKind.Guild, "Alice", "guild hi");
+    }
+
     private static (V113ChatHandler Handler, PartyService Parties) CreateHandler(int firstPartyId = 1)
     {
         var online = new InMemoryChatOnlineRegistry();
         var partyRegistry = new InMemoryPartyRegistry(firstPartyId);
-        var chatService = new ChatService(online, partyRegistry);
+        var chatService = new ChatService(online, partyRegistry, new InMemoryGuildRegistry(new FakeGuildRepository()));
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
         return (handler, new PartyService(partyRegistry));
     }
@@ -246,5 +283,37 @@ public sealed class ChannelMultiChatPacketTests
         Assert.Equal(targetName, reader.ReadMapleString());
         Assert.Equal(reply, reader.ReadByte());
         Assert.Equal(0, reader.Remaining);
+    }
+
+    private sealed class FakeGuildRepository : IGuildRepository
+    {
+        private readonly Dictionary<int, Guild> _guilds = new();
+
+        public Task<IReadOnlyList<Guild>> GetAllAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<Guild>>(_guilds.Values.ToList());
+
+        public Task<Guild?> FindByIdAsync(int guildId, CancellationToken ct = default) =>
+            Task.FromResult(_guilds.GetValueOrDefault(guildId));
+
+        public Task<Guild?> FindByNameAsync(string name, CancellationToken ct = default) =>
+            Task.FromResult(_guilds.Values.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase)));
+
+        public Task AddAsync(Guild guild, CancellationToken ct = default)
+        {
+            _guilds[guild.Id] = guild;
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(Guild guild, CancellationToken ct = default)
+        {
+            _guilds[guild.Id] = guild;
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync(int guildId, CancellationToken ct = default)
+        {
+            _guilds.Remove(guildId);
+            return Task.CompletedTask;
+        }
     }
 }

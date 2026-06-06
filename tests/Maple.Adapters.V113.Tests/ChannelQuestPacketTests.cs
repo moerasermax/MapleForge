@@ -87,6 +87,9 @@ public sealed class ChannelQuestPacketTests
             Id = 7,
             Name = "QuestChar",
             MapId = 100000000,
+            GuildId = 321,
+            GuildRank = 2,
+            AllianceRank = 3,
             BuddyList = new BuddyList { Capacity = 25 },
             Quests =
             [
@@ -114,7 +117,12 @@ public sealed class ChannelQuestPacketTests
             ],
         };
 
-        var reader = new PacketReader(V113ChannelPackets.SetField(character, channelIndex: 0));
+        var packet = V113ChannelPackets.SetField(character, channelIndex: 0);
+        const int buddyCapacityOffset = 2 + 4 + 1 + 1 + 2 + 12 + 8 + 1 + 129;
+        Assert.Equal(25, packet[buddyCapacityOffset]);
+        Assert.Equal(0, packet[buddyCapacityOffset + 1]);
+
+        var reader = new PacketReader(packet);
 
         Assert.Equal(V113ChannelSendOp.SetField, reader.ReadShort());
         reader.Skip(4 + 1 + 1 + 2 + 12); // channel/login flags/CRand

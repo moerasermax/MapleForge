@@ -4,6 +4,13 @@ using Maple.Core.World;
 
 namespace Maple.Adapters.V113.Channel;
 
+internal sealed record V113SpawnGuildInfo(
+    string Name,
+    short LogoBackground,
+    byte LogoBackgroundColor,
+    short Logo,
+    byte LogoColor);
+
 /// <summary>
 /// v113 地圖相關封包：SPAWN_PLAYER / REMOVE_PLAYER_FROM_MAP / MOVE_PLAYER 廣播。
 /// 封包格式來自舊 Java MaplePacketCreator.spawnPlayerMapobject / removePlayerFromMap / movePlayer。
@@ -21,19 +28,26 @@ internal static class V113MapPackets
     /// SPAWN_PLAYER 封包（最小版本，無 buff/mount/ring）。
     /// DoD：客戶端能在地圖上看到其他玩家的角色外觀與位置。
     /// </summary>
-    public static byte[] SpawnPlayer(Character chr, short x, short y, byte stance, short foothold)
+    public static byte[] SpawnPlayer(Character chr, short x, short y, byte stance, short foothold, V113SpawnGuildInfo? guild = null)
     {
         var w = new PacketWriter(512);
         w.WriteShort(SpawnPlayerOp);
         w.WriteInt(chr.Id);
         w.WriteByte(chr.Level);
         w.WriteMapleString(chr.Name);
-        // Guild: empty
-        w.WriteMapleString(string.Empty);
-        w.WriteShort(0);   // guild logo BG
-        w.WriteByte(0);    // guild logo BG color
-        w.WriteShort(0);   // guild logo
-        w.WriteByte(0);    // guild logo color
+        if (guild is null)
+        {
+            w.WriteMapleString(string.Empty);
+            w.WriteZeroBytes(6);
+        }
+        else
+        {
+            w.WriteMapleString(guild.Name);
+            w.WriteShort(guild.LogoBackground);
+            w.WriteByte(guild.LogoBackgroundColor);
+            w.WriteShort(guild.Logo);
+            w.WriteByte(guild.LogoColor);
+        }
 
         // Buff masks
         w.WriteLong(0x00FFFC0000000000L);  // fbuffmask

@@ -3,6 +3,7 @@ using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
 using Maple.Application.Drops;
+using Maple.Application.Guilds;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
 using Maple.Application.Parties;
@@ -43,9 +44,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly CombatService _combatService;
     private readonly SkillService _skillService;
     private readonly DropService _dropService;
+    private readonly GuildService _guildService;
     private readonly RangedMagicCombatService _rangedMagicCombatService;
     private readonly V113BuddyHandler _buddyHandler;
     private readonly V113PartyOperationHandler _partyOperationHandler;
+    private readonly V113GuildOperationHandler _guildOperationHandler;
+    private readonly V113CashShopOperationHandler _cashShopOperationHandler;
+    private readonly V113ChatHandler _chatHandler;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
     private readonly V113ChannelOptions _options;
@@ -63,9 +68,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CombatService combatService,
         SkillService skillService,
         DropService dropService,
+        GuildService guildService,
         RangedMagicCombatService rangedMagicCombatService,
         V113BuddyHandler buddyHandler,
         V113PartyOperationHandler partyOperationHandler,
+        V113GuildOperationHandler guildOperationHandler,
+        V113CashShopOperationHandler cashShopOperationHandler,
+        V113ChatHandler chatHandler,
         QuestService questService,
         StatsService statsService,
         V113ChannelOptions options)
@@ -82,9 +91,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _combatService = combatService;
         _skillService = skillService;
         _dropService = dropService;
+        _guildService = guildService;
         _rangedMagicCombatService = rangedMagicCombatService;
         _buddyHandler = buddyHandler;
         _partyOperationHandler = partyOperationHandler;
+        _guildOperationHandler = guildOperationHandler;
+        _cashShopOperationHandler = cashShopOperationHandler;
+        _chatHandler = chatHandler;
         _questService = questService;
         _statsService = statsService;
         _options = options;
@@ -189,6 +202,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 _options.ChannelIndex + 1,
                                 token);
 
+                            _chatHandler.OnPlayerLoggedIn(
+                                player,
+                                _options.ChannelIndex + 1,
+                                (pkt, tkn) => s.SendAsync(pkt, tkn));
+
+                            await _guildOperationHandler.OnPlayerLoggedInAsync(
+                                player,
+                                _options.ChannelIndex + 1,
+                                (pkt, tkn) => s.SendAsync(pkt, tkn),
+                                token);
+
                             var pos = player.Position;
                             currentField = EnterField(chr.MapId, player);
 
@@ -198,10 +222,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             var others = _mapRegistry.GetOthers(chr.MapId, chr.Id);
                             foreach (var other in others)
                             {
-                                var spawnForOther = V113MapPackets.SpawnPlayer(chr, pos.X, pos.Y, pos.Stance, pos.Foothold);
+                                var spawnForOther = await BuildSpawnPlayerPacketAsync(chr, pos.X, pos.Y, pos.Stance, pos.Foothold, token);
                                 await other.SendPacket(spawnForOther, token);
 
-                                var spawnForNew = V113MapPackets.SpawnPlayer(other.Character, 0, 0, 0, 0);
+                                var spawnForNew = await BuildSpawnPlayerPacketAsync(other.Character, 0, 0, 0, 0, token);
                                 await s.SendAsync(spawnForNew, token);
                             }
 
@@ -282,6 +306,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleQuestActionAsync(reader, player, s, token);
                         break;
 
+                    case V113ChannelRecvOp.PartyChat:
+                        if (player is null) break;
+                        await _chatHandler.HandleGroupChatAsync(reader, player, token);
+                        break;
+
+                    case V113ChannelRecvOp.Whisper:
+                        if (player is null) break;
+                        await _chatHandler.HandleWhisperFindAsync(
+                            reader,
+                            player,
+                            _options.ChannelIndex + 1,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
+                            token);
+                        break;
+
                     case V113ChannelRecvOp.PartyOperation:
                         if (player is null) break;
                         await _partyOperationHandler.HandlePartyOperationAsync(
@@ -290,6 +329,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             _options.ChannelIndex,
                             (pkt, tkn) => s.SendAsync(pkt, tkn),
                             token);
+                        break;
+
+                    case V113ChannelRecvOp.GuildOperation:
+                        if (player is null) break;
+                        await _guildOperationHandler.HandleGuildOperationAsync(
+                            reader,
+                            player,
+                            _options.ChannelIndex + 1,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.DenyGuildRequest:
+                        if (player is null) break;
+                        await _guildOperationHandler.HandleDenyGuildRequestAsync(reader, player, token);
                         break;
 
                     case V113ChannelRecvOp.BuddyListModify:
@@ -352,6 +406,27 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleItemPickupAsync(reader, player, currentField, s, token);
                         break;
 
+                    case V113ChannelRecvOp.CashShopOperation:
+                        if (player is null || account is null) break;
+                        var cashShopResult = _cashShopOperationHandler.Handle(reader, account, player);
+                        if (!cashShopResult.Handled) break;
+
+                        foreach (var packet in cashShopResult.Packets)
+                        {
+                            await s.SendAsync(packet, token);
+                        }
+
+                        if (cashShopResult.AccountMutated)
+                        {
+                            await _accounts.UpdateAsync(account, token);
+                        }
+
+                        if (cashShopResult.CharacterMutated)
+                        {
+                            await _charService.UpdateAsync(player.Character, token);
+                        }
+                        break;
+
                     case V113ChannelRecvOp.Pong:
                         break;
 
@@ -365,7 +440,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             if (player is not null)
             {
+                await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
                 await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+                _chatHandler.OnPlayerLoggedOut(player);
 
                 player.FlushInventory();
 
@@ -462,6 +539,32 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         return field;
+    }
+
+    private async Task<byte[]> BuildSpawnPlayerPacketAsync(
+        Character chr,
+        short x,
+        short y,
+        byte stance,
+        short foothold,
+        CancellationToken ct)
+    {
+        V113SpawnGuildInfo? guildInfo = null;
+        if (chr.GuildId > 0)
+        {
+            var guild = await _guildService.GetGuildAsync(chr.GuildId, ct);
+            if (guild is not null)
+            {
+                guildInfo = new V113SpawnGuildInfo(
+                    guild.Name,
+                    guild.Emblem.LogoBackground,
+                    guild.Emblem.LogoBackgroundColor,
+                    guild.Emblem.Logo,
+                    guild.Emblem.LogoColor);
+            }
+        }
+
+        return V113MapPackets.SpawnPlayer(chr, x, y, stance, foothold, guildInfo);
     }
 
     private async Task SendFieldMonstersAsync(FieldInstance field, MapleSession session, CancellationToken ct)

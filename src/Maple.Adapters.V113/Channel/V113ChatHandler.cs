@@ -78,10 +78,11 @@ public sealed class V113ChatHandler
             return;
         }
 
-        var recipients = _chats.GetRecipients(
+        var recipients = await _chats.GetRecipientsAsync(
             player.Character,
             request.Kind,
-            request.RecipientCharacterIds);
+            request.RecipientCharacterIds,
+            ct);
         if (recipients.Count == 0)
         {
             return;

@@ -2,9 +2,12 @@ using Maple.Adapters.V113.Channel;
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
 using Maple.Application.Buddies;
+using Maple.Application.CashShop;
 using Maple.Application.Characters;
+using Maple.Application.Chats;
 using Maple.Application.Combat;
 using Maple.Application.Drops;
+using Maple.Application.Guilds;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
 using Maple.Application.Parties;
@@ -14,10 +17,12 @@ using Maple.Application.Shops;
 using Maple.Application.Skills;
 using Maple.Application.Stats;
 using Maple.Application.Storage;
+using Maple.Content.CashShop;
 using Maple.Content.Quests;
 using Maple.Content.Shops;
 using Maple.Scripting;
 using Maple.Content.Wz;
+using Maple.Core.CashShop;
 using Maple.Core.Data;
 using Maple.Core.Quests;
 using Maple.Core.Shops;
@@ -88,6 +93,8 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IShopCatalog>(_ => new JsonShopCatalog(ResolveShopCatalogPath(builder)));
         builder.Services.AddSingleton<ShopService>();
         builder.Services.AddSingleton<StorageService>();
+        builder.Services.AddSingleton<ICashItemCatalog>(_ => new JsonCashItemCatalog(ResolveCashItemCatalogPath(builder)));
+        builder.Services.AddSingleton<CashShopService>();
         builder.Services.AddSingleton<ISkillCatalog>(_ => new InMemorySkillCatalog(Array.Empty<MapleSkill>()));
         builder.Services.AddSingleton<SkillService>();
         builder.Services.AddSingleton<IMonsterDropCatalog>(_ =>
@@ -109,11 +116,20 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();
         builder.Services.AddSingleton<PartyService>();
         builder.Services.AddSingleton<IV113PartySessionHook, CentralPartySessionHook>();
+        builder.Services.AddSingleton<IGuildRegistry, InMemoryGuildRegistry>();
+        builder.Services.AddSingleton<GuildService>();
+        builder.Services.AddSingleton<IV113GuildSessionHook, CentralGuildSessionHook>();
+        builder.Services.AddSingleton<IChatOnlineRegistry, InMemoryChatOnlineRegistry>();
+        builder.Services.AddSingleton<ChatService>();
+        builder.Services.AddSingleton<IV113ChatSessionHook, CentralChatSessionHook>();
         builder.Services.AddSingleton<IQuestCatalog, MinimalQuestCatalog>();
         builder.Services.AddSingleton<QuestService>();
         builder.Services.AddSingleton<StatsService>();
         builder.Services.AddSingleton<V113BuddyHandler>();
         builder.Services.AddSingleton<V113PartyOperationHandler>();
+        builder.Services.AddSingleton<V113GuildOperationHandler>();
+        builder.Services.AddSingleton<V113CashShopOperationHandler>();
+        builder.Services.AddSingleton<V113ChatHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>
@@ -176,6 +192,36 @@ public static class MapleServerHost
         while (dir is not null)
         {
             var candidate = Path.Combine(dir.FullName, "src", "Maple.Content", "Shops", "npc-shops.v113.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return fromOutput;
+    }
+
+    private static string ResolveCashItemCatalogPath(IHostApplicationBuilder builder)
+    {
+        var configured = builder.Configuration["Content:CashItemCatalogPath"]
+            ?? builder.Configuration["CashShop:CatalogPath"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var fromOutput = Path.Combine(AppContext.BaseDirectory, "CashShop", "minimal-cash-items.v113.json");
+        if (File.Exists(fromOutput))
+        {
+            return fromOutput;
+        }
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "src", "Maple.Content", "CashShop", "minimal-cash-items.v113.json");
             if (File.Exists(candidate))
             {
                 return candidate;
