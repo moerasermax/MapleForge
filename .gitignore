@@ -44,6 +44,11 @@ secrets.json
 client-shot*.png
 *.obj
 
+# ai-cli agent scratch（平行移植時 agent 寫的完成旗標/接手報告，勿入版控）
+.codexdone
+PORT_REPORT.md
+INTEGRATION_REPORT.md
+
 # 封包擷取執行期輸出
 captures/
 
