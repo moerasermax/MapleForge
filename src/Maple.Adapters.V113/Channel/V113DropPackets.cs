@@ -6,6 +6,8 @@ namespace Maple.Adapters.V113.Channel;
 
 internal readonly record struct V113ItemPickupRequest(int Tick, Position ClientPosition, int ObjectId);
 
+internal readonly record struct V113MesoDropRequest(int Tick, int Meso);
+
 /// <summary>v113 掉落/拾取封包。對照 Java MaplePacketCreator drop/remove/show exp gain。</summary>
 internal static class V113DropPackets
 {
@@ -27,6 +29,13 @@ internal static class V113DropPackets
         var y = reader.ReadShort();
         var objectId = reader.ReadInt();
         return new V113ItemPickupRequest(tick, new Position(x, y, 0, 0), objectId);
+    }
+
+    public static V113MesoDropRequest ParseMesoDrop(PacketReader reader)
+    {
+        var tick = reader.ReadInt();
+        var meso = reader.ReadInt();
+        return new V113MesoDropRequest(tick, meso);
     }
 
     public static byte[] DropItemFromMapObject(MapDrop drop, byte mode = 1)

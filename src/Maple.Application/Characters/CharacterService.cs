@@ -69,6 +69,7 @@ public sealed class CharacterService
             MapId      = startMap,
             SpawnPoint = 0,
             Equips     = startEquips,
+            Keymap     = CreateDefaultKeymap(),
         };
 
         await _repo.AddAsync(chr, ct);
@@ -82,5 +83,25 @@ public sealed class CharacterService
         foreach (char c in name)
             if (!char.IsLetterOrDigit(c)) return false;
         return true;
+    }
+
+    private static List<KeyBindingRecord> CreateDefaultKeymap()
+    {
+        int[] keys = [2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 23, 25, 26, 27, 29, 31, 34, 35, 37, 38, 40, 41, 43, 44, 45, 46, 48, 50, 56, 57, 59, 60, 61, 62, 63, 64, 65];
+        int[] types = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 4, 4, 4, 5, 5, 6, 6, 6, 6, 6, 6, 6];
+        int[] actions = [10, 12, 13, 18, 24, 21, 8, 5, 0, 4, 1, 19, 14, 15, 52, 2, 17, 11, 3, 20, 16, 23, 9, 50, 51, 6, 22, 7, 53, 54, 100, 101, 102, 103, 104, 105, 106];
+
+        var keymap = new List<KeyBindingRecord>(keys.Length);
+        for (var i = 0; i < keys.Length; i++)
+        {
+            keymap.Add(new KeyBindingRecord
+            {
+                Key = keys[i],
+                Type = (byte)types[i],
+                Action = actions[i],
+            });
+        }
+
+        return keymap;
     }
 }

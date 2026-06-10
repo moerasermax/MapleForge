@@ -136,6 +136,50 @@ public sealed class Inventory
         }
         return true;
     }
+
+    /// <summary>依 item id 由小到大重新排到前方格位。對照舊 Java ItemSort/ItemGather 的排序主幹。</summary>
+    public bool SortByItemId()
+    {
+        if (_slots.Count <= 1)
+        {
+            return false;
+        }
+
+        var ordered = _slots.Values
+            .Select(static item => item.Copy())
+            .OrderBy(static item => item.ItemId)
+            .ThenBy(static item => item.Slot)
+            .ToArray();
+
+        return Repack(ordered);
+    }
+
+    /// <summary>聚集背包空洞；現階段同 Java 實作一樣也依 item id 排序。</summary>
+    public bool GatherByItemId() => SortByItemId();
+
+    private bool Repack(IReadOnlyList<Item> ordered)
+    {
+        var before = _slots
+            .OrderBy(static pair => pair.Key)
+            .Select(static pair => (Slot: pair.Key, pair.Value.ItemId, pair.Value.Quantity))
+            .ToArray();
+
+        _slots.Clear();
+        short slot = 1;
+        foreach (var item in ordered)
+        {
+            item.Slot = slot;
+            _slots[slot] = item;
+            slot++;
+        }
+
+        var after = _slots
+            .OrderBy(static pair => pair.Key)
+            .Select(static pair => (Slot: pair.Key, pair.Value.ItemId, pair.Value.Quantity))
+            .ToArray();
+
+        return !before.SequenceEqual(after);
+    }
 }
 
 /// <summary>玩家全背包聚合（5 個 type）。執行期掛 <see cref="World.Player"/>，由 ItemRecord hydrate / flush。</summary>

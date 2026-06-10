@@ -137,6 +137,65 @@ internal static class V113MapPackets
     }
 
     /// <summary>
+    /// FACIAL_EXPRESSION (0xB9) — 玩家表情廣播。對照 Java facialExpression(from, expression)。
+    /// 格式：[opcode][int charId][int expression]。
+    /// </summary>
+    public static byte[] FacialExpression(int charId, int expression)
+    {
+        var w = new PacketWriter(10);
+        w.WriteShort(V113ChannelSendOp.FacialExpression);
+        w.WriteInt(charId);
+        w.WriteInt(expression);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// SHOW_CHAIR (0xBD) — 同地圖其他玩家看到角色坐上或離開椅子。對照 Java showChair。
+    /// itemId = 0 表示清除椅子外觀。
+    /// </summary>
+    public static byte[] ShowChair(int charId, int itemId)
+    {
+        var w = new PacketWriter(10);
+        w.WriteShort(V113ChannelSendOp.ShowChair);
+        w.WriteInt(charId);
+        w.WriteInt(itemId);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// CANCEL_CHAIR (0xC6) — 回給本人控制椅子狀態。對照 Java cancelChair。
+    /// id = -1 時 layout 為 [opcode][0]；否則 [opcode][1][short id]。
+    /// </summary>
+    public static byte[] CancelChair(short id)
+    {
+        var w = new PacketWriter(id == -1 ? 3 : 5);
+        w.WriteShort(V113ChannelSendOp.CancelChair);
+        if (id == -1)
+        {
+            w.WriteByte(0);
+        }
+        else
+        {
+            w.WriteByte(1);
+            w.WriteShort(id);
+        }
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// SHOW_ITEM_EFFECT (0xBA) — 玩家頭頂道具效果。對照 Java itemEffect。
+    /// itemId = 0 可用於清除目前道具效果。
+    /// </summary>
+    public static byte[] ItemEffect(int charId, int itemId)
+    {
+        var w = new PacketWriter(10);
+        w.WriteShort(V113ChannelSendOp.ShowItemEffect);
+        w.WriteInt(charId);
+        w.WriteInt(itemId);
+        return w.ToArray();
+    }
+
+    /// <summary>
     /// SPAWN_NPC (0xF9) — 讓進場客戶端看到地圖 NPC。對照 Java spawnNPC。
     /// 布局：[opcode][int objectId][int npcId][short x][short cy][byte dir][short fh][short rx0][short rx1][byte show]。
     /// dir = (f==1 ? 0 : 1)（Java 慣例）。

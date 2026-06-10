@@ -7,6 +7,7 @@ using Maple.Application.Characters;
 using Maple.Application.Chats;
 using Maple.Application.Combat;
 using Maple.Application.Drops;
+using Maple.Application.Fame;
 using Maple.Application.Guilds;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
@@ -113,6 +114,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<CombatService>();
         builder.Services.AddSingleton<RangedMagicCombatService>();
         builder.Services.AddSingleton<IOnlinePlayerRegistry, InMemoryOnlinePlayerRegistry>();
+        builder.Services.AddSingleton<FameService>();
         builder.Services.AddSingleton<BuddyService>();
         builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();
         builder.Services.AddSingleton<PartyService>();

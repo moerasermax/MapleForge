@@ -53,8 +53,8 @@ internal static class V113ChannelPackets
         AddCoolDownInfo(w);
         AddQuestInfo(w, chr);
         AddRingInfo(w);
-        AddRocksInfo(w);
-        AddMonsterBookInfo(w);
+        AddRocksInfo(w, chr);
+        AddMonsterBookInfo(w, chr);
         AddQuestInfoPacket(w, chr);
 
         w.WriteShort(0);
@@ -256,15 +256,22 @@ internal static class V113ChannelPackets
         w.WriteShort(0);
     }
 
-    private static void AddRocksInfo(PacketWriter w)
+    private static void AddRocksInfo(PacketWriter w, Character chr)
     {
-        for (var i = 0; i < 10; i++) w.WriteInt(0);   // regular rocks
-        for (var i = 0; i < 5; i++) w.WriteInt(0);    // VIP rocks
+        foreach (var mapId in chr.GetRegularRockSlots())
+        {
+            w.WriteInt(mapId);
+        }
+
+        foreach (var mapId in chr.GetVipRockSlots())
+        {
+            w.WriteInt(mapId);
+        }
     }
 
-    private static void AddMonsterBookInfo(PacketWriter w)
+    private static void AddMonsterBookInfo(PacketWriter w, Character chr)
     {
-        w.WriteInt(0);      // cover card
+        w.WriteInt(chr.MonsterBookCover); // cover card item id
         w.WriteByte(0);
         w.WriteShort(0);    // entry count
     }

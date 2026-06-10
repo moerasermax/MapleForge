@@ -24,6 +24,15 @@ public sealed partial class Player : IFieldObject
     /// <summary>執行期富背包（由 Character.Items hydrate；所有變動經 Player，checkpoint 時 flush 回）。</summary>
     public Inventories Inventory { get; }
 
+    /// <summary>目前坐著的椅子 id；0 = 未坐椅子。此為 session runtime 狀態，不持久化到 Character。</summary>
+    public int ChairItemId { get; private set; }
+
+    /// <summary>目前顯示中的道具效果 id；0 = 無。此為 session runtime 狀態，不持久化到 Character。</summary>
+    public int ItemEffectItemId { get; private set; }
+
+    /// <summary>目前黑板文字；空字串 = 未顯示。此為 session runtime 狀態，不持久化到 Character。</summary>
+    public string ChalkboardMessage { get; private set; } = string.Empty;
+
     public Player(Character character, Position spawn)
     {
         Character = character;
@@ -59,8 +68,50 @@ public sealed partial class Player : IFieldObject
     /// <summary>背包是否持有指定道具（cm.haveItem 入口）。</summary>
     public bool HasItem(InventoryType type, int itemId) => Inventory.By(type).CountById(itemId) > 0;
 
+    public void UseChair(int itemId) => ChairItemId = itemId;
+
+    public void CancelChair() => ChairItemId = 0;
+
+    public void UseMapChair(short chairId) => ChairItemId = chairId;
+
+    public void UseItemEffect(int itemId) => ItemEffectItemId = itemId;
+
+    public void CancelItemEffect() => ItemEffectItemId = 0;
+
+    public void SetChalkboard(string? message) => ChalkboardMessage = message ?? string.Empty;
+
+    public void ClearChalkboard() => ChalkboardMessage = string.Empty;
+
+    public void UpdateCharacterMessage(string message) => Character.UpdateCharacterMessage(message);
+
+    public void UpdateProfileExpression(byte expression) => Character.UpdateProfileExpression(expression);
+
+    public void UpdateProfileBirthday(byte blood, byte month, byte day, byte constellation)
+        => Character.UpdateProfileBirthday(blood, month, day, constellation);
+
+    public bool UpdatePetAutoPot(int type, int itemId) => Character.UpdatePetAutoPot(type, itemId);
+
+    public bool AddRegularRock(int mapId) => Character.AddRegularRock(mapId);
+
+    public bool AddVipRock(int mapId) => Character.AddVipRock(mapId);
+
+    public bool RemoveRegularRock(int mapId) => Character.RemoveRegularRock(mapId);
+
+    public bool RemoveVipRock(int mapId) => Character.RemoveVipRock(mapId);
+
+    public void ChangeKeyBinding(int key, byte type, int action) => Character.ChangeKeyBinding(key, type, action);
+
+    public void UpdateSkillMacro(int position, string name, byte shout, int skill1, int skill2, int skill3)
+        => Character.UpdateSkillMacro(position, name, shout, skill1, skill2, skill3);
+
+    public void ChangeMonsterBookCover(int coverItemId) => Character.ChangeMonsterBookCover(coverItemId);
+
     /// <summary>格內移動道具（ITEM_MOVE 入口；變動唯一經 Player）。</summary>
     public bool MoveItem(InventoryType type, short src, short dst) => Inventory.By(type).Move(src, dst);
+
+    public bool GatherInventory(InventoryType type) => Inventory.By(type).GatherByItemId();
+
+    public bool SortInventory(InventoryType type) => Inventory.By(type).SortByItemId();
 
     /// <summary>把執行期背包 flush 回 Character.Items（checkpoint/換圖/登出時呼叫）。</summary>
     public void FlushInventory() => Character.Items = Inventory.Flush();

@@ -122,6 +122,44 @@ public sealed class DropServiceTests
     }
 
     [Fact]
+    public void TryDropMeso_DeductsMesoAndSpawnsPlayerDrop()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        player.Character.Meso = 1_000;
+        field.Add(player);
+
+        var result = service.TryDropMeso(field, player, 50);
+
+        Assert.True(result.Success);
+        Assert.Equal(950, player.Character.Meso);
+        Assert.NotNull(result.Drop);
+        Assert.Equal(50, result.Drop!.Meso);
+        Assert.True(result.Drop.PlayerDrop);
+        Assert.Equal(player.ObjectId, result.Drop.SourceObjectId);
+        Assert.Same(result.Drop, field.Get(result.Drop.ObjectId));
+    }
+
+    [Theory]
+    [InlineData(9, MesoDropStatus.InvalidAmount)]
+    [InlineData(50_001, MesoDropStatus.InvalidAmount)]
+    [InlineData(2_000, MesoDropStatus.NotEnoughMeso)]
+    public void TryDropMeso_RejectsInvalidAmounts(int meso, MesoDropStatus status)
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        player.Character.Meso = 1_000;
+
+        var result = service.TryDropMeso(field, player, meso);
+
+        Assert.Equal(status, result.Status);
+        Assert.Equal(1_000, player.Character.Meso);
+        Assert.Null(result.Drop);
+    }
+
+    [Fact]
     public void TryPickup_RejectsSoloDropForDifferentOwner()
     {
         var service = MakeDropService();

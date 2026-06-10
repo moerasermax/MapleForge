@@ -27,6 +27,20 @@ public sealed class ChannelDropPacketTests
     }
 
     [Fact]
+    public void ParseMesoDrop_ReadsTickAndMeso()
+    {
+        var body = new PacketWriter()
+            .WriteInt(1234)
+            .WriteInt(50)
+            .ToArray();
+
+        var req = V113DropPackets.ParseMesoDrop(new PacketReader(body));
+
+        Assert.Equal(1234, req.Tick);
+        Assert.Equal(50, req.Meso);
+    }
+
+    [Fact]
     public void DropItemFromMapObject_Item_WritesJavaLayout()
     {
         var drop = MapDrop.ForItem(

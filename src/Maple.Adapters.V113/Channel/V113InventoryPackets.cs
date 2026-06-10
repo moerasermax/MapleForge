@@ -19,6 +19,12 @@ internal readonly record struct ItemMoveRequest(byte RawType, short Src, short D
     public bool IsDropMove => Dst == 0;
 }
 
+internal readonly record struct V113InventoryArrangeRequest(int Tick, byte RawType)
+{
+    public bool IsValidBagType => InventoryTypes.IsValid(RawType);
+    public InventoryType Type => (InventoryType)RawType;
+}
+
 /// <summary>
 /// v113 背包封包：解 ITEM_MOVE(c2s 0x41)、編 MODIFY_INVENTORY_ITEM(s2c 0x1B)。
 /// 對照 Java InventoryHandler.ItemMove / MaplePacketCreator.MODIFY_INVENTORY_ITEM。
@@ -35,6 +41,17 @@ internal static class V113InventoryPackets
         var qty = reader.Remaining >= 2 ? reader.ReadShort() : (short)0;
         return new ItemMoveRequest(type, src, dst, qty);
     }
+
+    public static V113InventoryArrangeRequest ParseArrange(PacketReader reader)
+    {
+        var tick = reader.ReadInt();
+        var type = reader.ReadByte();
+        return new V113InventoryArrangeRequest(tick, type);
+    }
+
+    public static byte[] FinishedSort(byte type) => InventoryArrangeResult(V113ChannelSendOp.GatherItemResult, type);
+
+    public static byte[] FinishedGather(byte type) => InventoryArrangeResult(V113ChannelSendOp.SortItemResult, type);
 
     /// <summary>
     /// MODIFY_INVENTORY_ITEM：單筆「移動(mode 2)」。
@@ -53,6 +70,15 @@ internal static class V113InventoryPackets
         w.WriteShort(dst);           // new position
         if (src < 0 || dst < 0)
             w.WriteByte(src < 0 ? 1 : 2);
+        return w.ToArray();
+    }
+
+    private static byte[] InventoryArrangeResult(short opcode, byte type)
+    {
+        var w = new PacketWriter(4);
+        w.WriteShort(opcode);
+        w.WriteByte(1);
+        w.WriteByte(type);
         return w.ToArray();
     }
 }

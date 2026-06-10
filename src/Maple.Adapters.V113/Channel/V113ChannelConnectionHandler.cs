@@ -3,6 +3,7 @@ using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
 using Maple.Application.Drops;
+using Maple.Application.Fame;
 using Maple.Application.Guilds;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
@@ -46,6 +47,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly CombatService _combatService;
     private readonly SkillService _skillService;
     private readonly DropService _dropService;
+    private readonly FameService _fameService;
     private readonly GuildService _guildService;
     private readonly RangedMagicCombatService _rangedMagicCombatService;
     private readonly V113BuddyHandler _buddyHandler;
@@ -71,6 +73,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CombatService combatService,
         SkillService skillService,
         DropService dropService,
+        FameService fameService,
         GuildService guildService,
         RangedMagicCombatService rangedMagicCombatService,
         V113BuddyHandler buddyHandler,
@@ -95,6 +98,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _combatService = combatService;
         _skillService = skillService;
         _dropService = dropService;
+        _fameService = fameService;
         _guildService = guildService;
         _rangedMagicCombatService = rangedMagicCombatService;
         _buddyHandler = buddyHandler;
@@ -299,9 +303,24 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await BroadcastToOthersAsync(player.Character, body, token);  // 原始 blob 轉發(動畫擬真)
                         break;
 
+                    case V113ChannelRecvOp.UseChair:
+                        if (player is null) break;
+                        await HandleUseChairAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.CancelChair:
+                        if (player is null) break;
+                        await HandleCancelChairAsync(reader, player, s, token);
+                        break;
+
                     case V113ChannelRecvOp.ChangeMap:
                         if (player is null) break;
                         await HandleChangeMapAsync(reader, token);                    // 腳走傳送點換圖
+                        break;
+
+                    case V113ChannelRecvOp.UseInnerPortal:
+                        if (player is null) break;
+                        await HandleUseInnerPortalAsync(reader, player, s, token);
                         break;
 
                     case V113ChannelRecvOp.CloseRangeAttack:
@@ -319,9 +338,54 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleMagicAttackAsync(reader, player, currentField, s, token);
                         break;
 
+                    case V113ChannelRecvOp.TakeDamage:
+                        if (player is null || currentField is null) break;
+                        await HandleTakeDamageAsync(reader, player, currentField, s, token);
+                        break;
+
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
                         await HandleGeneralChatAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.CloseChalkboard:
+                        if (player is null) break;
+                        await HandleCloseChalkboardAsync(player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.FaceExpression:
+                        if (player is null) break;
+                        await HandleFaceExpressionAsync(reader, player, token);
+                        break;
+
+                    case V113ChannelRecvOp.UseItemEffect:
+                        if (player is null) break;
+                        await HandleUseItemEffectAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.MonsterBookCover:
+                        if (player is null) break;
+                        await HandleMonsterBookCoverAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.GiveFame:
+                        if (player is null) break;
+                        await HandleGiveFameAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.MesoDrop:
+                        if (player is null || currentField is null) break;
+                        await HandleMesoDropAsync(reader, player, currentField, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.CharInfoRequest:
+                        if (player is null) break;
+                        await HandleCharInfoRequestAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.TrockAddMap:
+                        if (player is null) break;
+                        await HandleTrockAddMapAsync(reader, player, s, token);
                         break;
 
                     case V113ChannelRecvOp.DistributeAp:
@@ -364,6 +428,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.QuestAction:
                         if (player is null) break;
                         await HandleQuestActionAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.SkillMacro:
+                        if (player is null) break;
+                        await HandleSkillMacroAsync(reader, player, s, token);
                         break;
 
                     case V113ChannelRecvOp.PartyChat:
@@ -416,6 +485,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             token);
                         break;
 
+                    case V113ChannelRecvOp.ChangeKeymap:
+                        if (player is null) break;
+                        await HandleChangeKeymapAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.UpdateCharInfo:
+                        if (player is null) break;
+                        await HandleUpdateCharInfoAsync(reader, player, s, token);
+                        break;
+
                     case V113ChannelRecvOp.UpdateQuest:
                         if (player is null) break;
                         await HandleUpdateQuestAsync(reader, player, s, token);
@@ -459,6 +538,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.ItemMove:
                         if (player is null) break;
                         await HandleItemMoveAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.ItemGather:
+                        if (player is null) break;
+                        await HandleItemArrangeAsync(reader, player, s, isSort: false, token);
+                        break;
+
+                    case V113ChannelRecvOp.ItemSort:
+                        if (player is null) break;
+                        await HandleItemArrangeAsync(reader, player, s, isSort: true, token);
+                        break;
+
+                    case V113ChannelRecvOp.CancelItemEffect:
+                        if (player is null) break;
+                        await HandleCancelItemEffectAsync(reader, player, token);
                         break;
 
                     case V113ChannelRecvOp.ItemPickup:
@@ -812,6 +906,268 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    private async Task HandleGiveFameAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        V113GiveFameRequest request;
+        try
+        {
+            request = V113FamePackets.ParseGiveFame(reader);
+        }
+        catch (InvalidDataException)
+        {
+            await session.SendAsync(V113FamePackets.GiveFameError(FameResultStatus.InvalidMode), ct);
+            return;
+        }
+
+        var result = _fameService.GiveFame(
+            player,
+            request.TargetCharacterId,
+            request.Mode,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+        if (result.Status != FameResultStatus.Success || result.Target is null)
+        {
+            await session.SendAsync(V113FamePackets.GiveFameError(result.Status), ct);
+            return;
+        }
+
+        await session.SendAsync(
+            V113FamePackets.GiveFameResponse(request.Mode, result.Target.Name, result.NewFame),
+            ct);
+        await result.Target.SendPacket(
+            V113StatsPackets.UpdateStats(new[]
+            {
+                new PlayerStatUpdate(PlayerStatKind.Fame, result.NewFame),
+            }),
+            ct);
+        await result.Target.SendPacket(V113FamePackets.ReceiveFame(request.Mode, player.Character.Name), ct);
+    }
+
+    private async Task HandleCharInfoRequestAsync(PacketReader reader, Player requester, MapleSession session, CancellationToken ct)
+    {
+        int targetCharacterId;
+        try
+        {
+            targetCharacterId = V113CharacterInfoPackets.ParseCharInfoRequest(reader);
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] CHAR_INFO_REQUEST packet invalid charId={CharId}", requester.Character.Id);
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+
+        var target = FindCharacterInSameMap(requester, targetCharacterId);
+        if (target is null)
+        {
+            return;
+        }
+
+        var social = await BuildCharacterInfoSocialAsync(target, ct);
+        await session.SendAsync(V113CharacterInfoPackets.CharInfo(target, social), ct);
+    }
+
+    private async Task HandleUpdateCharInfoAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        V113CharacterInfoUpdate request;
+        try
+        {
+            request = V113CharacterInfoPackets.ParseUpdateCharInfo(reader);
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] UPDATE_CHAR_INFO packet invalid charId={CharId}", player.Character.Id);
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        switch (request.Kind)
+        {
+            case V113CharacterInfoUpdateKind.None:
+                await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+                return;
+            case V113CharacterInfoUpdateKind.CharacterMessage:
+                player.UpdateCharacterMessage(request.Message);
+                break;
+            case V113CharacterInfoUpdateKind.Expression:
+                player.UpdateProfileExpression(request.Expression);
+                break;
+            case V113CharacterInfoUpdateKind.Birthday:
+                player.UpdateProfileBirthday(request.Blood, request.BirthMonth, request.BirthDay, request.Constellation);
+                break;
+            default:
+                _log.LogDebug("[Channel] UPDATE_CHAR_INFO ignored unknown type={Type} charId={CharId}", request.RawKind, player.Character.Id);
+                await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+                return;
+        }
+
+        await _charService.UpdateAsync(player.Character, ct);
+    }
+
+    private async Task HandleTrockAddMapAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        V113TrockAddMapRequest request;
+        try
+        {
+            request = V113TrockPackets.ParseAddMap(reader);
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] TROCK_ADD_MAP packet invalid charId={CharId}", player.Character.Id);
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        var mapId = player.Character.MapId;
+        var changed = false;
+        if (request.IsVip)
+        {
+            if (request.IsDelete)
+            {
+                changed = player.RemoveVipRock(request.MapId);
+            }
+            else if (request.IsAdd && mapId != 180000000)
+            {
+                changed = player.AddVipRock(mapId);
+            }
+        }
+        else if (request.IsDelete)
+        {
+            changed = player.RemoveRegularRock(request.MapId);
+        }
+        else if (request.IsAdd && mapId <= 197010000 && mapId != 180000000)
+        {
+            changed = player.AddRegularRock(mapId);
+        }
+
+        if (changed)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+
+        await session.SendAsync(V113TrockPackets.MapTransferResult(player.Character, request.Vip, request.IsDelete), ct);
+    }
+
+    private async Task HandleMonsterBookCoverAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        int coverItemId;
+        try
+        {
+            coverItemId = V113MonsterBookPackets.ParseChangeCover(reader);
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] MONSTER_BOOK_COVER packet invalid charId={CharId}", player.Character.Id);
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        if (!V113MonsterBookPackets.IsMonsterCardOrClear(coverItemId))
+        {
+            return;
+        }
+
+        player.ChangeMonsterBookCover(coverItemId);
+        await _charService.UpdateAsync(player.Character, ct);
+        await session.SendAsync(V113MonsterBookPackets.ChangeCover(coverItemId), ct);
+    }
+
+    private async Task HandleChangeKeymapAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        V113ChangeKeymapRequest request;
+        try
+        {
+            request = V113KeymapPackets.ParseChangeKeymap(reader);
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] CHANGE_KEYMAP packet invalid charId={CharId}", player.Character.Id);
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        if (request.IsPetAutoPot)
+        {
+            if (player.UpdatePetAutoPot(request.PetAutoPotType, request.PetAutoPotItemId))
+            {
+                await _charService.UpdateAsync(player.Character, ct);
+            }
+
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        foreach (var change in request.Changes)
+        {
+            player.ChangeKeyBinding(change.Key, change.Type, change.Action);
+        }
+
+        await _charService.UpdateAsync(player.Character, ct);
+        _log.LogDebug("[Channel] CHANGE_KEYMAP charId={CharId} tick={Tick} changes={Count}",
+            player.Character.Id,
+            request.Tick,
+            request.Changes.Count);
+    }
+
+    private async Task HandleSkillMacroAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        IReadOnlyList<V113SkillMacroChange> changes;
+        try
+        {
+            changes = V113SkillMacroPackets.ParseChangeSkillMacro(reader);
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] SKILL_MACRO packet invalid charId={CharId}", player.Character.Id);
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        foreach (var change in changes)
+        {
+            player.UpdateSkillMacro(
+                change.Position,
+                change.Name,
+                change.Shout,
+                change.Skill1,
+                change.Skill2,
+                change.Skill3);
+        }
+
+        await _charService.UpdateAsync(player.Character, ct);
+        _log.LogDebug("[Channel] SKILL_MACRO charId={CharId} changes={Count}",
+            player.Character.Id,
+            changes.Count);
+    }
+
+    private Character? FindCharacterInSameMap(Player requester, int targetCharacterId)
+    {
+        if (requester.Character.Id == targetCharacterId)
+        {
+            return requester.Character;
+        }
+
+        return _mapRegistry
+            .GetOthers(requester.Character.MapId, requester.Character.Id)
+            .FirstOrDefault(e => e.CharId == targetCharacterId)
+            ?.Character;
+    }
+
+    private async Task<V113CharacterInfoSocial> BuildCharacterInfoSocialAsync(Character character, CancellationToken ct)
+    {
+        if (character.GuildId <= 0)
+        {
+            return V113CharacterInfoSocial.Empty;
+        }
+
+        var guild = await _guildService.GetGuildAsync(character.GuildId, ct);
+        return guild is null
+            ? V113CharacterInfoSocial.Empty
+            : new V113CharacterInfoSocial(guild.Name, string.Empty);
+    }
+
     private async Task HandleQuestActionAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
     {
         QuestClientAction action;
@@ -900,6 +1256,46 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 result.Request.Src,
                 result.Request.Dst);
         }
+    }
+
+    private async Task HandleItemArrangeAsync(
+        PacketReader reader,
+        Player player,
+        MapleSession session,
+        bool isSort,
+        CancellationToken ct)
+    {
+        V113InventoryArrangeRequest request;
+        try
+        {
+            request = V113InventoryPackets.ParseArrange(reader);
+        }
+        catch (InvalidDataException)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        if (!request.IsValidBagType)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        var changed = isSort
+            ? player.SortInventory(request.Type)
+            : player.GatherInventory(request.Type);
+        if (changed)
+        {
+            player.FlushInventory();
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+
+        var packet = isSort
+            ? V113InventoryPackets.FinishedSort(request.RawType)
+            : V113InventoryPackets.FinishedGather(request.RawType);
+        await session.SendAsync(packet, ct);
+        await session.SendAsync(V113StatsPackets.EnableActions(), ct);
     }
 
     private async Task HandleSpecialMoveAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
@@ -992,6 +1388,44 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(V113DropPackets.UpdateMeso(player.Character.Meso), ct);
             await session.SendAsync(V113DropPackets.ShowMesoGain(result.GainedMeso), ct);
         }
+    }
+
+    private async Task HandleMesoDropAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        V113MesoDropRequest request;
+        try
+        {
+            request = V113DropPackets.ParseMesoDrop(reader);
+        }
+        catch (InvalidDataException)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        MesoDropResult result;
+        lock (field)
+        {
+            result = _dropService.TryDropMeso(field, player, request.Meso);
+        }
+
+        if (!result.Success || result.Drop is null)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        await session.SendAsync(V113DropPackets.UpdateMeso(player.Character.Meso), ct);
+        await BroadcastPacketToMapAsync(
+            player.Character,
+            session,
+            V113DropPackets.DropItemFromMapObject(result.Drop),
+            ct);
     }
 
     private async Task HandleNpcShopAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
@@ -1194,6 +1628,62 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SendCombatHitsAsync(result.Hits, player, session, ct);
     }
 
+    private async Task HandleTakeDamageAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        V113TakeDamageRequest request;
+        try
+        {
+            request = V113PlayerDamagePackets.ParseTakeDamage(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        if (request.Damage < -1 || request.Damage > 60_000)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        if (!request.IsMapDamage)
+        {
+            lock (field)
+            {
+                if (field.Get(request.ObjectId) is not Mob)
+                {
+                    return;
+                }
+            }
+        }
+
+        var applied = request.Damage > 0 ? player.TakeDamage(request.Damage) : (short)0;
+        if (applied > 0)
+        {
+            await session.SendAsync(
+                V113StatsPackets.UpdateStats(new[]
+                {
+                    new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp),
+                }),
+                ct);
+        }
+
+        await BroadcastPacketToOthersAsync(
+            player.Character,
+            V113PlayerDamagePackets.DamagePlayer(
+                player.Character.Id,
+                request.Type,
+                request.Damage,
+                request.MonsterIdFrom,
+                request.Direction),
+            ct);
+    }
+
     private async Task SendCombatHitsAsync(
         IReadOnlyList<CombatMobHit> hits,
         Player player,
@@ -1284,6 +1774,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         var setField = V113ChannelPackets.SetField(chr, _options.ChannelIndex);
         await session.SendAsync(setField, ct);
+        if (V113SkillMacroPackets.SkillMacros(chr) is { } macros)
+        {
+            await session.SendAsync(macros, ct);
+        }
+        await session.SendAsync(V113KeymapPackets.Keymap(chr), ct);
         _log.LogInformation("[Channel] 角色 {Name} SET_FIELD 送出 → 地圖 {Map}", chr.Name, chr.MapId);
         return chr;
     }
@@ -1308,6 +1803,31 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    private async Task HandleUseInnerPortalAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        V113InnerPortalRequest request;
+        try
+        {
+            request = V113InnerPortalPackets.ParseUseInnerPortal(reader);
+        }
+        catch (InvalidDataException)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        var map = _mapService.LoadMap(player.Character.MapId);
+        var portal = map.Portals.FirstOrDefault(p => p.Name == request.PortalName);
+        if (portal is null)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        player.MoveTo(new Position(request.X, request.Y, player.Position.Stance, player.Position.Foothold));
+        await session.SendAsync(V113InnerPortalPackets.CurrentMapWarp((byte)portal.Id), ct);
+    }
+
     /// <summary>
     /// 一般地圖聊天（對照 Java ChatHandler.GeneralChat 核心）。
     /// c2s：[maple string text][byte show]；自己看到 + 廣播同地圖其他玩家 CHATTEXT。
@@ -1329,6 +1849,148 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await session.SendAsync(packet, ct);                  // 自己看到泡泡
         await BroadcastPacketToOthersAsync(player.Character, packet, ct);
         _log.LogInformation("[Channel] 角色 {Name} 地圖聊天「{Text}」", player.Character.Name, text);
+    }
+
+    private async Task HandleCloseChalkboardAsync(Player player, MapleSession session, CancellationToken ct)
+    {
+        player.ClearChalkboard();
+        await BroadcastPacketToMapAsync(
+            player.Character,
+            session,
+            V113ChalkboardPackets.Chalkboard(player.Character.Id, null),
+            ct);
+        _log.LogDebug("[Channel] 角色 {Name} 關閉黑板", player.Character.Name);
+    }
+
+    /// <summary>
+    /// 玩家表情（對照 Java PlayerHandler.ChangeEmotion）。
+    /// c2s：[int emote]；s2c 廣播同地圖其他玩家 FACIAL_EXPRESSION。
+    /// </summary>
+    private async Task HandleFaceExpressionAsync(PacketReader reader, Player player, CancellationToken ct)
+    {
+        int emote;
+        try
+        {
+            emote = reader.ReadInt();
+        }
+        catch (InvalidDataException) { return; }
+
+        if (emote <= 0) return;
+
+        await BroadcastPacketToOthersAsync(
+            player.Character,
+            V113MapPackets.FacialExpression(player.Character.Id, emote),
+            ct);
+        _log.LogDebug("[Channel] 角色 {Name} 表情 {Emote}", player.Character.Name, emote);
+    }
+
+    /// <summary>
+    /// 使用道具效果（對照 Java PlayerHandler.UseItemEffect 主幹）。
+    /// c2s：[int itemId]；同地圖其他玩家收到 SHOW_ITEM_EFFECT。
+    /// </summary>
+    private async Task HandleUseItemEffectAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        int itemId;
+        try
+        {
+            itemId = reader.ReadInt();
+        }
+        catch (InvalidDataException) { return; }
+
+        if (itemId <= 0 || !player.HasItem(Player.InventoryTypeOf(itemId), itemId))
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        if (itemId != 5510000)
+        {
+            player.UseItemEffect(itemId);
+        }
+
+        await BroadcastPacketToOthersAsync(
+            player.Character,
+            V113MapPackets.ItemEffect(player.Character.Id, itemId),
+            ct);
+        _log.LogDebug("[Channel] 角色 {Name} 使用道具效果 {ItemId}", player.Character.Name, itemId);
+    }
+
+    /// <summary>
+    /// 取消道具效果。Java 經 cancelEffect(getItemEffect(-id)) 間接取消；此處用 itemId=0 清除地圖外觀。
+    /// </summary>
+    private async Task HandleCancelItemEffectAsync(PacketReader reader, Player player, CancellationToken ct)
+    {
+        try
+        {
+            reader.ReadInt();
+        }
+        catch (InvalidDataException) { return; }
+
+        player.CancelItemEffect();
+        await BroadcastPacketToOthersAsync(
+            player.Character,
+            V113MapPackets.ItemEffect(player.Character.Id, itemId: 0),
+            ct);
+        _log.LogDebug("[Channel] 角色 {Name} 取消道具效果", player.Character.Name);
+    }
+
+    /// <summary>
+    /// 使用背包椅子（對照 Java PlayerHandler.UseChair 主幹）。
+    /// c2s：[int itemId]；同地圖其他玩家收到 SHOW_CHAIR。
+    /// </summary>
+    private async Task HandleUseChairAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        int itemId;
+        try
+        {
+            itemId = reader.ReadInt();
+        }
+        catch (InvalidDataException) { return; }
+
+        if (itemId <= 0 || !player.HasItem(Player.InventoryTypeOf(itemId), itemId))
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        player.UseChair(itemId);
+        await BroadcastPacketToOthersAsync(
+            player.Character,
+            V113MapPackets.ShowChair(player.Character.Id, itemId),
+            ct);
+        await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+        _log.LogDebug("[Channel] 角色 {Name} 使用椅子 {ItemId}", player.Character.Name, itemId);
+    }
+
+    /// <summary>
+    /// 取消椅子（對照 Java PlayerHandler.CancelChair 主幹）。
+    /// c2s：[short id]；id=-1 取消道具椅，否則使用地圖內建椅。
+    /// </summary>
+    private async Task HandleCancelChairAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        short id;
+        try
+        {
+            id = reader.ReadShort();
+        }
+        catch (InvalidDataException) { return; }
+
+        if (id == -1)
+        {
+            player.CancelChair();
+            await session.SendAsync(V113MapPackets.CancelChair(-1), ct);
+            await BroadcastPacketToOthersAsync(
+                player.Character,
+                V113MapPackets.ShowChair(player.Character.Id, itemId: 0),
+                ct);
+        }
+        else
+        {
+            player.UseMapChair(id);
+            await session.SendAsync(V113MapPackets.CancelChair(id), ct);
+        }
+
+        _log.LogDebug("[Channel] 角色 {Name} 取消/切換椅子 {ChairId}", player.Character.Name, id);
     }
 
     private async Task BroadcastToOthersAsync(Character chr, byte[] body, CancellationToken ct)

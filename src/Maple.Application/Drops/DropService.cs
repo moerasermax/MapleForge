@@ -41,6 +41,19 @@ public sealed record DropPickupResult(
     public bool Success => Status == DropPickupStatus.Success;
 }
 
+public enum MesoDropStatus
+{
+    InvalidAmount,
+    NotAlive,
+    NotEnoughMeso,
+    Success,
+}
+
+public sealed record MesoDropResult(MesoDropStatus Status, MapDrop? Drop = null)
+{
+    public bool Success => Status == MesoDropStatus.Success;
+}
+
 /// <summary>怪死獎勵用例：給擊殺者 EXP、依掉落表生成 MapDrop、處理 c2s 拾取。</summary>
 public sealed class DropService : IMobKillHandler
 {
@@ -123,6 +136,41 @@ public sealed class DropService : IMobKillHandler
 
         field.Remove(drop.ObjectId);
         return new DropPickupResult(DropPickupStatus.Success, drop, gained, InventoryType: type);
+    }
+
+    public MesoDropResult TryDropMeso(FieldInstance field, Player player, int meso)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (!player.IsAlive)
+        {
+            return new MesoDropResult(MesoDropStatus.NotAlive);
+        }
+
+        if (meso is < 10 or > 50_000)
+        {
+            return new MesoDropResult(MesoDropStatus.InvalidAmount);
+        }
+
+        if (player.Character.Meso < meso)
+        {
+            return new MesoDropResult(MesoDropStatus.NotEnoughMeso);
+        }
+
+        player.GainMeso(-meso);
+        var drop = MapDrop.ForMeso(
+            AllocateDropObjectId(field),
+            meso,
+            player.Position,
+            player.Position,
+            player.ObjectId,
+            player.Character.Id,
+            dropType: 0,
+            playerDrop: true);
+
+        field.Add(drop);
+        return new MesoDropResult(MesoDropStatus.Success, drop);
     }
 
     private IReadOnlyList<MapDrop> SpawnDropsFromMonster(FieldInstance field, Player killer, Mob mob)

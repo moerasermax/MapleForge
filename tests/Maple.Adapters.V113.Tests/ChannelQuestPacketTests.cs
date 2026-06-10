@@ -90,6 +90,7 @@ public sealed class ChannelQuestPacketTests
             GuildId = 321,
             GuildRank = 2,
             AllianceRank = 3,
+            MonsterBookCover = 2380001,
             BuddyList = new BuddyList { Capacity = 25 },
             Quests =
             [
@@ -109,6 +110,27 @@ public sealed class ChannelQuestPacketTests
             QuestInfo =
             [
                 new QuestInfoRecord { QuestId = 20015, Data = "info" },
+            ],
+            RegularRocks =
+            [
+                100000000,
+                101000000,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+            ],
+            VipRocks =
+            [
+                200000000,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
+                Character.EmptyRockMapId,
             ],
             Skills =
             [
@@ -153,8 +175,18 @@ public sealed class ChannelQuestPacketTests
         Assert.Equal(completedStart, completedEnd);
 
         reader.Skip(8);  // addRingInfo empty stubs
-        reader.Skip(60); // addRocksInfo empty stubs
-        Assert.Equal(0, reader.ReadInt());  // monster book cover
+        Assert.Equal(100000000, reader.ReadInt()); // regular rocks, Java order
+        Assert.Equal(101000000, reader.ReadInt());
+        Assert.Equal(Character.EmptyRockMapId, reader.ReadInt());
+        Assert.Equal(Character.EmptyRockMapId, reader.ReadInt());
+        Assert.Equal(Character.EmptyRockMapId, reader.ReadInt());
+        Assert.Equal(200000000, reader.ReadInt()); // VIP rocks
+        for (var i = 0; i < 9; i++)
+        {
+            Assert.Equal(Character.EmptyRockMapId, reader.ReadInt());
+        }
+
+        Assert.Equal(2380001, reader.ReadInt());  // monster book cover
         Assert.Equal(0, reader.ReadByte());
         Assert.Equal(0, reader.ReadShort());
 
