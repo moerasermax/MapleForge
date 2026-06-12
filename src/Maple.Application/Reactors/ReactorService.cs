@@ -164,12 +164,24 @@ public sealed class ReactorService
             return new ReactorInteractionResult(ReactorInteractionStatus.Ignored, reactor);
         }
 
-        var (scriptInvoked, ctx) = TryAct(player, reactor);
+        // 觸碰觸發走與 HitReactor 相同的狀態機（觸碰無 charPosition/stance → 0），回傳 Hit 讓 adapter
+        // 廣播 trigger/destroy。Reactor.Hit 自帶守衛：無有效 state 資料時 Applied=false（退化為原本的 no-op）。
+        var hit = reactor.Hit(charPosition: 0, stance: 0);
+        if (!hit.Applied)
+        {
+            return new ReactorInteractionResult(ReactorInteractionStatus.Ignored, reactor, hit);
+        }
+
+        var (scriptInvoked, ctx) = hit.ShouldInvokeScript
+            ? TryAct(player, reactor)
+            : (false, null);
+
         return new ReactorInteractionResult(
             ReactorInteractionStatus.Success,
             reactor,
-            ScriptInvoked: scriptInvoked,
-            ScriptContext: ctx);
+            hit,
+            scriptInvoked,
+            ctx);
     }
 
     private ReactorStats LoadReactorStatsUncached(int reactorId)

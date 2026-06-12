@@ -53,7 +53,14 @@ public sealed class V113PlayerInteractionRouter
             return;
         }
 
-        await DispatchTradeNoticesAsync(_trades, result, ct);
+        try
+        {
+            // best-effort：派送交易通知會送往對手 session。對手故障不可把例外往上拋穿 RunAsync
+            // 回呼、連帶斷掉本人連線（本人交易狀態已在 TradeService 內更新完成）。
+            await DispatchTradeNoticesAsync(_trades, result, ct);
+        }
+        catch { /* 對手 session 送包失敗：忽略 */ }
+
         if (result.Status == TradeServiceStatus.TradeRestricted &&
             _trades.TryGetSender(player.Character.Id, out var sendSelf))
         {

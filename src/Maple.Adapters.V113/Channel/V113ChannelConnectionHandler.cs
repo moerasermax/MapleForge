@@ -396,9 +396,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.TouchReactor:
+                    {
                         if (player is null || currentField is null) break;
-                        V113ReactorHandler.HandleTouchReactor(reader, player, currentField, _reactorService);
+                        // 對照 DamageReactor：觸碰觸發後把 reactor 狀態變化（trigger/destroy）廣播給同圖。
+                        var touchResult = V113ReactorHandler.HandleTouchReactor(reader, player, currentField, _reactorService);
+                        if (touchResult?.Hit is { } touchHit
+                            && V113ReactorPackets.EncodeHitResult(touchHit) is { } touchPacket)
+                        {
+                            await BroadcastPacketToMapAsync(player.Character, s, touchPacket, token);
+                        }
                         break;
+                    }
 
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
@@ -720,10 +728,19 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             if (player is not null)
             {
                 var tradeResult = _tradeService.DeregisterPlayer(player, sessionToken);
-                await V113PlayerInteractionRouter.DispatchTradeNoticesAsync(
-                    _tradeService,
-                    tradeResult,
-                    CancellationToken.None);
+                try
+                {
+                    // best-effort：通知交易對手取消。對「對手 session」送包可能拋（對手同時斷線），
+                    // 但絕不可因此跳過下方自身的 deregister／持久化清理（否則背包/角色不落地＋registry 洩漏）。
+                    await V113PlayerInteractionRouter.DispatchTradeNoticesAsync(
+                        _tradeService,
+                        tradeResult,
+                        CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "[Channel] 登出派送交易取消通知失敗 charId={CharId}", player.Character.Id);
+                }
 
                 _followService.CancelFollow(player);
                 _runtimePlayers.Deregister(player.Character.Id, sessionToken);
@@ -731,8 +748,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 var deregisteredPlayer = _onlinePlayers.Deregister(player.Character.Id, sessionToken);
                 if (deregisteredPlayer is not null)
                 {
-                    await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
-                    await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+                    try
+                    {
+                        // best-effort：公會/好友登出通知會送往其他玩家 session，失敗不可阻斷後續持久化。
+                        await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+                        await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.LogWarning(ex, "[Channel] 登出公會/好友通知失敗 charId={CharId}", player.Character.Id);
+                    }
                 }
 
                 player.FlushInventory();
