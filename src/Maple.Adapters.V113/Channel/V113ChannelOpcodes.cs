@@ -17,6 +17,9 @@ internal static class V113ChannelRecvOp
     public const short FaceExpression = 0x2C;
     public const short UseItemEffect = 0x2D;
     public const short MonsterBookCover = 0x32;
+    public const short DueyAction = 0x3B;
+    public const short Owl = 0x3C;
+    public const short OwlWarp = 0x3D;
     public const short SpecialMove = 0x55;
     public const short CancelBuff = 0x56;
     public const short SkillEffect = 0x57;
@@ -48,7 +51,17 @@ internal static class V113ChannelRecvOp
     public const short ItemGather = 0x40;
     public const short ItemMove = 0x41;      // 背包格內移動 / 穿脫裝 / 丟棄（dst=0）
     public const short CancelItemEffect = 0x43;
+    public const short UseOwlMinerva = 0x4D;
+    public const short PlayerInteraction = 0x73;
     public const short ItemPickup = unchecked((short)0xC6);
+    public const short RingAction = unchecked((short)0x81);
+    public const short BbsOperation = unchecked((short)0x94);
+    public const short Solomon = unchecked((short)0x9B);
+    public const short GachExp = unchecked((short)0x9C);
+    public const short TransformPlayer = unchecked((short)0xA0);
+    public const short XmasSurprise = unchecked((short)0xA2);
+    public const short DamageReactor = unchecked((short)0xC9);
+    public const short TouchReactor = unchecked((short)0xCA);
     public const short CashShopOperation = unchecked((short)0xE6);
     public const short Pong = 0x0E;
 }
@@ -75,7 +88,13 @@ internal static class V113ChannelSendOp
     public const short PartyOperation = 0x37;
     public const short BuddyList = 0x38;
     public const short GuildOperation = 0x3A;
+    public const short ShopScannerResult = 0x3F;
+    public const short ShopLinkResult = 0x40;
+    public const short MarriageRequest = 0x41;
+    public const short MarriageResult = 0x42;
     public const short MonsterBookChangeCover = 0x4E;
+    public const short MarriageUpdate = 0x62;
+    public const short BbsOperation = 0x68;
     public const short SkillMacro = 0x7A;
     public const short MultiChat = 0x84;
     public const short Whisper = 0x85;
@@ -91,15 +110,20 @@ internal static class V113ChannelSendOp
     public const short FacialExpression = unchecked((short)0xB9);
     public const short ShowItemEffect = unchecked((short)0xBA);
     public const short ShowChair = unchecked((short)0xBD);
+    public const short ShowForeignEffect = unchecked((short)0xBF);
     public const short Chalkboard = unchecked((short)0x9C);
     public const short GiveForeignBuff = unchecked((short)0xC0);
     public const short CancelForeignBuff = unchecked((short)0xC1);
+    public const short RepairWindow = unchecked((short)0xD5);
     public const short NpcTalk = 0x13C;   // NPC 對話框（getNPCTalk，2-byte opcode）
     public const short OpenNpcShop = 0x13D;
     public const short ConfirmShopTransaction = 0x13E;
     public const short OpenStorage = 0x141;
+    public const short PlayerInteraction = 0x146;
     public const short CashShopUpdate = 0x157;
     public const short CashShopOperation = 0x158;
+    public const short Duey = 0x155;
+    public const short XmasSurprise = 0x161;
     public const short Keymap = 0x163;
     public const short SpawnMonster = unchecked((short)0xE5);
     public const short KillMonster = unchecked((short)0xE6);
@@ -110,6 +134,9 @@ internal static class V113ChannelSendOp
     public const short ShowItemGainInChat = unchecked((short)0xC7);
     public const short DropItemFromMapObject = 0x107;
     public const short RemoveItemFromMap = 0x108;
+    public const short ReactorHit = 0x113;
+    public const short ReactorSpawn = 0x115;
+    public const short ReactorDestroy = 0x116;
     public const short UpdatePartyMemberHp = unchecked((short)0xC2);
     public const short CancelChair = unchecked((short)0xC6);
     public const short CurrentMapWarp = unchecked((short)0xC8);

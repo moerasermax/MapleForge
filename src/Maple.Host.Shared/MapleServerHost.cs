@@ -6,19 +6,25 @@ using Maple.Application.CashShop;
 using Maple.Application.Characters;
 using Maple.Application.Chats;
 using Maple.Application.Combat;
+using Maple.Application.Duey;
 using Maple.Application.Drops;
 using Maple.Application.Fame;
 using Maple.Application.Guilds;
+using Maple.Application.Guilds.Bbs;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
+using Maple.Application.NpcItemServices;
 using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Application.Quests;
+using Maple.Application.Reactors;
 using Maple.Application.Security;
 using Maple.Application.Shops;
 using Maple.Application.Skills;
+using Maple.Application.Social;
 using Maple.Application.Stats;
 using Maple.Application.Storage;
+using Maple.Application.Trades;
 using Maple.Content.CashShop;
 using Maple.Content.Quests;
 using Maple.Content.Shops;
@@ -26,12 +32,15 @@ using Maple.Scripting;
 using Maple.Content.Wz;
 using Maple.Core.CashShop;
 using Maple.Core.Data;
+using Maple.Core.NpcItemServices;
 using Maple.Core.Quests;
 using Maple.Core.Shops;
 using Maple.Core.Skills;
 using Maple.Host.Shared.Configuration;
 using Maple.Net;
 using Maple.Persistence;
+using Maple.Persistence.Duey;
+using Maple.Persistence.Guilds;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -73,6 +82,8 @@ public static class MapleServerHost
                 MongoDatabaseName = builder.Configuration["Persistence:MongoDatabaseName"] ?? string.Empty,
             };
         });
+        builder.Services.AddMapleDueyPersistence();
+        builder.Services.AddGuildBbsPersistence();
 
         // M2：帳密驗證 + 角色服務。
         builder.Services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
@@ -114,6 +125,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<CombatService>();
         builder.Services.AddSingleton<RangedMagicCombatService>();
         builder.Services.AddSingleton<IOnlinePlayerRegistry, InMemoryOnlinePlayerRegistry>();
+        builder.Services.AddSingleton<IOnlinePlayerRuntimeRegistry, InMemoryOnlinePlayerRuntimeRegistry>();
         builder.Services.AddSingleton<FameService>();
         builder.Services.AddSingleton<BuddyService>();
         builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();
@@ -121,17 +133,35 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IV113PartySessionHook, CentralPartySessionHook>();
         builder.Services.AddSingleton<IGuildRegistry, InMemoryGuildRegistry>();
         builder.Services.AddSingleton<GuildService>();
+        builder.Services.AddSingleton<GuildBbsService>();
         builder.Services.AddSingleton<IV113GuildSessionHook, CentralGuildSessionHook>();
         builder.Services.AddSingleton<ChatService>();
         builder.Services.AddSingleton<IV113ChatSessionHook, CentralChatSessionHook>();
         builder.Services.AddSingleton<IQuestCatalog, MinimalQuestCatalog>();
         builder.Services.AddSingleton<QuestService>();
         builder.Services.AddSingleton<StatsService>();
+        builder.Services.AddSingleton<DueyService>();
+        builder.Services.AddSingleton<TradeService>();
+        builder.Services.AddSingleton<RingService>();
+        builder.Services.AddSingleton<FollowService>();
+        builder.Services.AddSingleton<IEquipRepairCatalog, EmptyEquipRepairCatalog>();
+        builder.Services.AddSingleton<EquipRepairService>();
+        builder.Services.AddSingleton<IOwlSearchCatalog, EmptyOwlSearchCatalog>();
+        builder.Services.AddSingleton<OwlService>();
+        builder.Services.AddSingleton<IV113XmasSurpriseRewardSource, V113XmasSurpriseRewardSource>();
         builder.Services.AddSingleton<V113BuddyHandler>();
         builder.Services.AddSingleton<V113PartyOperationHandler>();
         builder.Services.AddSingleton<V113GuildOperationHandler>();
         builder.Services.AddSingleton<V113CashShopOperationHandler>();
         builder.Services.AddSingleton<V113ChatHandler>();
+        builder.Services.AddSingleton<V113PlayerInteractionRouter>();
+        builder.Services.AddSingleton<V113DueyHandler>();
+        builder.Services.AddSingleton<V113BbsHandler>();
+        builder.Services.AddSingleton<V113RingHandler>();
+        builder.Services.AddSingleton<V113FollowHandler>();
+        builder.Services.AddSingleton<V113RepairHandler>();
+        builder.Services.AddSingleton<V113OwlHandler>();
+        builder.Services.AddSingleton<V113BuffItemHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>
@@ -159,6 +189,13 @@ public static class MapleServerHost
             return new NpcScriptOptions { ScriptsDirectory = o.ScriptsDirectory };
         });
         builder.Services.AddSingleton<INpcScriptFactory, JintNpcScriptFactory>();
+        builder.Services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new ReactorScriptOptions { ScriptsDirectory = o.ScriptsDirectory };
+        });
+        builder.Services.AddSingleton<IReactorScriptFactory, JintReactorScriptFactory>();
+        builder.Services.AddSingleton<ReactorService>();
 
         // v113 Channel 選項。
         builder.Services.AddSingleton(new V113ChannelOptions(ChannelIndex: 0));

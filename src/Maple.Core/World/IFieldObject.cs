@@ -8,6 +8,7 @@ public enum FieldObjectType
     Monster,
     Drop,
     Summon,
+    Reactor,
 }
 
 /// <summary>

@@ -2,6 +2,7 @@ using Maple.Adapters.V113.Crypto;
 using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
+using Maple.Application.Duey;
 using Maple.Application.Drops;
 using Maple.Application.Fame;
 using Maple.Application.Guilds;
@@ -10,10 +11,13 @@ using Maple.Application.Npcs;
 using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Application.Quests;
+using Maple.Application.Reactors;
 using Maple.Application.Shops;
 using Maple.Application.Skills;
+using Maple.Application.Social;
 using Maple.Application.Stats;
 using Maple.Application.Storage;
+using Maple.Application.Trades;
 using Maple.Core.Accounts;
 using Maple.Core.Characters;
 using Maple.Core.IO;
@@ -50,11 +54,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly FameService _fameService;
     private readonly GuildService _guildService;
     private readonly RangedMagicCombatService _rangedMagicCombatService;
+    private readonly ReactorService _reactorService;
+    private readonly TradeService _tradeService;
+    private readonly IOnlinePlayerRuntimeRegistry _runtimePlayers;
+    private readonly FollowService _followService;
     private readonly V113BuddyHandler _buddyHandler;
     private readonly V113PartyOperationHandler _partyOperationHandler;
     private readonly V113GuildOperationHandler _guildOperationHandler;
     private readonly V113CashShopOperationHandler _cashShopOperationHandler;
     private readonly V113ChatHandler _chatHandler;
+    private readonly V113PlayerInteractionRouter _playerInteractionRouter;
+    private readonly V113DueyHandler _dueyHandler;
+    private readonly V113BbsHandler _bbsHandler;
+    private readonly V113RingHandler _ringHandler;
+    private readonly V113OwlHandler _owlHandler;
+    private readonly V113BuffItemHandler _buffItemHandler;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
     private readonly V113ChannelOptions _options;
@@ -76,11 +90,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         FameService fameService,
         GuildService guildService,
         RangedMagicCombatService rangedMagicCombatService,
+        ReactorService reactorService,
+        TradeService tradeService,
+        IOnlinePlayerRuntimeRegistry runtimePlayers,
+        FollowService followService,
         V113BuddyHandler buddyHandler,
         V113PartyOperationHandler partyOperationHandler,
         V113GuildOperationHandler guildOperationHandler,
         V113CashShopOperationHandler cashShopOperationHandler,
         V113ChatHandler chatHandler,
+        V113PlayerInteractionRouter playerInteractionRouter,
+        V113DueyHandler dueyHandler,
+        V113BbsHandler bbsHandler,
+        V113RingHandler ringHandler,
+        V113OwlHandler owlHandler,
+        V113BuffItemHandler buffItemHandler,
         QuestService questService,
         StatsService statsService,
         V113ChannelOptions options)
@@ -101,11 +125,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _fameService = fameService;
         _guildService = guildService;
         _rangedMagicCombatService = rangedMagicCombatService;
+        _reactorService = reactorService;
+        _tradeService = tradeService;
+        _runtimePlayers = runtimePlayers;
+        _followService = followService;
         _buddyHandler = buddyHandler;
         _partyOperationHandler = partyOperationHandler;
         _guildOperationHandler = guildOperationHandler;
         _cashShopOperationHandler = cashShopOperationHandler;
         _chatHandler = chatHandler;
+        _playerInteractionRouter = playerInteractionRouter;
+        _dueyHandler = dueyHandler;
+        _bbsHandler = bbsHandler;
+        _ringHandler = ringHandler;
+        _owlHandler = owlHandler;
+        _buffItemHandler = buffItemHandler;
         _questService = questService;
         _statsService = statsService;
         _options = options;
@@ -259,6 +293,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 chr,
                                 (pkt, tkn) => s.SendAsync(pkt, tkn)),
                                 sessionToken);
+                            _tradeService.RegisterPlayer(
+                                player,
+                                channel,
+                                (pkt, tkn) => s.SendAsync(pkt, tkn),
+                                sessionToken);
+                            _runtimePlayers.Register(player, sessionToken);
 
                             await _buddyHandler.OnPlayerLoggedInAsync(
                                 player,
@@ -292,6 +332,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             await SpawnMapNpcsAsync(chr.MapId, s, npcOidToId, token);
                             await SendFieldMonstersAsync(currentField, s, token);
                             await SendFieldDropsAsync(currentField, s, token);
+                            await V113ReactorHandler.SendFieldReactorsAsync(currentField, s, token);
 
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
                         }
@@ -343,6 +384,22 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleTakeDamageAsync(reader, player, currentField, s, token);
                         break;
 
+                    case V113ChannelRecvOp.DamageReactor:
+                        if (player is null || currentField is null) break;
+                        await V113ReactorHandler.HandleDamageReactorAsync(
+                            reader,
+                            player,
+                            currentField,
+                            _reactorService,
+                            (packet, tkn) => BroadcastPacketToMapAsync(player.Character, s, packet, tkn),
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.TouchReactor:
+                        if (player is null || currentField is null) break;
+                        V113ReactorHandler.HandleTouchReactor(reader, player, currentField, _reactorService);
+                        break;
+
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
                         await HandleGeneralChatAsync(reader, player, s, token);
@@ -361,6 +418,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.UseItemEffect:
                         if (player is null) break;
                         await HandleUseItemEffectAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.DueyAction:
+                        if (player is null) break;
+                        await _dueyHandler.HandleActionAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.Owl:
+                        if (player is null) break;
+                        await HandleOwlResultAsync(_owlHandler.HandleOpen(player), player, currentField, npcOidToId, s, sessionToken, token);
+                        break;
+
+                    case V113ChannelRecvOp.OwlWarp:
+                        if (player is null) break;
+                        currentField = await HandleOwlResultAsync(_owlHandler.HandleWarp(reader, player), player, currentField, npcOidToId, s, sessionToken, token);
                         break;
 
                     case V113ChannelRecvOp.MonsterBookCover:
@@ -450,6 +522,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             token);
                         break;
 
+                    case V113ChannelRecvOp.PlayerInteraction:
+                        if (player is null) break;
+                        await _playerInteractionRouter.HandleAsync(reader, player, token);
+                        break;
+
                     case V113ChannelRecvOp.PartyOperation:
                         if (player is null) break;
                         await _partyOperationHandler.HandlePartyOperationAsync(
@@ -475,6 +552,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await _guildOperationHandler.HandleDenyGuildRequestAsync(reader, player, token);
                         break;
 
+                    case V113ChannelRecvOp.BbsOperation:
+                        if (player is null) break;
+                        await _bbsHandler.HandleBbsOperationAsync(
+                            reader,
+                            player,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
+                            token);
+                        break;
+
                     case V113ChannelRecvOp.BuddyListModify:
                         if (player is null) break;
                         await _buddyHandler.HandleModifyAsync(
@@ -482,6 +568,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             player,
                             s,
                             _options.ChannelIndex + 1,
+                            token);
+                        break;
+
+                    // FOLLOW_REQUEST / FOLLOW_REPLY are intentionally not dispatched:
+                    // this v113 recv.properties disables them, and candidate FOLLOW_REPLY 0x7A conflicts with BuddyListModify.
+                    case V113ChannelRecvOp.RingAction:
+                        if (player is null) break;
+                        await _ringHandler.HandleRingActionAsync(
+                            reader,
+                            player,
+                            _mapRegistry,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
                             token);
                         break;
 
@@ -493,6 +591,26 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.UpdateCharInfo:
                         if (player is null) break;
                         await HandleUpdateCharInfoAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.Solomon:
+                        if (player is null) break;
+                        await HandleBuffItemResultAsync(_buffItemHandler.HandleSolomon(reader, player), player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.GachExp:
+                        if (player is null) break;
+                        await HandleBuffItemResultAsync(_buffItemHandler.HandleGachExp(reader, player), player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.TransformPlayer:
+                        if (player is null || currentField is null) break;
+                        await HandleTransformPlayerAsync(reader, player, currentField, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.XmasSurprise:
+                        if (player is null || account is null) break;
+                        await HandleBuffItemResultAsync(_buffItemHandler.HandleXmasSurprise(reader, account, player), player, s, token);
                         break;
 
                     case V113ChannelRecvOp.UpdateQuest:
@@ -555,6 +673,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleCancelItemEffectAsync(reader, player, token);
                         break;
 
+                    case V113ChannelRecvOp.UseOwlMinerva:
+                        if (player is null) break;
+                        await HandleOwlResultAsync(_owlHandler.HandleMinerva(reader, player), player, currentField, npcOidToId, s, sessionToken, token);
+                        break;
+
+                    // REPAIR / REPAIR_ALL are intentionally not dispatched:
+                    // this v113 recv.properties disables them, and commented 0x73/0x72 conflict with PlayerInteraction/Messenger.
                     case V113ChannelRecvOp.ItemPickup:
                         if (player is null || currentField is null) break;
                         await HandleItemPickupAsync(reader, player, currentField, s, token);
@@ -594,6 +719,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             if (player is not null)
             {
+                var tradeResult = _tradeService.DeregisterPlayer(player, sessionToken);
+                await V113PlayerInteractionRouter.DispatchTradeNoticesAsync(
+                    _tradeService,
+                    tradeResult,
+                    CancellationToken.None);
+
+                _followService.CancelFollow(player);
+                _runtimePlayers.Deregister(player.Character.Id, sessionToken);
+
                 var deregisteredPlayer = _onlinePlayers.Deregister(player.Character.Id, sessionToken);
                 if (deregisteredPlayer is not null)
                 {
@@ -693,6 +827,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 var spawned = _combatService.SpawnMapMonsters(field, mapId);
                 _log.LogInformation("[Channel] 地圖 {Map} 初始化 {Count} 隻怪物", mapId, spawned.Count);
+
+                var reactors = _reactorService.SpawnMapReactors(field, mapId);
+                _log.LogInformation("[Channel] 地圖 {Map} 初始化 {Count} 個 reactor", mapId, reactors.Count);
             }
 
             field.Add(player);
@@ -883,6 +1020,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
         await SendFieldMonstersAsync(field, session, ct);
         await SendFieldDropsAsync(field, session, ct);
+        await V113ReactorHandler.SendFieldReactorsAsync(field, session, ct);
         _log.LogInformation("[Channel] 角色 {Name} warp → 地圖 {Map}", chr.Name, mapId);
         return field;
     }
@@ -904,6 +1042,117 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await session.SendAsync(skillPacket, ct);
         }
+    }
+
+    private async Task HandleBuffItemResultAsync(
+        V113BuffItemHandleResult result,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (!result.Handled)
+        {
+            return;
+        }
+
+        foreach (var packet in result.Packets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+    }
+
+    private async Task HandleTransformPlayerAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        List<Player> mapPlayers;
+        lock (field)
+        {
+            mapPlayers = field.Players.ToList();
+        }
+
+        var result = _buffItemHandler.HandleTransformPlayer(reader, player, mapPlayers);
+        if (!result.Handled)
+        {
+            return;
+        }
+
+        foreach (var packet in result.SourcePackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (result.Target is not null)
+        {
+            foreach (var packet in result.TargetPackets)
+            {
+                await SendPacketToRuntimePlayerAsync(player, session, result.Target, packet, ct);
+            }
+
+            foreach (var packet in result.BroadcastPackets)
+            {
+                await BroadcastPacketToOthersAsync(result.Target.Character, packet, ct);
+            }
+        }
+
+        if (result.SourceCharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+    }
+
+    private async Task SendPacketToRuntimePlayerAsync(
+        Player currentPlayer,
+        MapleSession currentSession,
+        Player target,
+        byte[] packet,
+        CancellationToken ct)
+    {
+        if (target.Character.Id == currentPlayer.Character.Id)
+        {
+            await currentSession.SendAsync(packet, ct);
+            return;
+        }
+
+        var targetEntry = _mapRegistry
+            .GetOthers(target.Character.MapId, currentPlayer.Character.Id)
+            .FirstOrDefault(e => e.CharId == target.Character.Id);
+        if (targetEntry is not null)
+        {
+            await targetEntry.SendPacket(packet, ct);
+        }
+    }
+
+    private async Task<FieldInstance?> HandleOwlResultAsync(
+        V113OwlHandleResult result,
+        Player player,
+        FieldInstance? currentField,
+        Dictionary<int, int> oidToNpcId,
+        MapleSession session,
+        object sessionToken,
+        CancellationToken ct)
+    {
+        foreach (var packet in result.Packets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+
+        return result.WarpMapId is { } mapId
+            ? await WarpAsync(player, currentField, oidToNpcId, session, mapId, sessionToken, ct)
+            : currentField;
     }
 
     private async Task HandleGiveFameAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)

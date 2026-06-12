@@ -587,4 +587,23 @@ writeByte(type)
 備註：舊 Java 的方法名稱與 result enum 名稱交錯，MapleForge 以 `MaplePacketCreator` 實際寫出的 opcode 為準。Core 目前以 itemId 排序並從 slot 1 重排，cash item / pet id 特殊比較待完整 item metadata 與寵物系統補齊。
 
 ---
+## Batch-5 中央整合 opcode 註記（2026-06-12）
+
+本批已接 active dispatch：
+
+- `PLAYER_INTERACTION(0x73)`：目前只接 trade branch；player shop / hired merchant / omok / match-card 留在 router TODO。
+- `DUEY_ACTION(0x3B)` / `DUEY(0x155)`：Duey 宅配主流程。
+- `BBS_OPERATION(0x94)` / `BBS_OPERATION(0x68)`：公會留言板。
+- `RING_ACTION(0x81)`，send `MARRIAGE_REQUEST(0x41)` / `MARRIAGE_RESULT(0x42)` / `MARRIAGE_UPDATE(0x62)` / `SHOW_FOREIGN_EFFECT(0xBF)`：戒指/求婚 MVP；ring effect 仍是 candidate，待真機驗。
+- `DAMAGE_REACTOR(0xC9)` / `TOUCH_REACTOR(0xCA)`，send `REACTOR_HIT(0x113)` / `REACTOR_SPAWN(0x115)` / `REACTOR_DESTROY(0x116)`：reactor spawn/hit/touch MVP。
+- `OWL(0x3C)` / `OWL_WARP(0x3D)` / `USE_OWL_MINERVA(0x4D)`，send `SHOP_SCANNER_RESULT(0x3F)` / `SHOP_LINK_RESULT(0x40)` / `REPAIR_WINDOW(0xD5)`：Owl active opcodes 已接；repair send constant 保留。
+- `SOLOMON(0x9B)` / `GACH_EXP(0x9C)` / `TRANSFORM_PLAYER(0xA0)` / `XMAS_SURPRISE(0xA2)`，send `XMAS_SURPRISE(0x161)`：特殊增益/獎勵道具 MVP。
+
+本批保留但不接 dispatch：
+
+- `FOLLOW_REQUEST` / `FOLLOW_REPLY`：此版 Java `recv.properties` 註解掉；`FOLLOW_REPLY` 候選 `0x7A` 撞 active `BUDDYLIST_MODIFY`。
+- `REPAIR` / `REPAIR_ALL`：此版 Java `recv.properties` 註解掉；舊註解 `0x73`/`0x72` 撞 active `PLAYER_INTERACTION`/`MESSENGER`。
+- Owl cash-item `5230000` route：master 尚無既有 `USE_CASH_ITEM` inventory 路由可乾淨接入，暫列 TODO。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*
