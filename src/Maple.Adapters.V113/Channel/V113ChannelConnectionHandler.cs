@@ -11,6 +11,7 @@ using Maple.Application.Maps;
 using Maple.Application.Npcs;
 using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
+using Maple.Application.Pets;
 using Maple.Application.Quests;
 using Maple.Application.Reactors;
 using Maple.Application.Shops;
@@ -73,6 +74,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113ScrollHandler _scrollHandler;
     private readonly V113UseConsumableHandler _useConsumableHandler;
     private readonly V113UseCashItemHandler _useCashItemHandler;
+    private readonly PetService _petService;
     private readonly ItemUseService _itemUseService;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
@@ -113,6 +115,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113ScrollHandler scrollHandler,
         V113UseConsumableHandler useConsumableHandler,
         V113UseCashItemHandler useCashItemHandler,
+        PetService petService,
         ItemUseService itemUseService,
         QuestService questService,
         StatsService statsService,
@@ -152,6 +155,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _scrollHandler = scrollHandler;
         _useConsumableHandler = useConsumableHandler;
         _useCashItemHandler = useCashItemHandler;
+        _petService = petService;
         _itemUseService = itemUseService;
         _questService = questService;
         _statsService = statsService;
@@ -822,6 +826,66 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         {
                             await _charService.UpdateAsync(player.Character, token);
                         }
+                        break;
+
+                    case V113ChannelRecvOp.SpawnPet:
+                        if (player is null) break;
+                        await V113PetHandler.HandleSpawnPetAsync(reader, player, s, _petService, (pkt, tkn) => BroadcastPacketToOthersAsync(player.Character, pkt, tkn), token);
+                        break;
+
+                    case V113ChannelRecvOp.MovePet:
+                        if (player is null) break;
+                        await V113PetHandler.HandleMovePetAsync(reader, player, s, _petService, (pkt, tkn) => BroadcastPacketToOthersAsync(player.Character, pkt, tkn), token);
+                        break;
+
+                    case V113ChannelRecvOp.PetFood:
+                        if (player is null) break;
+                        await V113PetHandler.HandlePetFoodAsync(reader, player, s, _petService, (pkt, tkn) => BroadcastPacketToOthersAsync(player.Character, pkt, tkn), token);
+                        break;
+
+                    case V113ChannelRecvOp.PetChat:
+                        if (player is null) break;
+                        await V113PetHandler.HandlePetChatAsync(reader, player, s, _petService, (pkt, tkn) => BroadcastPacketToOthersAsync(player.Character, pkt, tkn), token);
+                        break;
+
+                    case V113ChannelRecvOp.PetCommand:
+                        if (player is null) break;
+                        await V113PetHandler.HandlePetCommandAsync(reader, player, s, _petService, (pkt, tkn) => BroadcastPacketToOthersAsync(player.Character, pkt, tkn), token);
+                        break;
+
+                    case V113ChannelRecvOp.PetLoot:
+                        if (player is null) break;
+                        await V113PetHandler.HandlePetLootAsync(reader, player, _petService, (pkt, tkn) => BroadcastPacketToOthersAsync(player.Character, pkt, tkn), token);
+                        break;
+
+                    case V113ChannelRecvOp.PetAutoPot:
+                        if (player is null) break;
+                        await V113PetHandler.HandlePetAutoPotion(reader, player, s, _petService, token);
+                        break;
+
+                    case V113ChannelRecvOp.PetIgnore:
+                        if (player is null) break;
+                        await V113PetHandler.HandlePetIgnore(reader, player, s, _petService, token);
+                        break;
+
+                    case V113ChannelRecvOp.MoveSummon:
+                        if (player is null || currentField is null) break;
+                        await V113SummonHandler.HandleMoveSummonAsync(reader, player, currentField, _mapRegistry, token);
+                        break;
+
+                    case V113ChannelRecvOp.SummonAttack:
+                        if (player is null || currentField is null) break;
+                        await V113SummonHandler.HandleSummonAttackAsync(reader, player, currentField, _mapRegistry, token);
+                        break;
+
+                    case V113ChannelRecvOp.DamageSummon:
+                        if (player is null || currentField is null) break;
+                        await V113SummonHandler.HandleDamageSummonAsync(reader, player, currentField, s, _mapRegistry, token);
+                        break;
+
+                    case V113ChannelRecvOp.SubSummon:
+                        if (player is null) break;
+                        await V113SummonHandler.HandleSubSummonAsync(reader, s, token);
                         break;
 
                     case V113ChannelRecvOp.NpcAction:

@@ -17,6 +17,7 @@ using Maple.Application.Npcs;
 using Maple.Application.NpcItemServices;
 using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
+using Maple.Application.Pets;
 using Maple.Application.Quests;
 using Maple.Application.Reactors;
 using Maple.Application.Security;
@@ -149,6 +150,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<EquipRepairService>();
         builder.Services.AddSingleton<IOwlSearchCatalog, EmptyOwlSearchCatalog>();
         builder.Services.AddSingleton<OwlService>();
+        builder.Services.AddSingleton<PetService>();
         builder.Services.AddSingleton<IV113XmasSurpriseRewardSource, V113XmasSurpriseRewardSource>();
         builder.Services.AddSingleton<V113BuddyHandler>();
         builder.Services.AddSingleton<V113PartyOperationHandler>();
