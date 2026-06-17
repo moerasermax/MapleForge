@@ -65,6 +65,35 @@ writeShort(0)
 
 ## 7. Channel 玩家體感封包（逐步補）
 
+### 換頻道 `CHANGE_CHANNEL`
+
+來源：
+
+- `recv.properties`：`CHANGE_CHANNEL = 0x1F`
+- `send.properties`：`CHANGE_CHANNEL = 0x08`
+- `MapleServerHandler`：`CHANGE_CHANNEL` → `InterServerHandler.ChangeChannel(slea, c, c.getPlayer())`
+- `InterServerHandler.ChangeChannel`：讀 `slea.readByte() + 1`
+- `MapleCharacter.changeChannel`：保存角色後送 `MaplePacketCreator.getChannelChange(toch.getIP(), toch.getPort())`
+- `MaplePacketCreator.getChannelChange(byte[] ip, int port)`
+
+C→S：
+
+```
+writeShort(0x1F)
+writeByte(targetChannel)    // client uses 0-based channel index; Java converts to 1-based.
+```
+
+S→C：
+
+```
+writeShort(0x08)
+writeByte(1)                // success
+write(ip[4])
+writeShort(port)
+```
+
+備註：MapleForge 目前採單進程 MVP，login+channel 同 process，沒有獨立 channel server。收到 `CHANGE_CHANNEL` 後忽略目標 channel，先 `FlushInventory` 並保存角色文件，再回設定的同一個 `ChannelIp/ChannelPort`（預設 `127.0.0.1:8585`）；client 收包後會斷線重連，既有 `V113ChannelConnectionHandler` finally 負責 deregister map/registry/trade 與最後持久化。buff transfer、跨 channel server handoff 與 Java 的多 channel storage 語義留待正式多實例/多頻道設計。
+
 ### 玩家表情 `FACE_EXPRESSION`
 
 來源：
@@ -586,6 +615,33 @@ writeByte(type)
 
 備註：舊 Java 的方法名稱與 result enum 名稱交錯，MapleForge 以 `MaplePacketCreator` 實際寫出的 opcode 為準。Core 目前以 itemId 排序並從 slot 1 重排，cash item / pet id 特殊比較待完整 item metadata 與寵物系統補齊。
 
+### 一般消耗補藥 `USE_ITEM`
+
+來源：
+
+- `recv.properties`：`USE_ITEM = 0x42`
+- `MapleServerHandler`：`USE_ITEM` → `InventoryHandler.UseItem(slea, c, c.getPlayer())`
+- `InventoryHandler.UseItem`：驗活著、Use 欄 slot/itemId/quantity，套用 `MapleItemInformationProvider.getItemEffect(itemId).applyTo(chr)`，成功後移除 1 個 Use 道具。
+
+C→S：
+
+```
+writeShort(0x42)
+writeInt(tick)
+writeShort(slot)
+writeInt(itemId)
+```
+
+S→C：
+
+```
+MODIFY_INVENTORY_ITEM    // 消耗 Use 欄 slot 數量或移除
+UPDATE_STATS             // HP/MP final value
+ENABLE_ACTIONS
+```
+
+備註：MapleForge 目前由 `UseItemService` 承載版本無關補 HP/MP 語義，`IItemEffectCatalog` 提供道具效果資料；啟動預設使用 `HardcodedItemEffectCatalog`，已含常見 v113 補藥與 `2000000..2099999` unknown potion 最小 HP 恢復 fallback。地圖 potion-use field limit、consume cooldown、disease 禁止補藥等 Java 分支尚未移植；證據層級為 Java source + Core/Application/Adapters 單元測試，真 v113 client GUI smoke 待 #12 批量驗證。
+
 ---
 ## Batch-5 中央整合 opcode 註記（2026-06-12）
 
@@ -604,6 +660,97 @@ writeByte(type)
 - `FOLLOW_REQUEST` / `FOLLOW_REPLY`：此版 Java `recv.properties` 註解掉；`FOLLOW_REPLY` 候選 `0x7A` 撞 active `BUDDYLIST_MODIFY`。
 - `REPAIR` / `REPAIR_ALL`：此版 Java `recv.properties` 註解掉；舊註解 `0x73`/`0x72` 撞 active `PLAYER_INTERACTION`/`MESSENGER`。
 - Owl cash-item `5230000` route：master 尚無既有 `USE_CASH_ITEM` inventory 路由可乾淨接入，暫列 TODO。
+
+### Batch-5 item-use 收官追加（2026-06-17）
+
+來源：
+
+- `recv.properties`：`USE_SUMMON_BAG = 0x45`、`USE_MOUNT_FOOD = 0x47`、`USE_CATCH_ITEM = 0x4B`、`USE_RETURN_SCROLL = 0x4F`
+- `send.properties` / `MaplePacketCreator`：`MODIFY_INVENTORY_ITEM = 0x1B`、`SET_TAMING_MOB_INFO = 0x2D`、`CATCH_MONSTER = 0xF5`
+- Java 來源：`InventoryHandler.UseSummonBag` / `UseMountFood` / `UseCatchItem` / `UseReturnScroll`
+
+C→S 共用道具使用 layout：
+
+```
+writeShort(opcode)
+writeInt(tick)
+writeShort(slot)
+writeInt(itemId)
+```
+
+`USE_CATCH_ITEM` 額外讀：
+
+```
+writeInt(mobObjectId)
+```
+
+S→C：
+
+```
+SET_TAMING_MOB_INFO:
+writeShort(0x2D)
+writeInt(characterId)
+writeInt(mountLevel)
+writeInt(mountExp)
+writeInt(mountFatigue)
+writeByte(levelUp)
+
+CATCH_MONSTER:
+writeShort(0xF5)
+writeInt(monsterId)
+writeInt(itemId)
+writeByte(success)
+```
+
+備註：MapleForge 目前以 result intent 接中央流程：召喚袋產生 mob spawn intent、返回卷軸走既有 `WarpAsync`、捕捉成功移除怪物並給道具、坐騎飼料扣道具並更新 mount。所有失敗分支需送 `EnableActions` 避免客戶端卡住。證據層級為 Java source + headless/unit tests；真 v113 client GUI smoke 待 #12 批量驗證。
+
+### 升級卷軸 `USE_UPGRADE_SCROLL`
+
+來源：
+
+- `recv.properties`：`USE_UPGRADE_SCROLL = 0x50`
+- `send.properties` / `SendPacketOpcode.java`：`SHOW_SCROLL_EFFECT = 0x9F`
+- Java 來源：`MapleServerHandler` dispatch、`InventoryHandler.UseUpgradeScroll`、`MaplePacketCreator.getScrollEffect`
+
+C→S：
+
+```
+writeShort(0x50)
+writeInt(tick)
+writeShort(scrollSlot)   // USE inventory slot
+writeShort(equipSlot)    // <0 equipped slot, >=0 EQUIP bag slot
+writeShort(flags)        // flags & 2 = white scroll requested
+```
+
+S→C scroll effect（MapleForge MVP）：
+
+```
+writeShort(0x9F)
+writeInt(characterId)
+writeByte(success ? 1 : 0)
+writeByte(curse ? 1 : 0)
+writeShort(0)            // legendarySpirit；MVP 固定 0
+writeByte(whiteScroll)   // task MVP uses consumed white-scroll flag; Java source writes trailing 0 ("pam's song?")
+```
+
+S→C inventory：
+
+```
+MODIFY_INVENTORY_ITEM(0x1B) for scroll consumption
+MODIFY_INVENTORY_ITEM(0x1B) for white scroll consumption when item 2340000 is consumed
+MODIFY_INVENTORY_ITEM(0x1B) remove+add equip update, or remove equip on curse
+```
+
+語義：
+
+- `Maple.Core.Items.ScrollEffect` / `IScrollCatalog` 承載版本無關卷軸效果資料。
+- `ScrollService.UseScroll` 在 Application 層執行 deterministic roll：`randomSeed % 100 < successRate`。
+- 成功：套用 stat bonus，`UpgradeSlots--`，`Level++`。
+- 失敗：無白衣保護時 `UpgradeSlots--`；白衣卷軸已消耗時不扣 slot。
+- 詛咒：cursed scroll 失敗時移除目標裝備。
+- 無 upgrade slots：本 MVP 回 `Fail`，不改裝備數值/slot，但仍消耗卷軸以符合本任務明定的 "always consume scroll" 範圍。
+- 目前 catalog 為 hardcoded MVP：2040200/201/202、2044000/001/002 與 204xxxx catch-all；完整 WZ scroll metadata 待後續接入。
+- 證據層級：Java source + Application/Adapters 單元測試；真 v113 client scroll UI/effect smoke 待 #12 批量驗證。
 
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*
