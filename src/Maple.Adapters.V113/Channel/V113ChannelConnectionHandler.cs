@@ -2,6 +2,7 @@ using Maple.Adapters.V113.Crypto;
 using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
+using Maple.Application.Items;
 using Maple.Application.Duey;
 using Maple.Application.Drops;
 using Maple.Application.Fame;
@@ -69,6 +70,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113RingHandler _ringHandler;
     private readonly V113OwlHandler _owlHandler;
     private readonly V113BuffItemHandler _buffItemHandler;
+    private readonly V113ItemUseHandler _itemUseHandler;
+    private readonly ItemUseService _itemUseService;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
     private readonly V113ChannelOptions _options;
@@ -105,6 +108,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113RingHandler ringHandler,
         V113OwlHandler owlHandler,
         V113BuffItemHandler buffItemHandler,
+        V113ItemUseHandler itemUseHandler,
+        ItemUseService itemUseService,
         QuestService questService,
         StatsService statsService,
         V113ChannelOptions options)
@@ -140,6 +145,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _ringHandler = ringHandler;
         _owlHandler = owlHandler;
         _buffItemHandler = buffItemHandler;
+        _itemUseHandler = itemUseHandler;
+        _itemUseService = itemUseService;
         _questService = questService;
         _statsService = statsService;
         _options = options;
@@ -629,6 +636,44 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.UseItemQuest:
                         break;
 
+                    case V113ChannelRecvOp.UseSummonBag:
+                    {
+                        if (player is null || currentField is null) break;
+                        var ctx = new V113ItemUseContext { ReturnMapId = player.Character.MapId };
+                        var result = _itemUseHandler.HandleUseSummonBag(reader, player, ctx);
+                        currentField = await HandleItemUseResultAsync(result, player, currentField, npcOidToId, s, sessionToken, token);
+                        break;
+                    }
+
+                    case V113ChannelRecvOp.UseMountFood:
+                    {
+                        if (player is null || currentField is null) break;
+                        var result = _itemUseHandler.HandleUseMountFood(reader, player);
+                        currentField = await HandleItemUseResultAsync(result, player, currentField, npcOidToId, s, sessionToken, token);
+                        break;
+                    }
+
+                    case V113ChannelRecvOp.UseCatchItem:
+                    {
+                        if (player is null || currentField is null) break;
+                        var field = currentField;
+                        var result = _itemUseHandler.HandleUseCatchItem(reader, player, oid =>
+                        {
+                            lock (field) { return field.Get(oid) is Mob m ? V113ItemUseTargetMob.From(m) : null; }
+                        });
+                        currentField = await HandleItemUseResultAsync(result, player, currentField, npcOidToId, s, sessionToken, token);
+                        break;
+                    }
+
+                    case V113ChannelRecvOp.UseReturnScroll:
+                    {
+                        if (player is null || currentField is null) break;
+                        var ctx = new V113ItemUseContext { ReturnMapId = player.Character.MapId };
+                        var result = _itemUseHandler.HandleUseReturnScroll(reader, player, ctx);
+                        currentField = await HandleItemUseResultAsync(result, player, currentField, npcOidToId, s, sessionToken, token);
+                        break;
+                    }
+
                     case V113ChannelRecvOp.NpcTalk:
                         if (player is null) break;
                         conversation = await StartNpcConversationAsync(
@@ -1067,6 +1112,72 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await session.SendAsync(skillPacket, ct);
         }
+    }
+
+    private async Task<FieldInstance?> HandleItemUseResultAsync(
+        V113ItemUseResult result,
+        Player player,
+        FieldInstance? currentField,
+        Dictionary<int, int> npcOidToId,
+        MapleSession session,
+        object sessionToken,
+        CancellationToken ct)
+    {
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        foreach (var packet in result.BroadcastPackets)
+        {
+            await BroadcastPacketToOthersAsync(player.Character, packet, ct);
+        }
+
+        if (!result.Applied)
+        {
+            return currentField;
+        }
+
+        if (currentField is not null && result.SpawnMonsterIds.Count > 0)
+        {
+            List<Mob> spawned;
+            lock (currentField)
+            {
+                spawned = _itemUseService.SpawnSummonBagMonsters(currentField, player, result.SpawnMonsterIds).ToList();
+            }
+
+            foreach (var mob in spawned)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.SpawnMonster(mob), ct);
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.SpawnMonsterControl(mob, newSpawn: true, aggro: false), ct);
+            }
+        }
+
+        if (currentField is not null && result.RemoveMonsterObjectId is { } removeOid)
+        {
+            bool removed;
+            lock (currentField)
+            {
+                removed = _itemUseService.RemoveCaughtMob(currentField, removeOid);
+            }
+
+            if (removed)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(removeOid), ct);
+            }
+        }
+
+        if (result.InventoryMutations.Count > 0 || result.GainItems.Count > 0)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+
+        if (result.WarpMapId is { } warpMapId)
+        {
+            return await WarpAsync(player, currentField, npcOidToId, session, warpMapId, sessionToken, ct);
+        }
+
+        return currentField;
     }
 
     private async Task HandleBuffItemResultAsync(

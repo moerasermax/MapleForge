@@ -11,6 +11,7 @@ using Maple.Application.Drops;
 using Maple.Application.Fame;
 using Maple.Application.Guilds;
 using Maple.Application.Guilds.Bbs;
+using Maple.Application.Items;
 using Maple.Application.Maps;
 using Maple.Application.Npcs;
 using Maple.Application.NpcItemServices;
@@ -32,6 +33,7 @@ using Maple.Scripting;
 using Maple.Content.Wz;
 using Maple.Core.CashShop;
 using Maple.Core.Data;
+using Maple.Core.Items;
 using Maple.Core.NpcItemServices;
 using Maple.Core.Quests;
 using Maple.Core.Shops;
@@ -162,6 +164,10 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113RepairHandler>();
         builder.Services.AddSingleton<V113OwlHandler>();
         builder.Services.AddSingleton<V113BuffItemHandler>();
+        builder.Services.AddSingleton<IItemUseCatalog, WzItemUseCatalog>();
+        builder.Services.AddSingleton<ItemUseService>();
+        builder.Services.AddSingleton<IV113ItemUseRandomSource, V113ItemUseRandomSource>();
+        builder.Services.AddSingleton<V113ItemUseHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>

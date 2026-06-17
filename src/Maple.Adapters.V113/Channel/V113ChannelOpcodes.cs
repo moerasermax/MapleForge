@@ -51,6 +51,10 @@ internal static class V113ChannelRecvOp
     public const short ItemGather = 0x40;
     public const short ItemMove = 0x41;      // 背包格內移動 / 穿脫裝 / 丟棄（dst=0）
     public const short CancelItemEffect = 0x43;
+    public const short UseSummonBag = 0x45;
+    public const short UseMountFood = 0x47;
+    public const short UseCatchItem = 0x4B;
+    public const short UseReturnScroll = 0x4F;
     public const short UseOwlMinerva = 0x4D;
     public const short PlayerInteraction = 0x73;
     public const short ItemPickup = unchecked((short)0xC6);
