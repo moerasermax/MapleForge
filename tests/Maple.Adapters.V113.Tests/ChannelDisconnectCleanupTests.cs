@@ -36,8 +36,8 @@ public sealed class ChannelDisconnectCleanupTests
             throw new ObjectDisposedException("partner-session");
         };
 
-        online.Register(new OnlinePlayer(self.Character.Id, self.Character.Name, 1, self.Character, NoopSend), new object());
-        online.Register(new OnlinePlayer(partner.Character.Id, partner.Character.Name, 1, partner.Character, throwingPartnerSend), new object());
+        online.Register(self, 1, NoopSend, new object());
+        online.Register(partner, 1, throwingPartnerSend, new object());
         trades.RegisterPlayer(self, 1, NoopSend, new object());
         trades.RegisterPlayer(partner, 1, throwingPartnerSend, new object());
 

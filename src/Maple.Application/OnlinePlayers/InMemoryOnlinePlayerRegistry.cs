@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Maple.Core.World;
 
 namespace Maple.Application.OnlinePlayers;
 
@@ -7,16 +8,18 @@ public sealed class InMemoryOnlinePlayerRegistry : IOnlinePlayerRegistry
     private readonly ConcurrentDictionary<int, RegisteredOnlinePlayer> _byId = new();
     private readonly ConcurrentDictionary<string, RegisteredOnlinePlayer> _byName = new(StringComparer.OrdinalIgnoreCase);
 
-    public void Register(OnlinePlayer player, object token)
+    public void Register(Player player, int channel, Func<byte[], CancellationToken, Task> sendPacket, object token)
     {
+        ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(token);
 
-        var entry = new RegisteredOnlinePlayer(player, token);
+        var onlinePlayer = new OnlinePlayer(player.Character.Id, player.Character.Name, channel, player, sendPacket);
+        var entry = new RegisteredOnlinePlayer(onlinePlayer, token);
         while (true)
         {
-            if (_byId.TryGetValue(player.CharacterId, out var previous))
+            if (_byId.TryGetValue(onlinePlayer.CharacterId, out var previous))
             {
-                if (!_byId.TryUpdate(player.CharacterId, entry, previous))
+                if (!_byId.TryUpdate(onlinePlayer.CharacterId, entry, previous))
                 {
                     continue;
                 }
@@ -25,13 +28,13 @@ public sealed class InMemoryOnlinePlayerRegistry : IOnlinePlayerRegistry
                 break;
             }
 
-            if (_byId.TryAdd(player.CharacterId, entry))
+            if (_byId.TryAdd(onlinePlayer.CharacterId, entry))
             {
                 break;
             }
         }
 
-        _byName[player.Name] = entry;
+        _byName[onlinePlayer.Name] = entry;
     }
 
     public OnlinePlayer? Deregister(int characterId, object token)

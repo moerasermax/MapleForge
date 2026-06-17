@@ -40,15 +40,12 @@ public sealed record RingReplyResult(
 public sealed class RingService
 {
     private readonly IOnlinePlayerRegistry _onlinePlayers;
-    private readonly IOnlinePlayerRuntimeRegistry _runtimePlayers;
     private long _nextRingId = 30_000;
 
     public RingService(
-        IOnlinePlayerRegistry onlinePlayers,
-        IOnlinePlayerRuntimeRegistry runtimePlayers)
+        IOnlinePlayerRegistry onlinePlayers)
     {
         _onlinePlayers = onlinePlayers;
-        _runtimePlayers = runtimePlayers;
     }
 
     public RingProposalResult RequestProposal(Player proposer, string targetName, int proposalItemId)
@@ -90,11 +87,7 @@ public sealed class RingService
             return new RingProposalResult(RingActionStatus.InventoryFull, target, RingItemId: ringItemId);
         }
 
-        var targetPlayer = _runtimePlayers.FindById(target.CharacterId);
-        if (targetPlayer is null)
-        {
-            return new RingProposalResult(RingActionStatus.TargetRuntimeMissing, target, RingItemId: ringItemId);
-        }
+        var targetPlayer = target.Player;
 
         if (!targetPlayer.CanGainItem(InventoryType.Equip))
         {
@@ -130,13 +123,12 @@ public sealed class RingService
             return new RingReplyResult(RingActionStatus.ProposalNotFound);
         }
 
-        var proposerPlayer = _runtimePlayers.FindById(proposerCharacterId);
-        if (proposerPlayer is null ||
-            replier.PendingMarriageRequesterCharacterId != proposerCharacterId ||
+        var proposerPlayer = proposer.Player;
+        if (replier.PendingMarriageRequesterCharacterId != proposerCharacterId ||
             proposerPlayer.PendingMarriagePartnerCharacterId != replier.Character.Id)
         {
             replier.ClearIncomingMarriageProposal();
-            proposerPlayer?.ClearMarriageProposal();
+            proposerPlayer.ClearMarriageProposal();
             return new RingReplyResult(RingActionStatus.ProposalNotFound, proposer, proposerPlayer);
         }
 

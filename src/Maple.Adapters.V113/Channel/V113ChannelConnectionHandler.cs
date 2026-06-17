@@ -57,7 +57,6 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly RangedMagicCombatService _rangedMagicCombatService;
     private readonly ReactorService _reactorService;
     private readonly TradeService _tradeService;
-    private readonly IOnlinePlayerRuntimeRegistry _runtimePlayers;
     private readonly FollowService _followService;
     private readonly V113BuddyHandler _buddyHandler;
     private readonly V113PartyOperationHandler _partyOperationHandler;
@@ -95,7 +94,6 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         RangedMagicCombatService rangedMagicCombatService,
         ReactorService reactorService,
         TradeService tradeService,
-        IOnlinePlayerRuntimeRegistry runtimePlayers,
         FollowService followService,
         V113BuddyHandler buddyHandler,
         V113PartyOperationHandler partyOperationHandler,
@@ -132,7 +130,6 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _rangedMagicCombatService = rangedMagicCombatService;
         _reactorService = reactorService;
         _tradeService = tradeService;
-        _runtimePlayers = runtimePlayers;
         _followService = followService;
         _buddyHandler = buddyHandler;
         _partyOperationHandler = partyOperationHandler;
@@ -293,19 +290,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             }
 
                             var channel = _options.ChannelIndex + 1;
-                            _onlinePlayers.Register(new OnlinePlayer(
-                                chr.Id,
-                                chr.Name,
+                            _onlinePlayers.Register(
+                                player,
                                 channel,
-                                chr,
-                                (pkt, tkn) => s.SendAsync(pkt, tkn)),
+                                (pkt, tkn) => s.SendAsync(pkt, tkn),
                                 sessionToken);
                             _tradeService.RegisterPlayer(
                                 player,
                                 channel,
                                 (pkt, tkn) => s.SendAsync(pkt, tkn),
                                 sessionToken);
-                            _runtimePlayers.Register(player, sessionToken);
 
                             await _buddyHandler.OnPlayerLoggedInAsync(
                                 player,
@@ -788,7 +782,6 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 }
 
                 _followService.CancelFollow(player);
-                _runtimePlayers.Deregister(player.Character.Id, sessionToken);
 
                 var deregisteredPlayer = _onlinePlayers.Deregister(player.Character.Id, sessionToken);
                 if (deregisteredPlayer is not null)

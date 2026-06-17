@@ -15,7 +15,7 @@ public sealed class FameServiceTests
         var registry = new InMemoryOnlinePlayerRegistry();
         var giver = Player(Character(1, "Giver", level: 15, mapId: 100000000));
         var target = Character(2, "Target", level: 20, mapId: 100000000);
-        registry.Register(Online(target), new object());
+        RegisterCharacter(registry, target);
         var service = new FameService(registry);
 
         var result = service.GiveFame(giver, target.Id, mode: 1, Now);
@@ -34,7 +34,7 @@ public sealed class FameServiceTests
         var registry = new InMemoryOnlinePlayerRegistry();
         var giver = Player(Character(1, "Giver", level: 15, mapId: 100000000));
         var target = Character(2, "Target", level: 20, mapId: 100000000);
-        registry.Register(Online(target), new object());
+        RegisterCharacter(registry, target);
         var service = new FameService(registry);
 
         var result = service.GiveFame(giver, target.Id, mode: 0, Now);
@@ -50,8 +50,8 @@ public sealed class FameServiceTests
         var giver = Player(Character(1, "Giver", level: 15, mapId: 100000000));
         var firstTarget = Character(2, "First", level: 20, mapId: 100000000);
         var secondTarget = Character(3, "Second", level: 20, mapId: 100000000);
-        registry.Register(Online(firstTarget), new object());
-        registry.Register(Online(secondTarget), new object());
+        RegisterCharacter(registry, firstTarget);
+        RegisterCharacter(registry, secondTarget);
         var service = new FameService(registry);
 
         var first = service.GiveFame(giver, firstTarget.Id, mode: 1, Now);
@@ -74,7 +74,7 @@ public sealed class FameServiceTests
             TargetCharacterId = target.Id,
             GivenAtUnixMillis = giver.Character.LastFameAtUnixMillis,
         });
-        registry.Register(Online(target), new object());
+        RegisterCharacter(registry, target);
         var service = new FameService(registry);
 
         var result = service.GiveFame(giver, target.Id, mode: 1, Now);
@@ -96,7 +96,7 @@ public sealed class FameServiceTests
             TargetCharacterId = target.Id,
             GivenAtUnixMillis = old,
         });
-        registry.Register(Online(target), new object());
+        RegisterCharacter(registry, target);
         var service = new FameService(registry);
 
         var result = service.GiveFame(giver, target.Id, mode: 1, Now);
@@ -113,7 +113,7 @@ public sealed class FameServiceTests
         var registry = new InMemoryOnlinePlayerRegistry();
         var giver = Player(Character(1, "Giver", level: 14, mapId: 100000000));
         var target = Character(2, "Target", level: 20, mapId: 100000000);
-        registry.Register(Online(target), new object());
+        RegisterCharacter(registry, target);
         var service = new FameService(registry);
 
         var result = service.GiveFame(giver, target.Id, mode: 1, Now);
@@ -128,8 +128,11 @@ public sealed class FameServiceTests
     private static Player Player(Character character)
         => new(character, new Position(0, 0, 0, 0));
 
-    private static OnlinePlayer Online(Character character)
-        => new(character.Id, character.Name, Channel: 1, character, SendNoop);
+    private static void RegisterCharacter(InMemoryOnlinePlayerRegistry registry, Character character)
+    {
+        var player = new Player(character, new Position(0, 0, 0, 0));
+        registry.Register(player, 1, SendNoop, new object());
+    }
 
     private static Task SendNoop(byte[] packet, CancellationToken ct)
         => Task.CompletedTask;

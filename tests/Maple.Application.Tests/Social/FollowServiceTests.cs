@@ -11,12 +11,11 @@ public sealed class FollowServiceTests
     public void RequestAndAcceptFollow_EstablishesLeaderAndFollower()
     {
         var online = new InMemoryOnlinePlayerRegistry();
-        var runtime = new InMemoryOnlinePlayerRuntimeRegistry();
         var leader = Player(1, "Leader");
         var follower = Player(2, "Follower");
-        Register(online, runtime, leader);
-        Register(online, runtime, follower);
-        var service = new FollowService(online, runtime);
+        Register(online, leader);
+        Register(online, follower);
+        var service = new FollowService(online);
 
         var request = service.RequestFollow(leader, follower.Character.Id, mapChangeResume: false, cancel: false);
         var reply = service.ReplyToFollow(follower, leader.Character.Id, accepted: true);
@@ -33,12 +32,11 @@ public sealed class FollowServiceTests
     public void CancelFollow_ClearsBothSides()
     {
         var online = new InMemoryOnlinePlayerRegistry();
-        var runtime = new InMemoryOnlinePlayerRuntimeRegistry();
         var leader = Player(1, "Leader");
         var follower = Player(2, "Follower");
-        Register(online, runtime, leader);
-        Register(online, runtime, follower);
-        var service = new FollowService(online, runtime);
+        Register(online, leader);
+        Register(online, follower);
+        var service = new FollowService(online);
         service.RequestFollow(leader, follower.Character.Id, mapChangeResume: false, cancel: false);
         service.ReplyToFollow(follower, leader.Character.Id, accepted: true);
 
@@ -54,12 +52,11 @@ public sealed class FollowServiceTests
     public void ReplyDeclined_ClearsPendingState()
     {
         var online = new InMemoryOnlinePlayerRegistry();
-        var runtime = new InMemoryOnlinePlayerRuntimeRegistry();
         var leader = Player(1, "Leader");
         var follower = Player(2, "Follower");
-        Register(online, runtime, leader);
-        Register(online, runtime, follower);
-        var service = new FollowService(online, runtime);
+        Register(online, leader);
+        Register(online, follower);
+        var service = new FollowService(online);
 
         service.RequestFollow(leader, follower.Character.Id, mapChangeResume: false, cancel: false);
         var reply = service.ReplyToFollow(follower, leader.Character.Id, accepted: false);
@@ -73,12 +70,10 @@ public sealed class FollowServiceTests
 
     private static void Register(
         IOnlinePlayerRegistry online,
-        IOnlinePlayerRuntimeRegistry runtime,
         Player player)
     {
         var token = new object();
-        online.Register(new OnlinePlayer(player.Character.Id, player.Character.Name, 1, player.Character, SendNoop), token);
-        runtime.Register(player, token);
+        online.Register(player, 1, SendNoop, token);
     }
 
     private static Player Player(int id, string name) =>

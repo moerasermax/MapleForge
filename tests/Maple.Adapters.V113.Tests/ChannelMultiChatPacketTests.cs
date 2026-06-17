@@ -225,13 +225,7 @@ public sealed class ChannelMultiChatPacketTests
 
     private static void Register(IOnlinePlayerRegistry online, Player player, int channel, List<byte[]> packets)
     {
-        online.Register(new OnlinePlayer(
-            player.Character.Id,
-            player.Character.Name,
-            channel,
-            player.Character,
-            SendTo(packets)),
-            new object());
+        online.Register(player, channel, SendTo(packets), new object());
     }
 
     private static byte[] GroupChatRequest(GroupChatKind kind, IReadOnlyList<int> recipientIds, string text)

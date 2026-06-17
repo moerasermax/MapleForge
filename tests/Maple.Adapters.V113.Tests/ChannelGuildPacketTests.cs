@@ -148,16 +148,11 @@ public sealed class ChannelGuildPacketTests
         var player = Player(2, "Guest");
         player.JoinGuild(25, Guild.DefaultMemberRank);
         var sentPackets = new List<byte[]>();
-        online.Register(new OnlinePlayer(
-            player.Character.Id,
-            player.Character.Name,
-            Channel: 3,
-            Character: player.Character,
-            SendPacket: (packet, _) =>
+        online.Register(player, 3, (packet, _) =>
             {
                 sentPackets.Add(packet);
                 return Task.CompletedTask;
-            }),
+            },
             new object());
         var hook = new CentralGuildSessionHook(online);
 

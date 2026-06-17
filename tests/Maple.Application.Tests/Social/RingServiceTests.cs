@@ -12,12 +12,11 @@ public sealed class RingServiceTests
     public void RequestAndAcceptProposal_CreatesRingStateForBothPlayers()
     {
         var online = new InMemoryOnlinePlayerRegistry();
-        var runtime = new InMemoryOnlinePlayerRuntimeRegistry();
         var proposer = Player(1, "Proposer", Item(InventoryType.Use, 2240004, slot: 1));
         var target = Player(2, "Target");
-        Register(online, runtime, proposer);
-        Register(online, runtime, target);
-        var service = new RingService(online, runtime);
+        Register(online, proposer);
+        Register(online, target);
+        var service = new RingService(online);
 
         var request = service.RequestProposal(proposer, target.Character.Name, 2240004);
         var reply = service.ReplyToProposal(target, accepted: true, proposer.Character.Name, proposer.Character.Id);
@@ -39,12 +38,11 @@ public sealed class RingServiceTests
     public void DeclineProposal_ClearsPendingStateWithoutCreatingRing()
     {
         var online = new InMemoryOnlinePlayerRegistry();
-        var runtime = new InMemoryOnlinePlayerRuntimeRegistry();
         var proposer = Player(1, "Proposer", Item(InventoryType.Use, 2240004, slot: 1));
         var target = Player(2, "Target");
-        Register(online, runtime, proposer);
-        Register(online, runtime, target);
-        var service = new RingService(online, runtime);
+        Register(online, proposer);
+        Register(online, target);
+        var service = new RingService(online);
 
         service.RequestProposal(proposer, target.Character.Name, 2240004);
         var reply = service.ReplyToProposal(target, accepted: false, proposer.Character.Name, proposer.Character.Id);
@@ -61,12 +59,11 @@ public sealed class RingServiceTests
     public void RequestProposal_RequiresSameMapOnlineTarget()
     {
         var online = new InMemoryOnlinePlayerRegistry();
-        var runtime = new InMemoryOnlinePlayerRuntimeRegistry();
         var proposer = Player(1, "Proposer", Item(InventoryType.Use, 2240004, slot: 1));
         var target = Player(2, "Target", mapId: 200000000);
-        Register(online, runtime, proposer);
-        Register(online, runtime, target);
-        var service = new RingService(online, runtime);
+        Register(online, proposer);
+        Register(online, target);
+        var service = new RingService(online);
 
         var result = service.RequestProposal(proposer, target.Character.Name, 2240004);
 
@@ -77,12 +74,10 @@ public sealed class RingServiceTests
 
     private static void Register(
         IOnlinePlayerRegistry online,
-        IOnlinePlayerRuntimeRegistry runtime,
         Player player)
     {
         var token = new object();
-        online.Register(new OnlinePlayer(player.Character.Id, player.Character.Name, 1, player.Character, SendNoop), token);
-        runtime.Register(player, token);
+        online.Register(player, 1, SendNoop, token);
     }
 
     private static Player Player(int id, string name, params ItemRecord[] items) => Player(id, name, 100000000, items);

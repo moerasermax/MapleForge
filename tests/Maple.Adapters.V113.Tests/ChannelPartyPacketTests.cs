@@ -95,16 +95,11 @@ public sealed class ChannelPartyPacketTests
         var online = new InMemoryOnlinePlayerRegistry();
         var player = Player(2, "Guest", channelIndexMap: 100000000);
         var sentPackets = new List<byte[]>();
-        online.Register(new OnlinePlayer(
-            player.Character.Id,
-            player.Character.Name,
-            Channel: 2,
-            Character: player.Character,
-            SendPacket: (packet, _) =>
+        online.Register(player, 2, (packet, _) =>
             {
                 sentPackets.Add(packet);
                 return Task.CompletedTask;
-            }),
+            },
             new object());
         var hook = new CentralPartySessionHook(online);
 

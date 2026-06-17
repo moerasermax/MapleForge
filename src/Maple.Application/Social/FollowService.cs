@@ -32,14 +32,11 @@ public sealed record FollowReplyResult(
 public sealed class FollowService
 {
     private readonly IOnlinePlayerRegistry _onlinePlayers;
-    private readonly IOnlinePlayerRuntimeRegistry _runtimePlayers;
 
     public FollowService(
-        IOnlinePlayerRegistry onlinePlayers,
-        IOnlinePlayerRuntimeRegistry runtimePlayers)
+        IOnlinePlayerRegistry onlinePlayers)
     {
         _onlinePlayers = onlinePlayers;
-        _runtimePlayers = runtimePlayers;
     }
 
     public FollowRequestResult RequestFollow(
@@ -83,11 +80,7 @@ public sealed class FollowService
             return new FollowRequestResult(FollowActionStatus.Busy, target);
         }
 
-        var targetPlayer = _runtimePlayers.FindById(target.CharacterId);
-        if (targetPlayer is null)
-        {
-            return new FollowRequestResult(FollowActionStatus.TargetRuntimeMissing, target);
-        }
+        var targetPlayer = target.Player;
 
         if (targetPlayer.HasActiveFollow || targetPlayer.HasPendingFollow)
         {
@@ -101,34 +94,34 @@ public sealed class FollowService
 
     public FollowReplyResult ReplyToFollow(Player replier, int requesterCharacterId, bool accepted)
     {
-        var requester = _onlinePlayers.FindById(requesterCharacterId);
-        var requesterPlayer = _runtimePlayers.FindById(requesterCharacterId);
-        if (requester is null || requesterPlayer is null ||
+        var requesterEntry = _onlinePlayers.FindById(requesterCharacterId);
+        var requesterPlayer = requesterEntry?.Player;
+        if (requesterEntry is null || requesterPlayer is null ||
             replier.PendingFollowRequesterCharacterId != requesterCharacterId ||
             requesterPlayer.PendingFollowTargetCharacterId != replier.Character.Id)
         {
             replier.ClearPendingFollow();
             requesterPlayer?.ClearPendingFollow();
-            return new FollowReplyResult(FollowActionStatus.PendingNotFound, requester, requesterPlayer);
+            return new FollowReplyResult(FollowActionStatus.PendingNotFound, requesterEntry, requesterPlayer);
         }
 
         if (!accepted)
         {
             replier.ClearPendingFollow();
             requesterPlayer.ClearPendingFollow();
-            return new FollowReplyResult(FollowActionStatus.Declined, requester, requesterPlayer);
+            return new FollowReplyResult(FollowActionStatus.Declined, requesterEntry, requesterPlayer);
         }
 
-        if (requester.Character.MapId != replier.Character.MapId)
+        if (requesterEntry.Character.MapId != replier.Character.MapId)
         {
             replier.ClearPendingFollow();
             requesterPlayer.ClearPendingFollow();
-            return new FollowReplyResult(FollowActionStatus.DifferentMap, requester, requesterPlayer);
+            return new FollowReplyResult(FollowActionStatus.DifferentMap, requesterEntry, requesterPlayer);
         }
 
         requesterPlayer.StartBeingFollowedBy(replier.Character.Id);
         replier.StartFollowing(requesterPlayer.Character.Id);
-        return new FollowReplyResult(FollowActionStatus.Success, requester, requesterPlayer);
+        return new FollowReplyResult(FollowActionStatus.Success, requesterEntry, requesterPlayer);
     }
 
     public (OnlinePlayer? Online, Player? Player) CancelFollow(Player player)
@@ -137,11 +130,11 @@ public sealed class FollowService
             ? player.FollowTargetCharacterId
             : player.FollowFollowerCharacterId;
 
-        var online = otherId > 0 ? _onlinePlayers.FindById(otherId) : null;
-        var other = otherId > 0 ? _runtimePlayers.FindById(otherId) : null;
+        var entry = otherId > 0 ? _onlinePlayers.FindById(otherId) : null;
+        var other = entry?.Player;
         player.ClearFollow();
         other?.ClearFollow();
-        return (online, other);
+        return (entry, other);
     }
 
     private (OnlinePlayer? Online, Player? Player) FindFollowOther(Player player)
@@ -150,8 +143,8 @@ public sealed class FollowService
             ? player.FollowTargetCharacterId
             : player.FollowFollowerCharacterId;
 
-        return otherId > 0
-            ? (_onlinePlayers.FindById(otherId), _runtimePlayers.FindById(otherId))
-            : (null, null);
+        if (otherId <= 0) return (null, null);
+        var entry = _onlinePlayers.FindById(otherId);
+        return (entry, entry?.Player);
     }
 }

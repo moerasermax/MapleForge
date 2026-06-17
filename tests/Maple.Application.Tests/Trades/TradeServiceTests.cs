@@ -150,13 +150,7 @@ public sealed class TradeServiceTests
 
     private static void Register(TradeService service, FakeOnlinePlayerRegistry registry, Player player)
     {
-        registry.Register(new OnlinePlayer(
-            player.Character.Id,
-            player.Character.Name,
-            1,
-            player.Character,
-            static (_, _) => Task.CompletedTask),
-            new object());
+        registry.Register(player, 1, static (_, _) => Task.CompletedTask, new object());
 
         service.RegisterPlayer(player, 1, static (_, _) => Task.CompletedTask, new object());
     }
@@ -165,7 +159,8 @@ public sealed class TradeServiceTests
     {
         private readonly Dictionary<int, OnlinePlayer> _players = [];
 
-        public void Register(OnlinePlayer player, object token) => _players[player.CharacterId] = player;
+        public void Register(Player player, int channel, Func<byte[], CancellationToken, Task> sendPacket, object token)
+            => _players[player.Character.Id] = new OnlinePlayer(player.Character.Id, player.Character.Name, channel, player, sendPacket);
 
         public OnlinePlayer? Deregister(int characterId, object token)
             => _players.Remove(characterId, out var player) ? player : null;

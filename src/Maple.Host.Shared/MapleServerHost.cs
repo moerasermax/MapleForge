@@ -127,7 +127,6 @@ public static class MapleServerHost
         builder.Services.AddSingleton<CombatService>();
         builder.Services.AddSingleton<RangedMagicCombatService>();
         builder.Services.AddSingleton<IOnlinePlayerRegistry, InMemoryOnlinePlayerRegistry>();
-        builder.Services.AddSingleton<IOnlinePlayerRuntimeRegistry, InMemoryOnlinePlayerRuntimeRegistry>();
         builder.Services.AddSingleton<FameService>();
         builder.Services.AddSingleton<BuddyService>();
         builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();

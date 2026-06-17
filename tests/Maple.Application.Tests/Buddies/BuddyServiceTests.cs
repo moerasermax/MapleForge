@@ -1,6 +1,7 @@
 using Maple.Application.Buddies;
 using Maple.Application.OnlinePlayers;
 using Maple.Core.Characters;
+using Maple.Core.World;
 
 namespace Maple.Application.Tests.Buddies;
 
@@ -13,7 +14,7 @@ public sealed class BuddyServiceTests
         var target = Character(2, "Target");
         var repo = new FakeCharacterRepository(owner, target);
         var registry = new InMemoryOnlinePlayerRegistry();
-        registry.Register(Online(target, channel: 2), new object());
+        RegisterCharacter(registry, target, channel: 2);
         var service = new BuddyService(repo, registry);
 
         var result = await service.ModifyAsync(
@@ -53,7 +54,7 @@ public sealed class BuddyServiceTests
         });
         var repo = new FakeCharacterRepository(requester, target);
         var registry = new InMemoryOnlinePlayerRegistry();
-        registry.Register(Online(requester, channel: 1), new object());
+        RegisterCharacter(registry, requester, channel: 1);
         var service = new BuddyService(repo, registry);
 
         var result = await service.ModifyAsync(
@@ -82,9 +83,9 @@ public sealed class BuddyServiceTests
         var service = new BuddyService(new FakeCharacterRepository(alice, bob), registry);
         var aliceToken = new object();
 
-        registry.Register(Online(bob, channel: 2), new object());
+        RegisterCharacter(registry, bob, channel: 2);
         service.LogOn(bob, channel: 2);
-        registry.Register(Online(alice, channel: 1), aliceToken);
+        RegisterCharacter(registry, alice, channel: 1, aliceToken);
         var login = service.LogOn(alice, channel: 1);
 
         var selfBob = Assert.Single(login.Self.BuddyList!);
@@ -106,8 +107,11 @@ public sealed class BuddyServiceTests
     private static Character Character(int id, string name)
         => new() { Id = id, Name = name };
 
-    private static OnlinePlayer Online(Character character, int channel)
-        => new(character.Id, character.Name, channel, character, SendNoop);
+    private static void RegisterCharacter(InMemoryOnlinePlayerRegistry registry, Character character, int channel, object? token = null)
+    {
+        var player = new Player(character, new Position(0, 0, 0, 0));
+        registry.Register(player, channel, SendNoop, token ?? new object());
+    }
 
     private static Task SendNoop(byte[] packet, CancellationToken ct)
         => Task.CompletedTask;
