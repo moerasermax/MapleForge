@@ -56,4 +56,15 @@ public sealed class PacketReader
     }
 
     public void Skip(int n) => _pos += n;
+
+    /// <summary>讀取指定數量的位元組。</summary>
+    public byte[] ReadBytes(int count)
+    {
+        if (count < 0 || count > Remaining)
+            throw new InvalidDataException($"封包不足：需 {count} bytes，剩餘 {Remaining}");
+        var result = new byte[count];
+        Array.Copy(_buf, _pos, result, 0, count);
+        _pos += count;
+        return result;
+    }
 }

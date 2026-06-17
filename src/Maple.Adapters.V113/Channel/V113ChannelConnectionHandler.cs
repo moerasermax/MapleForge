@@ -412,6 +412,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
                     }
 
+                    case V113ChannelRecvOp.MoveLife:
+                        if (player is null || currentField is null) break;
+                        await HandleMoveLifeAsync(reader, player, currentField, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.AutoAggro:
+                        if (player is null || currentField is null) break;
+                        await HandleAutoAggroAsync(reader, player, currentField, s, token);
+                        break;
+
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
                         await HandleGeneralChatAsync(reader, player, s, token);
@@ -2194,6 +2204,96 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             _log.LogDebug("[Channel] 移動解析失敗(忽略,仍廣播) {Msg}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// c2s MOVE_LIFE (0xB6)：怪物移動。解析 → 更新 mob 位置 → 回 response 給控制者 → 廣播給其他人。
+    /// 對照 Java MobHandler.MoveMonster。
+    /// </summary>
+    private async Task HandleMoveLifeAsync(PacketReader reader, Player player, FieldInstance field, MapleSession session, CancellationToken ct)
+    {
+        V113MoveLifeData data;
+        try
+        {
+            data = V113MobMovementPackets.ParseMoveLife(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        Mob? mob;
+        lock (field)
+        {
+            mob = field.GetMob(data.ObjectId);
+        }
+
+        if (mob is null || !mob.IsAlive) return;
+
+        // 嘗試從 raw movement 解析最終位置來更新 mob；失敗則 fallback 到 startPos
+        try
+        {
+            if (data.RawMovement.Length > 0)
+            {
+                var moveResult = V113MovementParser.Parse(new PacketReader(data.RawMovement));
+                if (moveResult.Commands > 0)
+                {
+                    mob.MoveTo(new Position(moveResult.X, moveResult.Y, moveResult.Stance, moveResult.Foothold));
+                }
+                else
+                {
+                    mob.MoveTo(new Position(data.StartX, data.StartY, mob.Position.Stance, mob.Position.Foothold));
+                }
+            }
+            else
+            {
+                mob.MoveTo(new Position(data.StartX, data.StartY, mob.Position.Stance, mob.Position.Foothold));
+            }
+        }
+        catch (InvalidDataException)
+        {
+            mob.MoveTo(new Position(data.StartX, data.StartY, mob.Position.Stance, mob.Position.Foothold));
+        }
+
+        // Response 給控制者
+        await session.SendAsync(
+            V113MobMovementPackets.MoveMonsterResponse(data.ObjectId, data.MoveId, mob.Mp, aggro: false),
+            ct);
+
+        // 廣播移動給同圖其他玩家
+        var broadcast = V113MobMovementPackets.BroadcastMoveMonster(
+            data.ObjectId, data.UseSkill, data.SkillIndex, data.SkillData,
+            data.StartX, data.StartY, data.RawMovement);
+        await BroadcastPacketToOthersAsync(player.Character, broadcast, ct);
+    }
+
+    /// <summary>
+    /// c2s AUTO_AGGRO (0xB7)：怪物自動仇恨。設定控制者並送 SpawnMonsterControl。
+    /// 對照 Java MobHandler.AutoAggro。
+    /// </summary>
+    private async Task HandleAutoAggroAsync(PacketReader reader, Player player, FieldInstance field, MapleSession session, CancellationToken ct)
+    {
+        int objectId;
+        try
+        {
+            objectId = reader.ReadInt();
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        Mob? mob;
+        lock (field)
+        {
+            mob = field.GetMob(objectId);
+        }
+
+        if (mob is null || !mob.IsAlive) return;
+
+        mob.ControllerId = player.Character.Id;
+
+        await session.SendAsync(V113CombatPackets.SpawnMonsterControl(mob, newSpawn: false, aggro: true), ct);
     }
 
     private async Task HandleUseInnerPortalAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)

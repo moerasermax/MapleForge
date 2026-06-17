@@ -65,6 +65,8 @@ internal static class V113ChannelRecvOp
     public const short GachExp = unchecked((short)0x9C);
     public const short TransformPlayer = unchecked((short)0xA0);
     public const short XmasSurprise = unchecked((short)0xA2);
+    public const short MoveLife = unchecked((short)0xB6);       // 怪物移動（MOVE_LIFE）
+    public const short AutoAggro = unchecked((short)0xB7);     // 怪物自動仇恨（AUTO_AGGRO）
     public const short DamageReactor = unchecked((short)0xC9);
     public const short TouchReactor = unchecked((short)0xCA);
     public const short CashShopOperation = unchecked((short)0xE6);

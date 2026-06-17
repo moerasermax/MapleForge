@@ -28,6 +28,9 @@ public sealed class FieldInstance
     /// <summary>場上所有玩家。</summary>
     public IEnumerable<Player> Players => _objects.Values.OfType<Player>();
 
+    /// <summary>以 objectId 查詢怪物（不存在或型別不符回 null）。</summary>
+    public Mob? GetMob(int objectId) => _objects.TryGetValue(objectId, out var o) && o is Mob m ? m : null;
+
     /// <summary>
     /// 中心點半徑內的場上物件（含中心自身；要排除自身由呼叫端 filter）。
     /// 供戰鬥傷害、NPC 互動、技能 AoE 的範圍判定。

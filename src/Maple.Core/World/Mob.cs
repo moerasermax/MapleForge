@@ -47,6 +47,9 @@ public sealed class Mob : IFieldObject
 
     public bool IsAlive => Hp > 0;
 
+    /// <summary>控制此怪物 AI/移動的玩家角色 Id（0 = 無人控制）。</summary>
+    public int ControllerId { get; set; }
+
     public short OriginFoothold { get; }
 
     public sbyte CarnivalTeam => Definition.Team;
