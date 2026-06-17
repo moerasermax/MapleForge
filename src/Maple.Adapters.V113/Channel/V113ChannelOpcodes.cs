@@ -53,6 +53,7 @@ internal static class V113ChannelRecvOp
     public const short CancelItemEffect = 0x43;
     public const short UseSummonBag = 0x45;
     public const short UseMountFood = 0x47;
+    public const short UseCashItem = 0x49;
     public const short UseCatchItem = 0x4B;
     public const short UseReturnScroll = 0x4F;
     public const short UseOwlMinerva = 0x4D;

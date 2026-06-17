@@ -167,6 +167,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<ItemUseService>();
         builder.Services.AddSingleton<IV113ItemUseRandomSource, V113ItemUseRandomSource>();
         builder.Services.AddSingleton<V113ItemUseHandler>();
+        builder.Services.AddSingleton<V113UseCashItemHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>

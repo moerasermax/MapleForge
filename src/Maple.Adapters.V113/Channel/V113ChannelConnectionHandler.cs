@@ -70,6 +70,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113OwlHandler _owlHandler;
     private readonly V113BuffItemHandler _buffItemHandler;
     private readonly V113ItemUseHandler _itemUseHandler;
+    private readonly V113UseCashItemHandler _useCashItemHandler;
     private readonly ItemUseService _itemUseService;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
@@ -107,6 +108,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113OwlHandler owlHandler,
         V113BuffItemHandler buffItemHandler,
         V113ItemUseHandler itemUseHandler,
+        V113UseCashItemHandler useCashItemHandler,
         ItemUseService itemUseService,
         QuestService questService,
         StatsService statsService,
@@ -143,6 +145,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _owlHandler = owlHandler;
         _buffItemHandler = buffItemHandler;
         _itemUseHandler = itemUseHandler;
+        _useCashItemHandler = useCashItemHandler;
         _itemUseService = itemUseService;
         _questService = questService;
         _statsService = statsService;
@@ -718,6 +721,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.CancelItemEffect:
                         if (player is null) break;
                         await HandleCancelItemEffectAsync(reader, player, token);
+                        break;
+
+                    case V113ChannelRecvOp.UseCashItem:
+                        if (player is null) break;
+                        var useCashResult = _useCashItemHandler.Handle(reader, player);
+                        if (useCashResult.Handled)
+                        {
+                            foreach (var pkt in useCashResult.Packets)
+                                await s.SendAsync(pkt, token);
+                            if (useCashResult.CharacterMutated)
+                                await _charService.UpdateAsync(player.Character, token);
+                        }
                         break;
 
                     case V113ChannelRecvOp.UseOwlMinerva:
