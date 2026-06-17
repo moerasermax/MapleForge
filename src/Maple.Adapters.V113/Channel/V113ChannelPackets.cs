@@ -190,17 +190,30 @@ internal static class V113ChannelPackets
         w.WriteInt(eq.ItemId);
         w.WriteByte(0);                 // hasUniqueId = 0 (一般裝備)
         // hasUniqueId=0 → 不寫 uniqueId long
-        w.WriteLong(GetTime(-1));       // addExpirationTime = writeLong(getTime(expiration))
-        w.WriteByte(0);                 // upgrade slots
-        w.WriteByte(0);                 // level
-        // 15 個 short: str,dex,int,luk,hp,mp,watk,matk,wdef,mdef,acc,avoid,hands,speed,jump
-        for (var i = 0; i < 15; i++) w.WriteShort(0);
-        w.WriteShort(0);                // owner = 空 MapleAsciiString (length 0)
-        w.WriteShort(0);                // flag
+        w.WriteLong(GetTime(eq.Expiration));       // addExpirationTime = writeLong(getTime(expiration))
+        w.WriteByte(eq.UpgradeSlots);
+        w.WriteByte(eq.Level);
+        w.WriteShort(eq.Str);
+        w.WriteShort(eq.Dex);
+        w.WriteShort(eq.Int);
+        w.WriteShort(eq.Luk);
+        w.WriteShort(eq.Hp);
+        w.WriteShort(eq.Mp);
+        w.WriteShort(eq.Watk);
+        w.WriteShort(eq.Matk);
+        w.WriteShort(eq.Wdef);
+        w.WriteShort(eq.Mdef);
+        w.WriteShort(eq.Acc);
+        w.WriteShort(eq.Avoid);
+        w.WriteShort(eq.Hands);
+        w.WriteShort(eq.Speed);
+        w.WriteShort(eq.Jump);
+        w.WriteMapleString(eq.Owner);
+        w.WriteShort(eq.Flag);
         w.WriteByte(0);                 // incSkill (>0?1:0)
-        w.WriteByte(0);                 // item level
-        w.WriteInt(0);                  // item exp (int, 不是 short!)
-        w.WriteLong(0);                 // tracking uniqueId (因 hasUniqueId=0 → Java 寫 item.getUniqueId())
+        w.WriteByte(eq.ItemLevel);
+        w.WriteInt(eq.ItemExp);         // item exp (int, 不是 short!)
+        w.WriteLong(eq.UniqueId);       // tracking uniqueId (因 hasUniqueId=0 → Java 寫 item.getUniqueId())
         w.WriteLong(GetTime(-2));       // getTime(-2)
         w.WriteInt(-1);                 // -1
     }

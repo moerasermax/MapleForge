@@ -31,7 +31,7 @@ using Microsoft.Extensions.Logging;
 namespace Maple.Adapters.V113.Channel;
 
 /// <summary>v113 Channel 連線選項（由 Host 從實例設定投影）。</summary>
-public sealed record V113ChannelOptions(int ChannelIndex = 0);
+public sealed record V113ChannelOptions(int ChannelIndex = 0, byte[]? ChannelIp = null, int ChannelPort = 8585);
 
 /// <summary>
 /// v113 Channel 連線處理：握手 → PLAYER_LOGGEDIN → 載入角色 → SET_FIELD（進地圖）→ 廣播移動。
@@ -70,6 +70,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113OwlHandler _owlHandler;
     private readonly V113BuffItemHandler _buffItemHandler;
     private readonly V113ItemUseHandler _itemUseHandler;
+    private readonly V113ScrollHandler _scrollHandler;
+    private readonly V113UseConsumableHandler _useConsumableHandler;
     private readonly V113UseCashItemHandler _useCashItemHandler;
     private readonly ItemUseService _itemUseService;
     private readonly QuestService _questService;
@@ -108,6 +110,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113OwlHandler owlHandler,
         V113BuffItemHandler buffItemHandler,
         V113ItemUseHandler itemUseHandler,
+        V113ScrollHandler scrollHandler,
+        V113UseConsumableHandler useConsumableHandler,
         V113UseCashItemHandler useCashItemHandler,
         ItemUseService itemUseService,
         QuestService questService,
@@ -145,6 +149,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _owlHandler = owlHandler;
         _buffItemHandler = buffItemHandler;
         _itemUseHandler = itemUseHandler;
+        _scrollHandler = scrollHandler;
+        _useConsumableHandler = useConsumableHandler;
         _useCashItemHandler = useCashItemHandler;
         _itemUseService = itemUseService;
         _questService = questService;
@@ -361,6 +367,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.ChangeMap:
                         if (player is null) break;
                         await HandleChangeMapAsync(reader, token);                    // 腳走傳送點換圖
+                        break;
+
+                    case V113ChannelRecvOp.ChangeChannel:
+                        if (player is null) break;
+                        var targetChannel = V113ChannelChangePackets.ParseChangeChannel(reader);
+                        player.FlushInventory();
+                        await _charService.UpdateAsync(player.Character, token);
+                        var channelIp = _options.ChannelIp ?? new byte[] { 127, 0, 0, 1 };
+                        await s.SendAsync(V113ChannelChangePackets.ChangeChannel(channelIp, (short)_options.ChannelPort), token);
+                        _log.LogInformation("[Channel] {Name} change channel target={Target} → {Ip}:{Port}",
+                            player.Character.Name, targetChannel, string.Join(".", channelIp), _options.ChannelPort);
                         break;
 
                     case V113ChannelRecvOp.UseInnerPortal:
@@ -681,6 +698,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
                     }
 
+                    case V113ChannelRecvOp.UseUpgradeScroll:
+                    {
+                        if (player is null) break;
+                        await HandleScrollResultAsync(_scrollHandler.HandleUseUpgradeScroll(reader, player), player, s, token);
+                        break;
+                    }
+
                     case V113ChannelRecvOp.NpcTalk:
                         if (player is null) break;
                         conversation = await StartNpcConversationAsync(
@@ -716,6 +740,23 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.ItemMove:
                         if (player is null) break;
                         await HandleItemMoveAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.UseItem:
+                        if (player is null) break;
+                        var useItemResult = _useConsumableHandler.Handle(reader, player);
+                        if (useItemResult.Handled)
+                        {
+                            foreach (var packet in useItemResult.Packets)
+                            {
+                                await s.SendAsync(packet, token);
+                            }
+
+                            if (useItemResult.CharacterMutated)
+                            {
+                                await _charService.UpdateAsync(player.Character, token);
+                            }
+                        }
                         break;
 
                     case V113ChannelRecvOp.ItemGather:
@@ -1196,6 +1237,33 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         return currentField;
+    }
+
+    private async Task HandleScrollResultAsync(
+        V113ScrollHandleResult result,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (!result.Handled)
+        {
+            return;
+        }
+
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (result.BroadcastPacket is not null)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, result.BroadcastPacket, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
     }
 
     private async Task HandleBuffItemResultAsync(

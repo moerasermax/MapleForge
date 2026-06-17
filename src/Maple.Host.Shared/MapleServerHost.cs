@@ -163,10 +163,16 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113RepairHandler>();
         builder.Services.AddSingleton<V113OwlHandler>();
         builder.Services.AddSingleton<V113BuffItemHandler>();
+        builder.Services.AddSingleton<IItemEffectCatalog, HardcodedItemEffectCatalog>();
+        builder.Services.AddSingleton<UseItemService>();
         builder.Services.AddSingleton<IItemUseCatalog, WzItemUseCatalog>();
         builder.Services.AddSingleton<ItemUseService>();
         builder.Services.AddSingleton<IV113ItemUseRandomSource, V113ItemUseRandomSource>();
         builder.Services.AddSingleton<V113ItemUseHandler>();
+        builder.Services.AddSingleton<IScrollCatalog, HardcodedScrollCatalog>();
+        builder.Services.AddSingleton<ScrollService>();
+        builder.Services.AddSingleton<V113ScrollHandler>();
+        builder.Services.AddSingleton<V113UseConsumableHandler>();
         builder.Services.AddSingleton<V113UseCashItemHandler>();
 
         // v113 登入選項（由實例設定投影）。
@@ -204,7 +210,12 @@ public static class MapleServerHost
         builder.Services.AddSingleton<ReactorService>();
 
         // v113 Channel 選項。
-        builder.Services.AddSingleton(new V113ChannelOptions(ChannelIndex: 0));
+        builder.Services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            var ip = System.Net.IPAddress.Parse(o.ChannelIp).GetAddressBytes();
+            return new V113ChannelOptions(ChannelIndex: 0, ChannelIp: ip, ChannelPort: o.ChannelPort);
+        });
 
         // v113 Channel 連線處理。
         builder.Services.AddSingleton<IChannelConnectionHandler, V113ChannelConnectionHandler>();

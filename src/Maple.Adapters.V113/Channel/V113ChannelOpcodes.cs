@@ -5,6 +5,7 @@ internal static class V113ChannelRecvOp
 {
     public const short PlayerLoggedIn = 0x07;
     public const short ChangeMap = 0x1E;     // 腳走地圖傳送點 / 死亡復活換圖（CHANGE_MAP）
+    public const short ChangeChannel = 0x1F;
     public const short MovePlayer = 0x21;
     public const short CancelChair = 0x22;
     public const short UseChair = 0x23;
@@ -50,12 +51,14 @@ internal static class V113ChannelRecvOp
     public const short ItemSort = 0x3F;
     public const short ItemGather = 0x40;
     public const short ItemMove = 0x41;      // 背包格內移動 / 穿脫裝 / 丟棄（dst=0）
+    public const short UseItem = 0x42;
     public const short CancelItemEffect = 0x43;
     public const short UseSummonBag = 0x45;
     public const short UseMountFood = 0x47;
     public const short UseCashItem = 0x49;
     public const short UseCatchItem = 0x4B;
     public const short UseReturnScroll = 0x4F;
+    public const short UseUpgradeScroll = 0x50;
     public const short UseOwlMinerva = 0x4D;
     public const short PlayerInteraction = 0x73;
     public const short ItemPickup = unchecked((short)0xC6);
@@ -77,7 +80,9 @@ internal static class V113ChannelRecvOp
 internal static class V113ChannelSendOp
 {
     public const short SetField = 0x7B;   // WARP_TO_MAP / initial login / map change
+    public const short ChangeChannel = 0x08;
     public const short ChatText = unchecked((short)0x9B);   // 地圖聊天泡泡
+    public const short ShowScrollEffect = unchecked((short)0x9F);
     public const short Ping = 0x09;
     public const short ModifyInventoryItem = 0x1B;   // 背包變更（新增/數量/移動/移除）
     public const short UpdateStats = 0x1D;
