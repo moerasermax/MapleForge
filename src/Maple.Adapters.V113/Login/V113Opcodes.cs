@@ -10,6 +10,7 @@ internal static class V113RecvOp
     public const short CheckCharName       = 0x08;
     public const short CreateChar          = 0x0B;
     public const short ServerStatusRequest = 0x18;
+    public const short DeleteChar          = 0x0D;
     public const short SetGender           = 0x19;  // c2s：帳號名+第二密碼(PIN)+gender byte
     public const short Pong                = 0x0E;
 }
@@ -28,4 +29,5 @@ internal static class V113SendOp
     public const short ChooseGender   = 0x14;  // 要求客戶端選擇性別+設 PIN
     public const short GenderSet      = 0x15;  // 性別/PIN 設定完成確認
     public const short Serverstatus   = 0x16;
+    public const short DeleteCharResponse = 0x07;
 }

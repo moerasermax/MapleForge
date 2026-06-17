@@ -149,5 +149,7 @@ public sealed class BuddyServiceTests
             _byName[character.Name] = character;
             return Task.CompletedTask;
         }
+
+        public Task<bool> DeleteAsync(int characterId, CancellationToken ct = default) => Task.FromResult(_byId.Remove(characterId));
     }
 }

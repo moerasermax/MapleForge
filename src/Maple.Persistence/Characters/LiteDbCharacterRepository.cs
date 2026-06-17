@@ -47,4 +47,10 @@ public sealed class LiteDbCharacterRepository : ICharacterRepository
         _col.Update(character);
         return Task.CompletedTask;
     }
+
+    public Task<bool> DeleteAsync(int characterId, CancellationToken ct = default)
+    {
+        var deleted = _col.Delete(characterId);
+        return Task.FromResult(deleted);
+    }
 }

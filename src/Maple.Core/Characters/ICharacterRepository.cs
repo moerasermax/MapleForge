@@ -17,4 +17,7 @@ public interface ICharacterRepository
 
     /// <summary>更新角色文件。</summary>
     Task UpdateAsync(Character character, CancellationToken ct = default);
+
+    /// <summary>刪除角色。</summary>
+    Task<bool> DeleteAsync(int characterId, CancellationToken ct = default);
 }

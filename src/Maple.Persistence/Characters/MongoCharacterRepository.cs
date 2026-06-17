@@ -67,6 +67,12 @@ public sealed class MongoCharacterRepository : ICharacterRepository
             ct);
     }
 
+    public async Task<bool> DeleteAsync(int characterId, CancellationToken ct = default)
+    {
+        var result = await _collection.DeleteOneAsync(c => c.Id == characterId, ct).ConfigureAwait(false);
+        return result.DeletedCount > 0;
+    }
+
     private async Task AssignIdIfNeededAsync(Character character, CancellationToken ct)
     {
         if (character.Id > 0)

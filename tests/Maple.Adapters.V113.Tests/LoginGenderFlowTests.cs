@@ -233,6 +233,7 @@ public class LoginGenderFlowTests
         public Task<Character?> FindByNameAsync(string name, CancellationToken ct = default) => Task.FromResult<Character?>(null);
         public Task AddAsync(Character c, CancellationToken ct = default) => Task.CompletedTask;
         public Task UpdateAsync(Character c, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<bool> DeleteAsync(int characterId, CancellationToken ct = default) => Task.FromResult(false);
     }
 
     private static async Task SendAsync(NetworkStream s, MapleAesOfb cipher, byte[] body, CancellationToken ct)

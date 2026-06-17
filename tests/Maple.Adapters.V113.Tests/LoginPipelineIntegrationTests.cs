@@ -91,6 +91,11 @@ public class LoginPipelineIntegrationTests
             _byName[character.Name] = character;
             return Task.CompletedTask;
         }
+
+        public Task<bool> DeleteAsync(int characterId, CancellationToken ct = default)
+        {
+            return Task.FromResult(_byId.Remove(characterId));
+        }
     }
 
     private static V113LoginConnectionHandler BuildHandler(

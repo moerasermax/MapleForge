@@ -102,6 +102,10 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
                 await HandleSetGenderAsync(reader, session, ctx, ct);
                 break;
 
+            case V113RecvOp.DeleteChar:
+                await HandleDeleteCharAsync(reader, session, ctx, ct);
+                break;
+
             case V113RecvOp.Pong:
                 break;
 
@@ -338,5 +342,35 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
         public Account? PendingAccount { get; set; }
 
         public bool IsLoggedIn => AccountId > 0;
+    }
+
+    // ── DELETE_CHAR ──────────────────────────────────────────────────────────
+
+    private async Task HandleDeleteCharAsync(PacketReader reader, MapleSession session, LoginContext ctx, CancellationToken ct)
+    {
+        if (!ctx.IsLoggedIn) return;
+
+        reader.ReadByte(); // skip
+        var secondPassword = reader.ReadMapleString();
+        var characterId = reader.ReadInt();
+
+        byte state = 0;
+
+        var chr = await _charService.GetByIdAsync(characterId, ct);
+        if (chr is null || chr.AccountId != ctx.AccountId)
+        {
+            state = 1;
+        }
+        else
+        {
+            var deleted = await _charService.DeleteAsync(characterId, ct);
+            if (!deleted) state = 1;
+        }
+
+        var w = new PacketWriter();
+        w.WriteShort(V113SendOp.DeleteCharResponse);
+        w.WriteInt(characterId);
+        w.WriteByte(state);
+        await session.SendAsync(w.ToArray(), ct);
     }
 }

@@ -51,5 +51,7 @@ public sealed class CharacterServiceKeymapTests
 
         public Task UpdateAsync(Character character, CancellationToken ct = default)
             => Task.CompletedTask;
+        public Task<bool> DeleteAsync(int characterId, CancellationToken ct = default)
+            => Task.FromResult(false);
     }
 }

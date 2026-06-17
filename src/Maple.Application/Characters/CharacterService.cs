@@ -24,6 +24,10 @@ public sealed class CharacterService
     public Task UpdateAsync(Character character, CancellationToken ct = default)
         => _repo.UpdateAsync(character, ct);
 
+    /// <summary>刪除角色。</summary>
+    public Task<bool> DeleteAsync(int characterId, CancellationToken ct = default)
+        => _repo.DeleteAsync(characterId, ct);
+
     /// <summary>名稱是否可用（未被使用 + 格式合法）。</summary>
     public async Task<bool> IsNameAvailableAsync(string name, CancellationToken ct = default)
     {

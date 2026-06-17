@@ -59,6 +59,7 @@ internal static class V113ChannelRecvOp
     public const short UseCatchItem = 0x4B;
     public const short UseReturnScroll = 0x4F;
     public const short UseUpgradeScroll = 0x50;
+    public const short UseSkillBook = 0x4C;
     public const short UseOwlMinerva = 0x4D;
     public const short PlayerInteraction = 0x73;
     public const short ItemPickup = unchecked((short)0xC6);
@@ -72,6 +73,8 @@ internal static class V113ChannelRecvOp
     public const short AutoAggro = unchecked((short)0xB7);     // 怪物自動仇恨（AUTO_AGGRO）
     public const short DamageReactor = unchecked((short)0xC9);
     public const short TouchReactor = unchecked((short)0xCA);
+    public const short NpcAction = unchecked((short)0xBF);
+    public const short ChangeMapSpecial = 0x5E;
     public const short CashShopOperation = unchecked((short)0xE6);
     public const short Pong = 0x0E;
 }
@@ -153,4 +156,6 @@ internal static class V113ChannelSendOp
     public const short CancelChair = unchecked((short)0xC6);
     public const short CurrentMapWarp = unchecked((short)0xC8);
     public const short UpdateQuestInfo = unchecked((short)0xCC);
+    public const short UseSkillBook = 0x31;
+    public const short NpcAction = unchecked((short)0xFC);
 }

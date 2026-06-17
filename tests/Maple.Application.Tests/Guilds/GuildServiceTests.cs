@@ -191,5 +191,7 @@ public sealed class GuildServiceTests
             Put(character);
             return Task.CompletedTask;
         }
+
+        public Task<bool> DeleteAsync(int characterId, CancellationToken ct = default) => Task.FromResult(false);
     }
 }

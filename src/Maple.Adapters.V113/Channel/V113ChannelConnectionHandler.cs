@@ -705,6 +705,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
                     }
 
+                    case V113ChannelRecvOp.UseSkillBook:
+                        if (player is null) break;
+                        await HandleUseSkillBookAsync(reader, player, s, token);
+                        break;
+
                     case V113ChannelRecvOp.NpcTalk:
                         if (player is null) break;
                         conversation = await StartNpcConversationAsync(
@@ -817,6 +822,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         {
                             await _charService.UpdateAsync(player.Character, token);
                         }
+                        break;
+
+                    case V113ChannelRecvOp.NpcAction:
+                        if (player is null) break;
+                        await HandleNpcActionAsync(reader, player, body.Length, npcOidToId, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.ChangeMapSpecial:
+                        if (player is null) break;
+                        currentField = await HandleChangeMapSpecialAsync(reader, player, currentField, npcOidToId, s, sessionToken, token);
+                        break;
+
+                    case V113ChannelRecvOp.SkillEffect:
+                        if (player is null) break;
+                        await HandleSkillEffectAsync(reader, player, token);
                         break;
 
                     case V113ChannelRecvOp.Pong:
@@ -2599,5 +2619,119 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         w.WriteBytes(sendIv);
         w.WriteByte(6);   // locale = 6 (TMS)，Login Hello 也是 6
         return w.ToArray();
+    }
+
+    // ── D-2: USE_SKILL_BOOK (0x4C) ──────────────────────────────────────────────
+
+    private async Task HandleUseSkillBookAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        reader.ReadInt(); // tick
+        var slot = (short)reader.ReadShort();
+        var itemId = reader.ReadInt();
+
+        var chr = player.Character;
+        var inv = player.Inventory.By(Core.Inventory.InventoryType.Use);
+
+        var item = inv.Get(slot);
+        if (item is null || item.ItemId != itemId || item.Quantity < 1)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        bool canUse = false, success = false;
+        int resultSkillId = 0, resultMaxLevel = 0;
+
+        // MVP stub: consume the item, broadcast canuse=false.
+        // Full implementation needs ISkillBookCatalog (Item.wz skilldata → skillId mapping).
+        inv.TryTake(slot, 1, out _);
+        player.FlushInventory();
+        await _charService.UpdateAsync(chr, ct);
+
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.UseSkillBook);
+        w.WriteInt(chr.Id);
+        w.WriteByte(1); // isUsed
+        w.WriteInt(resultSkillId);
+        w.WriteInt(resultMaxLevel);
+        w.WriteByte((byte)(canUse ? 1 : 0));
+        w.WriteByte((byte)(success ? 1 : 0));
+
+        await BroadcastPacketToMapAsync(chr, session, w.ToArray(), ct);
+        await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+    }
+
+    // ── C-1: NPC_ACTION relay ──────────────────────────────────────────────────
+
+    private async Task HandleNpcActionAsync(
+        PacketReader reader, Player player, int bodyLength,
+        Dictionary<int, int> npcOidToId, MapleSession session, CancellationToken ct)
+    {
+        if (bodyLength < 6) return; // opcode(2) + oid(4) minimum
+        var oid = reader.ReadInt();
+        if (!npcOidToId.ContainsKey(oid)) return;
+
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.NpcAction);
+        w.WriteInt(oid);
+
+        int remaining = bodyLength - 2 - 4; // body already excludes framing; subtract opcode(2)+oid(4)
+        if (remaining > 0)
+        {
+            var rest = reader.ReadBytes(remaining);
+            w.WriteBytes(rest);
+        }
+
+        await BroadcastPacketToMapAsync(player.Character, session, w.ToArray(), ct);
+    }
+
+    // ── C-2: CHANGE_MAP_SPECIAL (script portal 0x5E) ──────────────────────────
+
+    private async Task<FieldInstance?> HandleChangeMapSpecialAsync(
+        PacketReader reader, Player player, FieldInstance? currentField,
+        Dictionary<int, int> npcOidToId, MapleSession session,
+        object sessionToken, CancellationToken ct)
+    {
+        var chr = player.Character;
+        reader.ReadByte(); // skip 1
+        var portalName = reader.ReadMapleString();
+
+        var map = _mapService.LoadMap(chr.MapId);
+        var portal = map.Portals.FirstOrDefault(p => p.Name == portalName);
+        if (portal is null || portal.TargetMapId is 0 or 999999999)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return currentField;
+        }
+
+        var targetMap = _mapService.LoadMap(portal.TargetMapId);
+        var targetPortal = targetMap.Portals.FirstOrDefault(p => p.Name == portal.TargetPortalName);
+        int spawnPortalId = targetPortal?.Id ?? 0;
+
+        var newField = await WarpAsync(player, currentField, npcOidToId, session, portal.TargetMapId, sessionToken, ct, spawnPortalId);
+        _log.LogInformation("[Channel] {Name} script portal '{Portal}' → 地圖 {Map}", chr.Name, portalName, portal.TargetMapId);
+        return newField;
+    }
+
+    // ── C-3: SKILL_EFFECT (charge skill visual broadcast 0x57) ────────────────
+
+    private async Task HandleSkillEffectAsync(PacketReader reader, Player player, CancellationToken ct)
+    {
+        var skillId = reader.ReadInt();
+        var level = reader.ReadByte();
+        var flags = reader.ReadByte();
+        var speed = reader.ReadByte();
+        var unk = reader.ReadByte();
+
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.SkillEffect);
+        w.WriteInt(player.Character.Id);
+        w.WriteInt(skillId);
+        w.WriteByte(level);
+        w.WriteByte(flags);
+        w.WriteByte(speed);
+        w.WriteByte(unk);
+
+        await BroadcastPacketToOthersAsync(player.Character, w.ToArray(), ct);
     }
 }
