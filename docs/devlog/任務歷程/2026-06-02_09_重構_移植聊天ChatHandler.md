@@ -7,7 +7,7 @@
 更新: 2026-06-02 16:45
 關聯里程碑: 移植路線圖 ①in-game 基礎
 關聯記憶: v113-pivot-port-from-java
-關聯commit: 待填
+關聯commit: afe6e28
 ---
 
 ## 🎯 目標

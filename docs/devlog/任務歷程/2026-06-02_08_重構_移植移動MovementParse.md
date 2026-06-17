@@ -7,7 +7,7 @@
 更新: 2026-06-02 16:30
 關聯里程碑: M3-7 移動 / 移植路線圖 ①in-game 基礎
 關聯記憶: v113-pivot-port-from-java, proactive-checkpoints-anti-crash
-關聯commit: 待填
+關聯commit: afe6e28
 ---
 
 ## 🎯 目標（執行前先寫死）

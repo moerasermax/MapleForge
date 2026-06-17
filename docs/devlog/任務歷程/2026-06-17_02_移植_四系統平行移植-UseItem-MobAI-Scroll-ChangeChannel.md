@@ -7,7 +7,7 @@
 更新: 2026-06-17 01:00
 關聯里程碑: 「正常打怪練等」關鍵鏈
 關聯記憶: current-state-resume, v113-pivot-port-from-java
-關聯commit: 待填
+關聯commit: 33e59ff, 6073697
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）

@@ -34,7 +34,7 @@ For protocol, client, WZ, live-client, or packet tasks also read:
 
 ## Commit And Checkpoint Policy
 
-The remote is a private backup. Commit and push only when the user asks for backup/checkpointing, or when an active task explicitly authorizes periodic anti-crash checkpoints. Never force-push or perform destructive git operations without explicit approval.
+The remote is a private backup. Commit and push per CLAUDE.md checkpoint discipline: proactively commit+push after each tested unit during long/auto work sessions (anti-crash). Also commit when the user explicitly asks. Never force-push or perform destructive git operations without explicit approval.
 
 ## Task Start Checklist
 

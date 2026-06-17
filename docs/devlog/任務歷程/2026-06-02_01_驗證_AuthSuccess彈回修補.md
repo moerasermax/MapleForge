@@ -7,7 +7,7 @@
 更新: 2026-06-02 12:08
 關聯里程碑: M2-4 / blocker#2
 關聯記憶: current-state-resume, packet-capture-design, protocol-re-without-source
-關聯commit: 待填
+關聯commit: d395965
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）
