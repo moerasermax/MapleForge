@@ -121,6 +121,18 @@ public sealed class Character
     /// <summary>聯盟階級（對照 Java characters.allianceRank；未加入聯盟預設 5）。</summary>
     public byte AllianceRank { get; set; } = 5;
 
+    public int FamilyId { get; set; }
+
+    public int SeniorId { get; set; }
+
+    public int Junior1 { get; set; }
+
+    public int Junior2 { get; set; }
+
+    public int CurrentRep { get; set; }
+
+    public int TotalRep { get; set; }
+
     public void ChangeKeyBinding(int key, byte type, int action)
     {
         var index = Keymap.FindIndex(k => k.Key == key);
