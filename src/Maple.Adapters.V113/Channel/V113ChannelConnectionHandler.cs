@@ -570,6 +570,19 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleTrockAddMapAsync(reader, player, s, token);
                         break;
 
+                    case V113ChannelRecvOp.AntiMacroItemUse:
+                        if (player is null) break;
+                        _ = reader.ReadInt();
+                        _ = reader.ReadByte();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.AntiMacroSkillUse:
+                        if (player is null) break;
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.OldAntiMacroQuestion:
                         if (player is null) break;
                         _ = reader.ReadMapleString();
@@ -629,6 +642,26 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.SkillMacro:
                         if (player is null) break;
                         await HandleSkillMacroAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.RewardItem:
+                        if (player is null) break;
+                        _ = reader.ReadShort();
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.ItemMaker:
+                        if (player is null) break;
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.UseTreasureChest:
+                        if (player is null) break;
+                        _ = reader.ReadShort();
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
                     case V113ChannelRecvOp.PartyChat:
@@ -932,6 +965,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.Coconut:
                         if (player is null) break;
                         _ = reader.ReadShort();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.MonsterCarnival:
+                        if (player is null) break;
+                        _ = reader.ReadByte();
+                        _ = reader.ReadInt();
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 

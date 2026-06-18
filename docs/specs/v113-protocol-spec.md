@@ -1130,4 +1130,55 @@ writeMapleAsciiString(code)
 - 證據層級：Java source + Host.Shared build 0 warning/0 error + Adapters.V113 tests 299 passed / 1 skipped；真 v113 client cash-shop/anti-macro/item-unlock smoke 未跑。
 
 ---
+## P2 Migration Wave 3 complex opcode MVP stubs（2026-06-18）
+
+來源：
+
+- `recv.properties`：`CP_UserAntiMacroItemUseRequest=0x61`、`CP_UserAntiMacroSkillUseRequest=0x62`、`REWARD_ITEM=0x6A`、`ITEM_MAKER=0x6B`、`USE_TREASUER_CHEST=0x6C`、`MONSTER_CARNIVAL=0xD5`
+- Java dispatch：`MapleServerHandler.java` routes anti-macro requests to `PlayersHandler.AntiMacro`、`ITEM_MAKER` to `ItemMakerHandler.ItemMaker`、`USE_TREASUER_CHEST` / `REWARD_ITEM` to `InventoryHandler`、`MONSTER_CARNIVAL` to `MonsterCarnivalHandler.MonsterCarnival`
+- Java handlers：`ItemMakerHandler.java`、`InventoryHandler.UseRewardItem`、`InventoryHandler.UseTreasureChest`、`PlayersHandler.AntiMacro`、`MonsterCarnivalHandler.java`
+
+C→S MVP layouts:
+
+```
+CP_UserAntiMacroItemUseRequest:
+writeShort(0x61)
+writeInt(targetCharacterId)
+writeByte(mode)
+
+CP_UserAntiMacroSkillUseRequest:
+writeShort(0x62)
+writeInt(targetCharacterId)
+
+REWARD_ITEM:
+writeShort(0x6A)
+writeShort(slot)
+writeInt(itemId)
+
+ITEM_MAKER:
+writeShort(0x6B)
+writeInt(makerType)
+// full makerType-specific payload deferred
+
+USE_TREASUER_CHEST:
+writeShort(0x6C)
+writeShort(slot)
+writeInt(itemId)
+
+MONSTER_CARNIVAL:
+writeShort(0xD5)
+writeByte(tab)
+writeInt(number)
+```
+
+語義：
+
+- 本輪只把 6 個 complex subsystem opcode 接成安全 MVP stub：讀取任務指定最小欄位後送 `EnableActions`。
+- `ITEM_MAKER(0x6B)` Java 依 `makerType` 分岔處理寶石/道具製作/分解與成功廣播；MapleForge MVP 只讀 `makerType`，不建立 maker catalog 或 crafting/synthesis service。
+- `REWARD_ITEM(0x6A)` 與 `USE_TREASUER_CHEST(0x6C)` Java 會檢查背包道具、抽 reward、消耗道具/key 並播放 reward animation；MapleForge MVP 只讀 slot/itemId 後放行。
+- `CP_UserAntiMacroItemUseRequest(0x61)` / `CP_UserAntiMacroSkillUseRequest(0x62)` 本輪依 migration wave 範圍讀 `targetCharacterId`/`mode` 或 `targetCharacterId` 後放行，不建立 anti-macro runtime state。注意：目前 Java tree 的 `PlayersHandler.AntiMacro` full handler 讀 target character name string，item 分支再讀 slot/itemId；完整 anti-macro 移植時需重新對齊真 v113 client capture 或最終採用的 Java source map。
+- `MONSTER_CARNIVAL(0xD5)` Java 依 `tab`/`number` 消耗 CP 召喚怪物、debuff 或 guardian；MapleForge MVP 只讀 `tab + number` 後放行，不建立 carnival party/CP/event state machine。
+- 證據層級：Java source map + MapleForge adapter-only implementation；`Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped。真 v113 client crafting/reward/anti-macro/carnival smoke 未跑。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

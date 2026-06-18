@@ -40,6 +40,7 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
+| 2026-06-18_11 | 移植 | P2 Migration Wave 3 complex opcode MVP stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
 | 2026-06-18_10 | 移植 | P2 Batch 2B misc medium 5 opcode stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
 | 2026-06-18_09 | 移植 | P2 Batch 2C CashShop + AntiMacro simple opcode stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
 | 2026-06-18_08 | 移植 | P2 Batch 2A Event Systems MVP stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |

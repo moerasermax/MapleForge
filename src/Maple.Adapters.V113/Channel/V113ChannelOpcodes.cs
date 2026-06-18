@@ -33,10 +33,15 @@ internal static class V113ChannelRecvOp
     public const short CharInfoRequest = 0x5B;
     public const short UseInnerPortal = 0x5F;
     public const short TrockAddMap = 0x60;
+    public const short AntiMacroItemUse = 0x61;
+    public const short AntiMacroSkillUse = 0x62;
     public const short OldAntiMacroQuestion = 0x63;
     public const short CalcDamageStatSetRequest = 0x66;
     public const short ThrowGrenade = 0x67;
     public const short SkillMacro = 0x68;
+    public const short RewardItem = 0x6A;
+    public const short ItemMaker = 0x6B;
+    public const short UseTreasureChest = 0x6C;
     public const short DistributeAp = 0x51;
     public const short HealOverTime = 0x53;
     public const short DistributeSp = 0x54;
@@ -96,6 +101,7 @@ internal static class V113ChannelRecvOp
     public const short Snowball = unchecked((short)0xCD);
     public const short LeftKnockBack = unchecked((short)0xCE);
     public const short Coconut = unchecked((short)0xCF);
+    public const short MonsterCarnival = unchecked((short)0xD5);
     public const short PetFood = 0x46;
     public const short SpawnPet = 0x5C;
     public const short MovePet = unchecked((short)0xA4);
