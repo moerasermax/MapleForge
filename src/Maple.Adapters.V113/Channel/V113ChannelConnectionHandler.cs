@@ -969,13 +969,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.UseCashItem:
                         if (player is null) break;
-                        var useCashResult = _useCashItemHandler.Handle(reader, player);
+                        var useCashResult = await _useCashItemHandler.HandleAsync(reader, player, token);
                         if (useCashResult.Handled)
                         {
                             foreach (var pkt in useCashResult.Packets)
+                            {
                                 await s.SendAsync(pkt, token);
+                            }
+
+                            foreach (var pkt in useCashResult.BroadcastPackets)
+                            {
+                                await BroadcastPacketToOthersAsync(player.Character, pkt, token);
+                            }
+
+                            foreach (var pkt in useCashResult.MapPackets)
+                            {
+                                await BroadcastPacketToMapAsync(player.Character, s, pkt, token);
+                            }
+
                             if (useCashResult.CharacterMutated)
+                            {
                                 await _charService.UpdateAsync(player.Character, token);
+                            }
                         }
                         break;
 

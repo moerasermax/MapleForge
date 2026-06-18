@@ -185,6 +185,7 @@ internal static class V113ChannelSendOp
     public const short SkillMacro = 0x7A;
     public const short MultiChat = 0x84;
     public const short Whisper = 0x85;
+    public const short CashSong = unchecked((short)0x89);
     public const short SpawnNpc = unchecked((short)0xF9);              // SPAWN_NPC
     public const short RemoveNpc = unchecked((short)0xFA);            // REMOVE_NPC
     public const short SpawnNpcRequestController = unchecked((short)0xFB);  // SPAWN_NPC_REQUEST_CONTROLLER
@@ -228,6 +229,7 @@ internal static class V113ChannelSendOp
     public const short CancelChair = unchecked((short)0xC6);
     public const short CurrentMapWarp = unchecked((short)0xC8);
     public const short UpdateQuestInfo = unchecked((short)0xCC);
+    public const short PetFlagChange = unchecked((short)0xCE);
     public const short UseSkillBook = 0x31;
     public const short NpcAction = unchecked((short)0xFC);
 
@@ -246,6 +248,7 @@ internal static class V113ChannelSendOp
     public const short FamilySummonRequestSend = 0x60;
     public const short UpdateBeans = 0x6A;
     public const short SendMessenger = 0x145;
+    public const short PetNameChange = unchecked((short)0xA7);
     public const short HitCoconut = 0x11B;
     public const short CoconutScore = 0x11C;
     public const short RpsGame = 0x144;

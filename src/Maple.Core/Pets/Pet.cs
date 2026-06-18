@@ -113,6 +113,23 @@ public sealed class Pet
             LevelChanged: Level != oldLevel);
     }
 
+    public PetGrowthResult FeedToFull(int closenessGain)
+    {
+        var oldLevel = Level;
+        var oldCloseness = Closeness;
+        var oldFullness = Fullness;
+
+        Fullness = PetConstants.MaxFullness;
+        AddCloseness(closenessGain);
+        RaiseSingleLevelIfNeeded();
+
+        return new PetGrowthResult(
+            Success: true,
+            FullnessIncreased: Fullness != oldFullness,
+            ClosenessChanged: Closeness != oldCloseness,
+            LevelChanged: Level != oldLevel);
+    }
+
     public PetGrowthResult ExecuteCommand(int probability, int increase, int? roll = null)
     {
         var normalizedProbability = System.Math.Clamp(probability, 0, 100);
@@ -159,6 +176,15 @@ public sealed class Pet
     {
         while (Level < PetConstants.MaxLevel &&
                Closeness >= PetConstants.GetClosenessNeededForLevel(Level + 1))
+        {
+            Level++;
+        }
+    }
+
+    private void RaiseSingleLevelIfNeeded()
+    {
+        if (Level < PetConstants.MaxLevel &&
+            Closeness >= PetConstants.GetClosenessNeededForLevel(Level + 1))
         {
             Level++;
         }

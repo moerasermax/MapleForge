@@ -22,7 +22,9 @@ public sealed class PetPacketTests
         Assert.Equal(unchecked((short)0xA2), V113PetPackets.SendSpawnPet);
         Assert.Equal(unchecked((short)0xA5), V113PetPackets.SendMovePet);
         Assert.Equal(unchecked((short)0xA6), V113PetPackets.SendPetChat);
+        Assert.Equal(unchecked((short)0xA7), V113PetPackets.SendPetNameChange);
         Assert.Equal(unchecked((short)0xA9), V113PetPackets.SendPetCommand);
+        Assert.Equal(unchecked((short)0xCE), V113PetPackets.SendPetFlagChange);
     }
 
     [Fact]
@@ -113,6 +115,33 @@ public sealed class PetPacketTests
     }
 
     [Fact]
+    public void PetNameChanged_WritesJavaLayout()
+    {
+        var packet = V113PetPackets.PetNameChanged(123, 0, "Buddy");
+        var reader = new PacketReader(packet);
+
+        Assert.Equal(V113PetPackets.SendPetNameChange, reader.ReadShort());
+        Assert.Equal(123, reader.ReadInt());
+        Assert.Equal(0, reader.ReadByte());
+        Assert.Equal("Buddy", reader.ReadMapleString());
+        Assert.Equal(0, reader.ReadByte());
+        Assert.Equal(0, reader.Remaining);
+    }
+
+    [Fact]
+    public void PetFlagChanged_WritesJavaLayout()
+    {
+        var packet = V113PetPackets.PetFlagChanged(1001, added: true, PetConstants.ItemPickupFlag);
+        var reader = new PacketReader(packet);
+
+        Assert.Equal(V113PetPackets.SendPetFlagChange, reader.ReadShort());
+        Assert.Equal(1001, ReadLong(reader));
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal(PetConstants.ItemPickupFlag, reader.ReadShort());
+        Assert.Equal(0, reader.Remaining);
+    }
+
+    [Fact]
     public void UpdatePet_WritesModifyInventoryPetShape()
     {
         var packet = V113PetPackets.UpdatePet(CreatePet(), cashSlot: 3, expiration: -1);
@@ -150,4 +179,11 @@ public sealed class PetPacketTests
             fullness: 80,
             flags: PetConstants.UnpickableFlag,
             position: new Position(10, 30, 1, 7));
+
+    private static long ReadLong(PacketReader reader)
+    {
+        var low = (uint)reader.ReadInt();
+        var high = (uint)reader.ReadInt();
+        return unchecked((long)(((ulong)high << 32) | low));
+    }
 }

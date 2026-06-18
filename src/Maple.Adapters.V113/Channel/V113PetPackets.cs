@@ -35,12 +35,14 @@ internal static class V113PetPackets
     public const short SendSpawnPet = unchecked((short)0xA2);
     public const short SendMovePet = unchecked((short)0xA5);
     public const short SendPetChat = unchecked((short)0xA6);
+    public const short SendPetNameChange = unchecked((short)0xA7);
     public const short SendPetCommand = unchecked((short)0xA9);
 
     public const short SendModifyInventoryItem = 0x1B;
     public const short SendShowItemGainInChat = unchecked((short)0xC7);
     public const short SendShowForeignEffect = unchecked((short)0xBF);
     public const short SendPetLoadExceptionList = unchecked((short)0xA8);
+    public const short SendPetFlagChange = unchecked((short)0xCE);
 
     public static V113SpawnPetRequest ParseSpawnPet(PacketReader reader)
     {
@@ -182,6 +184,27 @@ internal static class V113PetPackets
             w.WriteShort(success ? 1 : 0);
         }
 
+        return w.ToArray();
+    }
+
+    public static byte[] PetNameChanged(int characterId, byte slot, string name)
+    {
+        var w = new PacketWriter(name.Length + 10);
+        w.WriteShort(SendPetNameChange);
+        w.WriteInt(characterId);
+        w.WriteByte(0);
+        w.WriteMapleString(name);
+        w.WriteByte(slot);
+        return w.ToArray();
+    }
+
+    public static byte[] PetFlagChanged(long uniqueId, bool added, int flag)
+    {
+        var w = new PacketWriter(13);
+        w.WriteShort(SendPetFlagChange);
+        w.WriteLong(uniqueId);
+        w.WriteByte(added ? 1 : 0);
+        w.WriteShort(flag);
         return w.ToArray();
     }
 

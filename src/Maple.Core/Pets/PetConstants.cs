@@ -8,7 +8,15 @@ public static class PetConstants
     public const int MaxLevel = 30;
 
     public const int ItemPickupFlag = 0x01;
+    public const int ExpandPickupFlag = 0x02;
+    public const int AutoPickupFlag = 0x04;
     public const int UnpickableFlag = 0x08;
+    public const int LeftoverPickupFlag = 0x10;
+    public const int HpChargeFlag = 0x20;
+    public const int MpChargeFlag = 0x40;
+    public const int PetBuffFlag = 0x80;
+    public const int PetDrawFlag = 0x100;
+    public const int PetDialogueFlag = 0x200;
 
     public static int GetClosenessNeededForLevel(int level)
     {

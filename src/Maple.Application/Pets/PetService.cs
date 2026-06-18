@@ -69,6 +69,16 @@ public sealed record PetAutoPotionResult(PetActionStatus Status, short Slot, int
     public bool Success => Status == PetActionStatus.Success;
 }
 
+public sealed record PetMutationResult(
+    PetActionStatus Status,
+    Pet? Pet,
+    byte Slot,
+    short CashSlot,
+    PetGrowthResult Growth = default)
+{
+    public bool Success => Status == PetActionStatus.Success;
+}
+
 public sealed class PetService
 {
     private const int DefaultCommandProbability = 50;
@@ -133,6 +143,83 @@ public sealed class PetService
         {
             return _activePets.GetValueOrDefault(player.Character.Id)?.Pet;
         }
+    }
+
+    public PetMutationResult RenameActivePet(Player player, string name)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        var state = GetActiveState(player);
+        if (state is null)
+        {
+            return FailedMutation(PetActionStatus.NoActivePet);
+        }
+
+        state.Pet.Name = name;
+        if (player.Inventory.By(InventoryType.Cash).Get(state.CashSlot) is { } cashItem)
+        {
+            cashItem.Owner = state.Pet.Name;
+        }
+
+        return new PetMutationResult(PetActionStatus.Success, state.Pet, ActivePetSlot, state.CashSlot);
+    }
+
+    public PetMutationResult ChangeActivePetFlag(Player player, long uniqueId, int flag, bool add)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        var state = GetActiveState(player);
+        if (state is null)
+        {
+            return FailedMutation(PetActionStatus.NoActivePet);
+        }
+
+        var pet = state.Pet;
+        if (pet.PetId != uniqueId || flag <= 0)
+        {
+            return FailedMutation(PetActionStatus.InvalidPet, pet);
+        }
+
+        var hasFlag = (pet.Flags & flag) == flag;
+        if (add)
+        {
+            if (hasFlag)
+            {
+                return FailedMutation(PetActionStatus.Unsupported, pet);
+            }
+
+            pet.Flags |= flag;
+        }
+        else
+        {
+            if (!hasFlag)
+            {
+                return FailedMutation(PetActionStatus.Unsupported, pet);
+            }
+
+            pet.Flags &= ~flag;
+        }
+
+        if (player.Inventory.By(InventoryType.Cash).Get(state.CashSlot) is { } cashItem)
+        {
+            cashItem.Flag = (short)pet.Flags;
+        }
+
+        return new PetMutationResult(PetActionStatus.Success, pet, ActivePetSlot, state.CashSlot);
+    }
+
+    public PetMutationResult FeedActivePetToFull(Player player, int closenessGain)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        var state = GetActiveState(player);
+        if (state is null)
+        {
+            return FailedMutation(PetActionStatus.NoActivePet);
+        }
+
+        var growth = state.Pet.FeedToFull(closenessGain);
+        return new PetMutationResult(PetActionStatus.Success, state.Pet, ActivePetSlot, state.CashSlot, growth);
     }
 
     public PetFeedResult FeedPet(Player player, short useSlot, int itemId, bool gainCloseness)
@@ -275,6 +362,9 @@ public sealed class PetService
 
     private static PetFeedResult FailedFeed(PetActionStatus status, Pet? pet = null)
         => new(status, pet, ActivePetSlot, 0, default, null);
+
+    private static PetMutationResult FailedMutation(PetActionStatus status, Pet? pet = null)
+        => new(status, pet, ActivePetSlot, 0);
 
     private sealed record ActivePetState(Pet Pet, short CashSlot);
 }
