@@ -59,4 +59,4 @@
 - `docs/specs/v113-protocol-spec.md`
 - `docs/devlog/進度日誌.md`
 - `docs/devlog/任務歷程/README.md`
-- commit：未建立（同檔存在非本批 Batch 1B 變更，避免混合 checkpoint）
+- commit：7e587e8 (Wave 1 aggregate)

@@ -54,4 +54,4 @@ Java 行為神諭：
 - `docs/devlog/進度日誌.md`
 - `docs/devlog/任務歷程/README.md`
 - `docs/devlog/任務歷程/2026-06-18_12_移植_P2Wave4HeavyOpcodeStubs.md`
-- commit：未提交（工作區含既有 Wave 3 未提交變更，本任務不單獨混合 checkpoint）
+- commit：dd2ce07 (Wave 4 aggregate)

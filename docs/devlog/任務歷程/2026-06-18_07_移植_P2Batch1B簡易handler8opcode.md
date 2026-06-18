@@ -67,4 +67,4 @@
 > - `dotnet build src/Maple.Host.Shared/Maple.Host.Shared.csproj --nologo -v quiet`：0 warning / 0 error
 > - `dotnet test tests/Maple.Adapters.V113.Tests/Maple.Adapters.V113.Tests.csproj -v quiet --nologo`：299 passed / 1 skipped
 >
-> commit：未建立；工作區已有 Batch 1A 併行修改與未追蹤任務檔，需避免混入。
+> commit：7e587e8 (Wave 1 aggregate)
