@@ -40,14 +40,17 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
+| 2026-06-18_24 | 修補 | P002 二輪稽核殘留修補 | ✅ 完成 |
 | 2026-06-18_23 | 修補 | P002 稽核缺陷修補 | ✅ 完成 |
 | 2026-06-18_22 | 驗證 | P002 鐵律合規稽核 | ✅ 完成 |
 | 2026-06-18_21 | 驗證 | D9 P002 技術債批次 code review | ✅ 完成（禁區 clean；Adapters/Content/Core/Host build 綠；2 blocker + 1 warning） |
 | 2026-06-18_20 | 移植 | USE_CASH_ITEM Batch C 廣播現金道具 | ✅ 完成（Adapters.V113 391+1skip；map-level broadcast MVP） |
 | 2026-06-18_19 | 移植 | USE_CASH_ITEM Batch D 傳送石現金道具 | ✅ 完成 |
 | 2026-06-18_18 | 移植 | USE_CASH_ITEM Batch B 現金道具邏輯 | ✅ 完成 |
+| 2026-06-18_18 | 移植 | FieldLimitType enum | ✅ 完成 |
 | 2026-06-18_17 | 移植 | SERVERMESSAGE broadcast packet infrastructure | ✅ 完成（Adapters.V113 340+1skip；S2C Java-source candidate） |
 | 2026-06-18_16 | 移植 | USE_CASH_ITEM Batch A 現金道具路由 | ✅ 完成 |
+| 2026-06-18_16 | 移植 | USE_SKILL_BOOK 技能書 catalog 全鏈 | ✅ 完成 |
 | 2026-06-18_15 | 驗證 | 鐵律與最高流程稽核 | ✅ 完成 |
 | 2026-06-18_12 | 移植 | P2 Migration Wave 4 heavy opcode MVP stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
 | 2026-06-18_14 | 移植 | EventSystems 三個 MVP stub 升級 | ✅ 完成（Host.Shared build；full suite 綠，S2C candidate） |
