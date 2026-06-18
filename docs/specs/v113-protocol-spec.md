@@ -1292,4 +1292,55 @@ writeInt(tabOrPage)
 - 證據層級：Java source map + MapleForge adapter-only implementation；`Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped。真 v113 client CashShop/HiredMerchant/MTS smoke 未跑。
 
 ---
+## SERVERMESSAGE broadcast packet infrastructure（2026-06-18）
+
+來源：
+
+- `SendPacketOpcode.java`：`SERVERMESSAGE=0x3D`、`AVATAR_MEGA=0x6D`
+- `MaplePacketCreator.broadcastMessage`：megaphone / super megaphone / item megaphone / triple smega / heart smega / skull smega
+- `PacketHelper.addItemInfo(mplew, item, true, true)`：item megaphone optional item body
+
+S→C `SERVERMESSAGE(0x3D)` layouts implemented in `V113BroadcastPackets`:
+
+```
+MEGAPHONE type 2:
+writeShort(0x3D)
+writeByte(2)
+writeMapleAsciiString(message)
+
+SUPER / HEART / SKULL type 3 / 11 / 12:
+writeShort(0x3D)
+writeByte(type)
+writeMapleAsciiString(message)
+writeByte(channel - 1)
+writeByte(ear ? 1 : 0)
+
+ITEM MEGAPHONE type 8:
+writeShort(0x3D)
+writeByte(8)
+writeMapleAsciiString(message)
+writeByte(channel - 1)
+writeByte(ear ? 1 : 0)
+writeByte(item != null)
+if item != null:
+  addItemInfo(item, zeroPosition=true, leaveOut=true)
+
+TRIPLE MEGAPHONE type 10:
+writeShort(0x3D)
+writeByte(10)
+writeMapleAsciiString(message[0] or "")
+writeByte(lineCount)
+if lineCount > 1: writeMapleAsciiString(message[1])
+if lineCount > 2: writeMapleAsciiString(message[2])
+writeByte(channel - 1)
+writeByte(ear ? 1 : 0)
+```
+
+備註：
+
+- 本輪只新增 packet encoding infrastructure；不接 `USE_CASH_ITEM` handlers，不新增 channel/server-wide broadcast transport。
+- `AVATAR_MEGA(0x6D)` 只補 opcode constant；Java layout 需要 `PacketHelper.addCharLook(..., true)`，MapleForge 另案處理角色外觀編碼。
+- 證據層級：Java source map + `Maple.Adapters.V113.Tests` byte-level tests 340 passed / 1 skipped；真 v113 client megaphone UI smoke 未跑，S2C layout 仍為 Java-source candidate。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

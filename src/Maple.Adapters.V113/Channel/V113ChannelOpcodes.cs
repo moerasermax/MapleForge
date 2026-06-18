@@ -175,6 +175,7 @@ internal static class V113ChannelSendOp
     public const short PartyOperation = 0x37;
     public const short BuddyList = 0x38;
     public const short GuildOperation = 0x3A;
+    public const short ServerMessage = 0x3D;
     public const short ShopScannerResult = 0x3F;
     public const short ShopLinkResult = 0x40;
     public const short MarriageRequest = 0x41;
@@ -182,6 +183,7 @@ internal static class V113ChannelSendOp
     public const short MonsterBookChangeCover = 0x4E;
     public const short MarriageUpdate = 0x62;
     public const short BbsOperation = 0x68;
+    public const short AvatarMega = 0x6D;
     public const short SkillMacro = 0x7A;
     public const short MultiChat = 0x84;
     public const short Whisper = 0x85;

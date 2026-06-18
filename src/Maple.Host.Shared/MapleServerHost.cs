@@ -32,6 +32,7 @@ using Maple.Application.Trades;
 using Maple.Content.CashShop;
 using Maple.Content.Quests;
 using Maple.Content.Shops;
+using Maple.Content.Skills;
 using Maple.Scripting;
 using Maple.Content.Wz;
 using Maple.Core.CashShop;
@@ -114,6 +115,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<ICashItemCatalog>(_ => new JsonCashItemCatalog(ResolveCashItemCatalogPath(builder)));
         builder.Services.AddSingleton<CashShopService>();
         builder.Services.AddSingleton<ISkillCatalog>(_ => new InMemorySkillCatalog(Array.Empty<MapleSkill>()));
+        builder.Services.AddSingleton<ISkillBookCatalog>(_ => new JsonSkillBookCatalog(ResolveSkillBookCatalogPath(builder)));
         builder.Services.AddSingleton<SkillService>();
         builder.Services.AddSingleton<IMonsterDropCatalog>(_ =>
             new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>()));
@@ -301,6 +303,36 @@ public static class MapleServerHost
         while (dir is not null)
         {
             var candidate = Path.Combine(dir.FullName, "src", "Maple.Content", "CashShop", "minimal-cash-items.v113.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return fromOutput;
+    }
+
+    private static string ResolveSkillBookCatalogPath(IHostApplicationBuilder builder)
+    {
+        var configured = builder.Configuration["Content:SkillBookCatalogPath"]
+            ?? builder.Configuration["Skills:SkillBookCatalogPath"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var fromOutput = Path.Combine(AppContext.BaseDirectory, "Skills", "minimal-skill-books.v113.json");
+        if (File.Exists(fromOutput))
+        {
+            return fromOutput;
+        }
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "src", "Maple.Content", "Skills", "minimal-skill-books.v113.json");
             if (File.Exists(candidate))
             {
                 return candidate;

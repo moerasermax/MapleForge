@@ -52,6 +52,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly StorageService _storageService;
     private readonly CombatService _combatService;
     private readonly SkillService _skillService;
+    private readonly ISkillBookCatalog _skillBookCatalog;
     private readonly DropService _dropService;
     private readonly FameService _fameService;
     private readonly GuildService _guildService;
@@ -99,6 +100,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         StorageService storageService,
         CombatService combatService,
         SkillService skillService,
+        ISkillBookCatalog skillBookCatalog,
         DropService dropService,
         FameService fameService,
         GuildService guildService,
@@ -145,6 +147,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _storageService = storageService;
         _combatService = combatService;
         _skillService = skillService;
+        _skillBookCatalog = skillBookCatalog;
         _dropService = dropService;
         _fameService = fameService;
         _guildService = guildService;
@@ -3254,40 +3257,42 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
     private async Task HandleUseSkillBookAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
     {
-        reader.ReadInt(); // tick
-        var slot = (short)reader.ReadShort();
-        var itemId = reader.ReadInt();
-
-        var chr = player.Character;
-        var inv = player.Inventory.By(Core.Inventory.InventoryType.Use);
-
-        var item = inv.Get(slot);
-        if (item is null || item.ItemId != itemId || item.Quantity < 1)
+        V113SkillBookHandleResult result;
+        try
         {
+            result = V113SkillBookHandler.HandleUseSkillBook(reader, player, _skillBookCatalog);
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] USE_SKILL_BOOK packet invalid charId={CharId}", player.Character.Id);
             await session.SendAsync(V113StatsPackets.EnableActions(), ct);
             return;
         }
 
-        bool canUse = false, success = false;
-        int resultSkillId = 0, resultMaxLevel = 0;
+        if (!result.Handled)
+        {
+            return;
+        }
 
-        // MVP stub: consume the item, broadcast canuse=false.
-        // Full implementation needs ISkillBookCatalog (Item.wz skilldata → skillId mapping).
-        inv.TryTake(slot, 1, out _);
-        player.FlushInventory();
-        await _charService.UpdateAsync(chr, ct);
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
 
-        var w = new PacketWriter();
-        w.WriteShort(V113ChannelSendOp.UseSkillBook);
-        w.WriteInt(chr.Id);
-        w.WriteByte(1); // isUsed
-        w.WriteInt(resultSkillId);
-        w.WriteInt(resultMaxLevel);
-        w.WriteByte((byte)(canUse ? 1 : 0));
-        w.WriteByte((byte)(success ? 1 : 0));
+        if (result.BroadcastPacket is not null)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, result.BroadcastPacket, ct);
+        }
 
-        await BroadcastPacketToMapAsync(chr, session, w.ToArray(), ct);
-        await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+        if (result.SendEnableActions)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
     }
 
     // ── C-1: NPC_ACTION relay ──────────────────────────────────────────────────
