@@ -7,7 +7,7 @@
 更新: 2026-06-18 16:12
 關聯里程碑: M4-6 / M6-1
 關聯記憶:
-關聯commit: 待填
+關聯commit: 840168e
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）
@@ -41,4 +41,4 @@
 
 ## 🔗 產出
 
-程式：`V113UseCashItemHandler.cs`、Core `Item`/`ItemRecord`/`EquipEntry`/`Player.Stats`/`Player.Equip`、`ItemFlags`。測試：`ChannelUseCashItemTests.cs` 新增 Batch B 覆蓋。文件：本任務歷程、`進度日誌.md`、`v113-protocol-spec.md`。
+程式：`V113UseCashItemHandler.cs`、Core `Item`/`ItemRecord`/`EquipEntry`/`Player.Stats`/`Player.Equip`、`ItemFlags`。測試：`ChannelUseCashItemTests.cs` 新增 Batch B 覆蓋。文件：本任務歷程、`進度日誌.md`、`v113-protocol-spec.md`。Checkpoint commit：`840168e`。
