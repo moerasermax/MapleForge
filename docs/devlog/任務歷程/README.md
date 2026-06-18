@@ -40,6 +40,7 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
+| 2026-06-18_04 | 流程 | 新協作流程落地（七條鐵則+Hook+自動推進） | ✅ 完成（GPT-5.5 稽核通過；進度日誌補檔） |
 | 2026-06-18_04 | 移植 | Family 家族系統 | ✅ 完成（Core/Application/Adapters 單元；dispatch/live 待後續） |
 | 2026-06-18_03 | 移植 | USE_DOOR 傳送門 | ✅ 完成（Core/Application/Adapters 單元；dispatch/live 待後續） |
 | 2026-06-18_02 | 移植 | NOTE_ACTION 留言系統 | ✅ 完成（Core/Application/Persistence/Adapters 單元；dispatch/DI 待後續） |
