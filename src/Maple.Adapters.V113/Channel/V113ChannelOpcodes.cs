@@ -33,7 +33,9 @@ internal static class V113ChannelRecvOp
     public const short CharInfoRequest = 0x5B;
     public const short UseInnerPortal = 0x5F;
     public const short TrockAddMap = 0x60;
+    public const short OldAntiMacroQuestion = 0x63;
     public const short CalcDamageStatSetRequest = 0x66;
+    public const short ThrowGrenade = 0x67;
     public const short SkillMacro = 0x68;
     public const short DistributeAp = 0x51;
     public const short HealOverTime = 0x53;
@@ -48,6 +50,7 @@ internal static class V113ChannelRecvOp
     public const short ChangeKeymap = 0x7F;
     public const short UpdateCharInfo = 0x97;
     public const short UpdateQuest = 0x10B;
+    public const short QuestItem = unchecked((short)0x10C);
     public const short UseItemQuest = 0x10D;
     public const short NpcTalk = 0x33;       // 點 NPC → 啟動對話腳本
     public const short NpcTalkMore = 0x35;   // 對話中回應（next/prev/yes-no/選單/數字）
@@ -60,18 +63,22 @@ internal static class V113ChannelRecvOp
     public const short CancelItemEffect = 0x43;
     public const short UseSummonBag = 0x45;
     public const short UseMountFood = 0x47;
+    public const short UseScriptedNpcItem = 0x48;
     public const short UseCashItem = 0x49;
     public const short UseCatchItem = 0x4B;
+    public const short UseTeleRock = 0x4E;
     public const short UseReturnScroll = 0x4F;
     public const short UseUpgradeScroll = 0x50;
     public const short UseSkillBook = 0x4C;
     public const short UseOwlMinerva = 0x4D;
     public const short PlayerInteraction = 0x73;
     public const short ItemPickup = unchecked((short)0xC6);
+    public const short RpsGame = unchecked((short)0x80);
     public const short RingAction = unchecked((short)0x81);
     public const short CygnusSummon = unchecked((short)0x91);
     public const short AranCombo = unchecked((short)0x92);
     public const short BbsOperation = unchecked((short)0x94);
+    public const short ItemUnlock = unchecked((short)0x95);
     public const short Solomon = unchecked((short)0x9B);
     public const short GachExp = unchecked((short)0x9C);
     public const short TransformPlayer = unchecked((short)0xA0);
@@ -82,11 +89,13 @@ internal static class V113ChannelRecvOp
     public const short FriendlyDamage = unchecked((short)0xBA);
     public const short MonsterBomb = unchecked((short)0xBB);
     public const short HypnotizeDmg = unchecked((short)0xBC);
+    public const short MobNode = unchecked((short)0xBD);
     public const short DisplayNode = unchecked((short)0xBE);
     public const short DamageReactor = unchecked((short)0xC9);
     public const short TouchReactor = unchecked((short)0xCA);
     public const short Snowball = unchecked((short)0xCD);
     public const short LeftKnockBack = unchecked((short)0xCE);
+    public const short Coconut = unchecked((short)0xCF);
     public const short PetFood = 0x46;
     public const short SpawnPet = 0x5C;
     public const short MovePet = unchecked((short)0xA4);
@@ -120,9 +129,11 @@ internal static class V113ChannelRecvOp
     public const short FamilySummon = unchecked((short)0x90);
     public const short PartySearchStart = unchecked((short)0xD9);
     public const short PartySearchStop = unchecked((short)0xDA);
+    public const short BeansGameAction = unchecked((short)0xE0);
     public const short BeansUpdate = unchecked((short)0xE1);
     public const short CsUpdate = unchecked((short)0xE5);
     public const short CashShopOperation = unchecked((short)0xE6);
+    public const short CouponCode = unchecked((short)0xE7);
     public const short MapleTV = unchecked((short)0x10A);
     public const short Pong = 0x0E;
 }

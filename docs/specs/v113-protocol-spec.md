@@ -1018,4 +1018,116 @@ writeShort(0xE5)
 - 證據層級：Java source + Host.Shared build + Adapters.V113 targeted tests；真 v113 client UI/cash-shop/combat smoke 待後續批量驗證。
 
 ---
+## P2 Batch 2A Event Systems MVP stubs（2026-06-18）
+
+來源：
+
+- `PlayersHandler.java`：`hitCoconut()`；`server/events/MapleCoconut.java`
+- `NPCHandler.java`：`RPSGame()`；`client/RockPaperScissors.java`
+- `BeanGame.java`：`BeansGameAction()`
+- `recv.properties`：`RPS_GAME=0x80`、`COCONUT=0xCF`、`CP_BeansGameAction=0xE0`
+
+C→S：
+
+```
+RPS_GAME:
+writeShort(0x80)
+writeByte(mode)      // 0=start, 1=answer, 2=timeout, 3=continue, 4=leave in Java
+// remaining mode payload/state machine deferred
+
+COCONUT:
+writeShort(0xCF)
+writeShort(coconutId)
+// full Coconut event hit/bomb/fall logic deferred
+
+CP_BeansGameAction:
+writeShort(0xE0)
+writeByte(subType)
+// 8 bean-game action subtypes deferred
+```
+
+語義：
+
+- 本批只把 3 個 event-system opcode 從未處理狀態接成安全 MVP stub：讀取最小欄位後送 `EnableActions`。
+- 不建立 Core/Application event model，不移植 Coconut/RPS/Beans state machine，也不新增 S2C event fixture。
+- 證據層級：Java source map + `Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped；真 v113 client event smoke 待完整 event 系統再做。
+
+---
+## P2 Batch 2B misc medium opcode stubs（2026-06-18）
+
+來源：
+
+- `recv.properties`：`USE_SCRIPTED_NPC_ITEM=0x48`、`USE_TELE_ROCK=0x4E`、`CP_UserThrowGrenade=0x67`、`MOB_NODE=0xBD`、`QUEST_ITEM=0x10C`
+- Java dispatch：`MapleServerHandler.java` routes `USE_SCRIPTED_NPC_ITEM` → `InventoryHandler.UseScriptedNPCItem`、`CP_UserThrowGrenade` → `PlayerHandler.ThrowGrenade`、`MOB_NODE` → `MobHandler.handleMobNode`
+- Java handlers：`MobHandler.handleMobNode`、`InventoryHandler.UseScriptedNPCItem`、`InventoryHandler.UseTeleRock`、`PlayerHandler.ThrowGrenade`
+
+C→S MVP layouts:
+
+```
+MOB_NODE:
+writeShort(0xBD)
+writeInt(mobOid)
+writeInt(nodeIndex)
+
+USE_TELE_ROCK:
+writeShort(0x4E)
+writeByte(rockType)
+writeInt(targetMapOrCharacterId)   // MapleForge MVP only consumes the fixed-width target field.
+
+QUEST_ITEM:
+writeShort(0x10C)
+// no-op in MapleForge MVP
+
+USE_SCRIPTED_NPC_ITEM:
+writeShort(0x48)
+writeShort(slot)
+writeInt(itemId)
+
+CP_UserThrowGrenade:
+writeShort(0x67)
+```
+
+語義：
+
+- `MOB_NODE(0xBD)` Java 會更新 escort mob node/talk/stage transition；MapleForge MVP 讀 `mobOid/nodeIndex` 後 `EnableActions`，不改 mob/node state。
+- `USE_TELE_ROCK(0x4E)` Java full path 依 rock item/rock type 檢查儲存地圖、同大陸、FieldLimit/EventInstance，並可傳送到玩家；MapleForge MVP 只讀 `rockType + target` 後 `EnableActions`，不做 warp。
+- `QUEST_ITEM(0x10C)` 此 v113 Java enum 註解為 header → questid → open/close，server dispatch 未接；MapleForge MVP no-op。
+- `USE_SCRIPTED_NPC_ITEM(0x48)` Java 實作含 leading tick、slot、itemId，並會依 243xxxx 等道具啟動 NPC script/給道具/warp；MapleForge 本批依 MVP 範圍只讀 `slot/itemId` 後 `EnableActions`，完整 scripted item binding 待後續。
+- `CP_UserThrowGrenade(0x67)` Java handler 明確未處理；MapleForge MVP 送 `EnableActions` 避免 client action lock。
+- 證據層級：Java source + `Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped；真 v113 client teleport/scripted-item/escort smoke 待後續批量驗證。
+
+---
+## P2 Batch 2C CashShop + AntiMacro simple opcode stubs（2026-06-18）
+
+來源：
+
+- `recv.properties`：`CP_UserOldAntiMacroQuestionResult=0x63`、`ITEM_UNLOCK=0x95`、`COUPON_CODE=0xE7`
+- Java dispatch：`MapleServerHandler.java` routes old anti-macro answer to `PlayersHandler.OldAntiMacroQuestion`、`ITEM_UNLOCK` to `PlayersHandler.UnlockItem`、`COUPON_CODE` to `CashShopOperation.CouponCode`
+- Java handlers：`PlayersHandler.OldAntiMacroQuestion`、`PlayersHandler.UnlockItem`、`CashShopOperation.CouponCode`
+
+C→S MVP layouts:
+
+```
+CP_UserOldAntiMacroQuestionResult:
+writeShort(0x63)
+writeMapleAsciiString(answer)
+
+ITEM_UNLOCK:
+writeShort(0x95)
+writeShort(slotOrFirstUnlockField)  // MapleForge MVP consumes one short per Batch 2C scope.
+
+COUPON_CODE:
+writeShort(0xE7)
+writeShort(unknown)                 // Java dispatch skips 2 bytes before code.
+writeMapleAsciiString(code)
+```
+
+語義：
+
+- `CP_UserOldAntiMacroQuestionResult(0x63)` Java 會檢查角色 anti-macro state，驗證輸入 code 後觸發 success/reduce；MapleForge MVP 只讀 answer string 並送 `EnableActions`，不建立 anti-macro runtime state。
+- `ITEM_UNLOCK(0x95)` 此 Java tree 實際由 `PlayersHandler.UnlockItem` 處理，full handler 讀三個 short（item size/type/slot），移除 `LOCK` 或 `UNTRADEABLE` flag，並消耗解除鑰匙 `2051000`；MapleForge MVP 依本批範圍只讀一個 short 後 `EnableActions`，不改 inventory/equip flag。
+- `COUPON_CODE(0xE7)` Java 會查 DB coupon code 並發放 GASH/MaplePoints/item/meso，失敗回 cash-shop fail；MapleForge MVP 只讀 skip short + coupon code string 後 `EnableActions`，完整 coupon DB/table 與 reward flow 待後續 CashShop 任務。
+- 證據層級：Java source + Host.Shared build 0 warning/0 error + Adapters.V113 tests 299 passed / 1 skipped；真 v113 client cash-shop/anti-macro/item-unlock smoke 未跑。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

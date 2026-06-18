@@ -494,6 +494,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
+                    case V113ChannelRecvOp.MobNode:
+                        if (player is null) break;
+                        if (reader.Remaining < 8) break;
+                        _ = reader.ReadInt();
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.DisplayNode:
                         if (player is null) break;
                         if (reader.Remaining < 4) break;
@@ -562,6 +570,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleTrockAddMapAsync(reader, player, s, token);
                         break;
 
+                    case V113ChannelRecvOp.OldAntiMacroQuestion:
+                        if (player is null) break;
+                        _ = reader.ReadMapleString();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.DistributeAp:
                         if (player is null) break;
                         await HandleStatsMutationAsync(
@@ -605,6 +619,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.CalcDamageStatSetRequest:
+                        break;
+
+                    case V113ChannelRecvOp.ThrowGrenade:
+                        if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
                     case V113ChannelRecvOp.SkillMacro:
@@ -678,6 +697,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     // FOLLOW_REQUEST / FOLLOW_REPLY are intentionally not dispatched:
                     // this v113 recv.properties disables them, and candidate FOLLOW_REPLY 0x7A conflicts with BuddyListModify.
+                    case V113ChannelRecvOp.RpsGame:
+                        if (player is null) break;
+                        _ = reader.ReadByte();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.RingAction:
                         if (player is null) break;
                         await _ringHandler.HandleRingActionAsync(
@@ -690,6 +715,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.CygnusSummon:
                         if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.ItemUnlock:
+                        if (player is null) break;
+                        _ = reader.ReadShort();
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
@@ -733,6 +764,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleUpdateQuestAsync(reader, player, s, token);
                         break;
 
+                    case V113ChannelRecvOp.QuestItem:
+                        break;
+
                     case V113ChannelRecvOp.UseItemQuest:
                         break;
 
@@ -753,6 +787,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
                     }
 
+                    case V113ChannelRecvOp.UseScriptedNpcItem:
+                        if (player is null) break;
+                        if (reader.Remaining < 6) break;
+                        _ = reader.ReadShort();
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.UseCatchItem:
                     {
                         if (player is null || currentField is null) break;
@@ -764,6 +806,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         currentField = await HandleItemUseResultAsync(result, player, currentField, npcOidToId, s, sessionToken, token);
                         break;
                     }
+
+                    case V113ChannelRecvOp.UseTeleRock:
+                        if (player is null) break;
+                        if (reader.Remaining < 5) break;
+                        _ = reader.ReadByte();
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
 
                     case V113ChannelRecvOp.UseReturnScroll:
                     {
@@ -879,6 +929,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleItemPickupAsync(reader, player, currentField, s, token);
                         break;
 
+                    case V113ChannelRecvOp.Coconut:
+                        if (player is null) break;
+                        _ = reader.ReadShort();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.Snowball:
                     case V113ChannelRecvOp.LeftKnockBack:
                         if (player is null) break;
@@ -916,6 +972,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         {
                             await _charService.UpdateAsync(player.Character, token);
                         }
+                        break;
+
+                    case V113ChannelRecvOp.CouponCode:
+                        if (player is null) break;
+                        _ = reader.ReadShort();
+                        _ = reader.ReadMapleString();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
                     case V113ChannelRecvOp.SpawnPet:
@@ -1021,6 +1084,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.MapleTV:
                     case V113ChannelRecvOp.BeansUpdate:
                         if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.BeansGameAction:
+                        if (player is null) break;
+                        _ = reader.ReadByte();
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 

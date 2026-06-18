@@ -40,6 +40,9 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
+| 2026-06-18_10 | 移植 | P2 Batch 2B misc medium 5 opcode stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
+| 2026-06-18_09 | 移植 | P2 Batch 2C CashShop + AntiMacro simple opcode stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
+| 2026-06-18_08 | 移植 | P2 Batch 2A Event Systems MVP stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
 | 2026-06-18_07 | 移植 | P2 Batch 1B 簡易 handler 8 opcode | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
 | 2026-06-18_06 | 移植 | P2 Batch 1A no-op/stub/log opcode handlers | ✅ 完成（Host.Shared build；Adapters 299+1skip） |
 | 2026-06-18_04 | 流程 | 新協作流程落地（七條鐵則+Hook+自動推進） | ✅ 完成（GPT-5.5 稽核通過；進度日誌補檔） |
