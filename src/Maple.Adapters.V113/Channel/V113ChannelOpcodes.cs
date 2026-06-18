@@ -4,19 +4,23 @@ namespace Maple.Adapters.V113.Channel;
 internal static class V113ChannelRecvOp
 {
     public const short PlayerLoggedIn = 0x07;
+    public const short StrangeData = unchecked((short)0x7FFF);
     public const short ChangeMap = 0x1E;     // 腳走地圖傳送點 / 死亡復活換圖（CHANGE_MAP）
     public const short ChangeChannel = 0x1F;
     public const short MovePlayer = 0x21;
     public const short CancelChair = 0x22;
     public const short UseChair = 0x23;
+    public const short ShowExpChair = 0x24;
     public const short CloseRangeAttack = 0x25;
     public const short RangedAttack = 0x26;
     public const short MagicAttack = 0x27;
+    public const short PassiveEnergy = 0x28;
     public const short TakeDamage = 0x29;
     public const short GeneralChat = 0x2A;   // 一般地圖聊天
     public const short CloseChalkboard = 0x2B;
     public const short FaceExpression = 0x2C;
     public const short UseItemEffect = 0x2D;
+    public const short WheelOfFortune = 0x2E;
     public const short MonsterBookCover = 0x32;
     public const short DueyAction = 0x3B;
     public const short Owl = 0x3C;
@@ -29,6 +33,7 @@ internal static class V113ChannelRecvOp
     public const short CharInfoRequest = 0x5B;
     public const short UseInnerPortal = 0x5F;
     public const short TrockAddMap = 0x60;
+    public const short CalcDamageStatSetRequest = 0x66;
     public const short SkillMacro = 0x68;
     public const short DistributeAp = 0x51;
     public const short HealOverTime = 0x53;
@@ -64,15 +69,24 @@ internal static class V113ChannelRecvOp
     public const short PlayerInteraction = 0x73;
     public const short ItemPickup = unchecked((short)0xC6);
     public const short RingAction = unchecked((short)0x81);
+    public const short CygnusSummon = unchecked((short)0x91);
+    public const short AranCombo = unchecked((short)0x92);
     public const short BbsOperation = unchecked((short)0x94);
     public const short Solomon = unchecked((short)0x9B);
     public const short GachExp = unchecked((short)0x9C);
     public const short TransformPlayer = unchecked((short)0xA0);
     public const short XmasSurprise = unchecked((short)0xA2);
+    public const short GamePoll = unchecked((short)0xA3);
     public const short MoveLife = unchecked((short)0xB6);       // 怪物移動（MOVE_LIFE）
     public const short AutoAggro = unchecked((short)0xB7);     // 怪物自動仇恨（AUTO_AGGRO）
+    public const short FriendlyDamage = unchecked((short)0xBA);
+    public const short MonsterBomb = unchecked((short)0xBB);
+    public const short HypnotizeDmg = unchecked((short)0xBC);
+    public const short DisplayNode = unchecked((short)0xBE);
     public const short DamageReactor = unchecked((short)0xC9);
     public const short TouchReactor = unchecked((short)0xCA);
+    public const short Snowball = unchecked((short)0xCD);
+    public const short LeftKnockBack = unchecked((short)0xCE);
     public const short PetFood = 0x46;
     public const short SpawnPet = 0x5C;
     public const short MovePet = unchecked((short)0xA4);
@@ -106,7 +120,10 @@ internal static class V113ChannelRecvOp
     public const short FamilySummon = unchecked((short)0x90);
     public const short PartySearchStart = unchecked((short)0xD9);
     public const short PartySearchStop = unchecked((short)0xDA);
+    public const short BeansUpdate = unchecked((short)0xE1);
+    public const short CsUpdate = unchecked((short)0xE5);
     public const short CashShopOperation = unchecked((short)0xE6);
+    public const short MapleTV = unchecked((short)0x10A);
     public const short Pong = 0x0E;
 }
 

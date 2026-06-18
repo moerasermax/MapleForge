@@ -383,6 +383,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleCancelChairAsync(reader, player, s, token);
                         break;
 
+                    case V113ChannelRecvOp.ShowExpChair:
+                        if (player is null) break;
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.ChangeMap:
                         if (player is null) break;
                         await HandleChangeMapAsync(reader, token);                    // 腳走傳送點換圖
@@ -405,6 +411,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.CloseRangeAttack:
+                    case V113ChannelRecvOp.PassiveEnergy:
                         if (player is null || currentField is null) break;
                         await HandleCloseRangeAttackAsync(reader, player, currentField, s, token);
                         break;
@@ -458,6 +465,42 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleAutoAggroAsync(reader, player, currentField, s, token);
                         break;
 
+                    case V113ChannelRecvOp.FriendlyDamage:
+                        if (player is null) break;
+                        if (reader.Remaining < 8) break;
+                        _ = reader.ReadInt();
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.MonsterBomb:
+                        if (player is null) break;
+                        if (reader.Remaining < 4) break;
+                        _ = reader.ReadInt();
+                        if (player.Character.Job is not (421 or 422))
+                        {
+                            await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                            break;
+                        }
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.HypnotizeDmg:
+                        if (player is null) break;
+                        if (reader.Remaining < 12) break;
+                        _ = reader.ReadInt();
+                        _ = reader.ReadInt();
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.DisplayNode:
+                        if (player is null) break;
+                        if (reader.Remaining < 4) break;
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.GeneralChat:
                         if (player is null) break;
                         await HandleGeneralChatAsync(reader, player, s, token);
@@ -474,6 +517,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.UseItemEffect:
+                    case V113ChannelRecvOp.WheelOfFortune:
                         if (player is null) break;
                         await HandleUseItemEffectAsync(reader, player, s, token);
                         break;
@@ -560,6 +604,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleQuestActionAsync(reader, player, s, token);
                         break;
 
+                    case V113ChannelRecvOp.CalcDamageStatSetRequest:
+                        break;
+
                     case V113ChannelRecvOp.SkillMacro:
                         if (player is null) break;
                         await HandleSkillMacroAsync(reader, player, s, token);
@@ -641,6 +688,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             token);
                         break;
 
+                    case V113ChannelRecvOp.CygnusSummon:
+                        if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.ChangeKeymap:
                         if (player is null) break;
                         await HandleChangeKeymapAsync(reader, player, s, token);
@@ -669,6 +721,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.XmasSurprise:
                         if (player is null || account is null) break;
                         await HandleBuffItemResultAsync(_buffItemHandler.HandleXmasSurprise(reader, account, player), player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.GamePoll:
+                        if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
                     case V113ChannelRecvOp.UpdateQuest:
@@ -822,6 +879,24 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleItemPickupAsync(reader, player, currentField, s, token);
                         break;
 
+                    case V113ChannelRecvOp.Snowball:
+                    case V113ChannelRecvOp.LeftKnockBack:
+                        if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.CsUpdate:
+                        if (player is null || account is null) break;
+                        await s.SendAsync(V113CashShopPackets.ShowCashBalances(account), token);
+                        await s.SendAsync(
+                            V113CashShopPackets.ShowCashInventory(
+                                player.Inventory.By(Core.Inventory.InventoryType.Cash).Items,
+                                account.Id,
+                                account.Storage.Slots,
+                                characterSlots: 3),
+                            token);
+                        break;
+
                     case V113ChannelRecvOp.CashShopOperation:
                         if (player is null || account is null) break;
                         var cashShopResult = _cashShopOperationHandler.Handle(reader, account, player);
@@ -918,6 +993,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleSkillEffectAsync(reader, player, token);
                         break;
 
+                    case V113ChannelRecvOp.StrangeData:
                     case V113ChannelRecvOp.CancelDebuff:
                         break;
 
@@ -942,7 +1018,23 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.PartySearchStart:
                     case V113ChannelRecvOp.PartySearchStop:
+                    case V113ChannelRecvOp.MapleTV:
+                    case V113ChannelRecvOp.BeansUpdate:
                         if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.AranCombo:
+                        if (player is null) break;
+                        if (reader.Remaining >= 4)
+                        {
+                            _ = reader.ReadInt();
+                        }
+                        if (player.Character.Job < 2000)
+                        {
+                            await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                            break;
+                        }
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 

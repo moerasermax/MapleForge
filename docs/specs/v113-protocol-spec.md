@@ -923,4 +923,99 @@ writeMapleAsciiString(mapName)
 - 證據層級：Java source + Core/Application/Adapters build + Adapters family handler tests；S2C pedigree/info layout 仍為 Java-source candidate，尚未 live-client verified。
 
 ---
+## P2 Batch 1A trivial recv opcode stubs（2026-06-18）
+
+來源：
+
+- `recv.properties`：`CLIENT_ERROR=0x0C`、`STRANGE_DATA=0x7FFF`、`CLIENT_FEEDBACK=0x0F`、`CLIENT_LOGOUT=0x1A`、`SHOW_EXP_CHAIR=0x24`、`CP_UserCalcDamageStatSetRequest=0x66`、`CYGNUS_SUMMON=0x91`、`GAME_POLL=0xA3`、`SNOWBALL=0xCD`、`LEFT_KNOCK_BACK=0xCE`、`CP_BeansUpdate=0xE1`、`MAPLETV=0x10A`
+- Java 來源：`MapleServerHandler.java` dispatch；MapleTV cash-item message path also notes no MapleTV broadcast support.
+
+Login C→S:
+
+```
+CLIENT_ERROR:
+writeShort(0x0C)
+writeBytes(errorData)    // MapleForge logs remaining bytes as warning-level error data.
+
+CLIENT_FEEDBACK:
+writeShort(0x0F)
+writeBytes(data)         // MapleForge logs at information level.
+
+CLIENT_LOGOUT:
+writeShort(0x1A)
+```
+
+Channel C→S handling:
+
+```
+STRANGE_DATA(0x7FFF): no-op
+CP_UserCalcDamageStatSetRequest(0x66): no-op
+SHOW_EXP_CHAIR(0x24): readInt(); ENABLE_ACTIONS
+CYGNUS_SUMMON(0x91): ENABLE_ACTIONS stub; NPC script start deferred
+SNOWBALL(0xCD): ENABLE_ACTIONS stub; real hit logic belongs to attack flow/event system
+LEFT_KNOCK_BACK(0xCE): ENABLE_ACTIONS stub
+GAME_POLL(0xA3): ENABLE_ACTIONS stub
+MAPLETV(0x10A): ENABLE_ACTIONS stub; no MapleTV broadcast system yet
+CP_BeansUpdate(0xE1): ENABLE_ACTIONS stub; bean system not implemented yet
+```
+
+備註：本批只把已知 trivial opcode 從未處理狀態降噪/解除 client action lock，不建立新 domain service。證據層級為 Java source + `Maple.Host.Shared` build + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped；真 v113 client smoke 未跑。
+
+---
+## P2 Batch 1B 簡易 handler opcode 註記（2026-06-18）
+
+來源：
+
+- `MobHandler.java`：`handleDisplayNode`、`handleMonsterBomb`、`handleFriendlyDamage`、`HypnotizeDmg`
+- `PlayerHandler.java`：`UseItemEffect` dispatch sibling、`closeRangeAttack(..., true)`、`AranCombo`
+- `CashShopOperation.java`：`sendCashShopUpdate`
+
+C→S：
+
+```
+PASSIVE_ENERGY:
+writeShort(0x28)
+// same close-range attack body as CLOSE_RANGE_ATTACK(0x25)
+
+WHEEL_OF_FORTUNE:
+writeShort(0x2E)
+writeInt(itemId)    // routed to existing USE_ITEMEFFECT MVP handler
+
+ARAN_COMBO:
+writeShort(0x92)
+writeInt(timestamp) // MapleForge MVP reads when present, then EnableActions
+
+FRIENDLY_DAMAGE:
+writeShort(0xBA)
+writeInt(mobOid1)
+writeInt(mobOid2)
+// remaining Java damage details not modeled yet
+
+MONSTER_BOMB:
+writeShort(0xBB)
+writeInt(mobOid)    // MVP validates Shadower jobs 421/422, then EnableActions
+
+HYPNOTIZE_DMG:
+writeShort(0xBC)
+writeInt(fromMobOid)
+writeInt(toMobOid)
+writeInt(damage)
+
+DISPLAY_NODE:
+writeShort(0xBE)
+writeInt(mobOid)
+
+CS_UPDATE:
+writeShort(0xE5)
+```
+
+語義：
+
+- `PASSIVE_ENERGY(0x28)` 走既有 close-range attack parser/combat path；Java 的 `energy=true` 細節尚未分離建模。
+- `WHEEL_OF_FORTUNE(0x2E)` 走既有 `USE_ITEMEFFECT(0x2D)` handler，保留持有檢查與視覺廣播語義。
+- `FRIENDLY_DAMAGE`、`MONSTER_BOMB`、`HYPNOTIZE_DMG`、`DISPLAY_NODE`、`ARAN_COMBO` 目前是讀取指定欄位後 `EnableActions` 的 MVP，不做 mob kill、node packet、combo state/buff application。
+- `CS_UPDATE(0xE5)` 目前送既有 cash balances 與 Cash inventory snapshot；Java 的 gifts/wishlist refresh 尚無 MapleForge model/encoder。
+- 證據層級：Java source + Host.Shared build + Adapters.V113 targeted tests；真 v113 client UI/cash-shop/combat smoke 待後續批量驗證。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

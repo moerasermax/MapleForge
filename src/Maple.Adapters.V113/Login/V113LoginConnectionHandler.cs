@@ -7,6 +7,7 @@ using Maple.Core.IO;
 using Maple.Net;
 using Maple.Versioning;
 using Microsoft.Extensions.Logging;
+using System.Text;
 
 namespace Maple.Adapters.V113.Login;
 
@@ -104,6 +105,26 @@ public sealed class V113LoginConnectionHandler : IConnectionHandler
 
             case V113RecvOp.DeleteChar:
                 await HandleDeleteCharAsync(reader, session, ctx, ct);
+                break;
+
+            case V113RecvOp.ClientError:
+            {
+                var data = reader.ReadBytes(reader.Remaining);
+                _log.LogWarning("[v113] CLIENT_ERROR len={Len} data='{Data}' hex={Hex} {Remote}",
+                    data.Length, Encoding.ASCII.GetString(data), Convert.ToHexString(data), session.Remote);
+                break;
+            }
+
+            case V113RecvOp.ClientFeedback:
+            {
+                var data = reader.ReadBytes(reader.Remaining);
+                _log.LogInformation("[v113] CLIENT_FEEDBACK len={Len} hex={Hex} {Remote}",
+                    data.Length, Convert.ToHexString(data), session.Remote);
+                break;
+            }
+
+            case V113RecvOp.ClientLogout:
+                _log.LogDebug("[v113] CLIENT_LOGOUT len={Len} {Remote}", reader.Remaining, session.Remote);
                 break;
 
             case V113RecvOp.Pong:
