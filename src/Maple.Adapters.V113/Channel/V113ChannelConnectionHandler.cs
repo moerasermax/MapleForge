@@ -1069,7 +1069,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.UseCashItem:
                         if (player is null) break;
-                        var useCashResult = await _useCashItemHandler.HandleAsync(reader, player, token);
+                        var useCashResult = await _useCashItemHandler.HandleAsync(
+                            reader,
+                            player,
+                            _options.ChannelIndex + 1,
+                            token);
                         if (useCashResult.Handled)
                         {
                             foreach (var pkt in useCashResult.Packets)
@@ -1090,6 +1094,22 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             if (useCashResult.CharacterMutated)
                             {
                                 await _charService.UpdateAsync(player.Character, token);
+                            }
+
+                            if (useCashResult.WarpToMapId is { } cashWarpMapId)
+                            {
+                                _log.LogInformation(
+                                    "[Channel] USE_CASH_ITEM warp charId={CharId} mapId={MapId}",
+                                    player.Character.Id,
+                                    cashWarpMapId);
+                                currentField = await WarpAsync(
+                                    player,
+                                    currentField,
+                                    npcOidToId,
+                                    s,
+                                    cashWarpMapId,
+                                    sessionToken,
+                                    token);
                             }
                         }
                         break;

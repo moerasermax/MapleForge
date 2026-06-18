@@ -631,6 +631,316 @@ public sealed class ChannelUseCashItemTests
     }
 
     [Fact]
+    public void FixedDestinationTeleport_5042000_WarpsToYuyuanAndConsumes()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5042000, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5042000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        AssertWarpConsumed(result, player, expectedMapId: 701000200);
+    }
+
+    [Fact]
+    public void FixedDestinationTeleport_5042001_WarpsToNightMarketAndConsumes()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5042001, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5042001)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        AssertWarpConsumed(result, player, expectedMapId: 741000000);
+    }
+
+    [Theory]
+    [InlineData(5040000)]
+    [InlineData(5040001)]
+    [InlineData(5041000)]
+    [InlineData(2320000)]
+    public void TeleportRock_MapMode_ReadsMapIdAndConsumes(int itemId)
+    {
+        var player = CreatePlayerWithCashItem(910000000, itemId, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(itemId)
+            .WriteByte(0)
+            .WriteInt(100000000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        AssertWarpConsumed(result, player, expectedMapId: 100000000);
+    }
+
+    [Fact]
+    public void TeleportRock_PlayerMode_IsDeferredAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(1)
+            .WriteMapleString("Victim")
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Single(result.Packets);
+        Assert.Equal(V113ChannelSendOp.UpdateStats, BitConverter.ToInt16(result.Packets[0], 0));
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Theory]
+    [InlineData(5560000)]
+    [InlineData(5561000)]
+    public void AnyDoor_MapMode_ReadsMapIdAndConsumes(int itemId)
+    {
+        var player = CreatePlayerWithCashItem(910000000, itemId, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(itemId)
+            .WriteByte(0)
+            .WriteInt(200000001)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        AssertWarpConsumed(result, player, expectedMapId: 200000001);
+    }
+
+    [Fact]
+    public void AnyDoor_NonMapMode_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5560000, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5560000)
+            .WriteByte(1)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Single(result.Packets);
+        Assert.Equal(V113ChannelSendOp.UpdateStats, BitConverter.ToInt16(result.Packets[0], 0));
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void MapMegaphone_ConsumesAndBroadcastsServerMessageType2()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5070000, 1);
+        var handler = CreateHandler();
+        var body = CashMegaphoneBody(5070000, "hello map", ear: true);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.True(result.CharacterMutated);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 2);
+        Assert.Equal("CashPlayer : hello map", reader.ReadMapleString());
+        Assert.Equal(0, reader.Remaining);
+    }
+
+    [Fact]
+    public void Megaphone_LevelTooLow_DoesNotConsumeOrBroadcast()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5071000, 1, level: 9);
+        var handler = CreateHandler();
+        var body = CashMegaphoneBody(5071000, "too low", ear: true);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 3);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Empty(result.MapPackets);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Single(result.Packets);
+    }
+
+    [Fact]
+    public void Megaphone_MessageTooLong_DoesNotConsumeOrBroadcast()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5071000, 1);
+        var handler = CreateHandler();
+        var body = CashMegaphoneBody(5071000, new string('x', 66), ear: true);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 3);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Empty(result.MapPackets);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void SuperMegaphone_WritesChannelAndEar()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5071000, 1);
+        var handler = CreateHandler();
+        var body = CashMegaphoneBody(5071000, "hello channel", ear: true);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 5);
+
+        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 3);
+        Assert.Equal("CashPlayer : hello channel", reader.ReadMapleString());
+        Assert.Equal(4, reader.ReadByte());
+        Assert.Equal(1, reader.ReadByte());
+    }
+
+    [Theory]
+    [InlineData(5073000, 11)]
+    [InlineData(5074000, 12)]
+    public void StyledMegaphones_WriteExpectedType(int itemId, int expectedType)
+    {
+        var player = CreatePlayerWithCashItem(910000000, itemId, 1);
+        var handler = CreateHandler();
+        var body = CashMegaphoneBody(itemId, "styled", ear: false);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 2);
+
+        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType);
+        Assert.Equal("CashPlayer : styled", reader.ReadMapleString());
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal(0, reader.ReadByte());
+    }
+
+    [Fact]
+    public void MapleTvStub_OnlyEnablesActionsWithoutConsuming()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5075000, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5075000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Empty(result.MapPackets);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Equal(V113ChannelSendOp.UpdateStats, BitConverter.ToInt16(Assert.Single(result.Packets), 0));
+    }
+
+    [Fact]
+    public void ItemMegaphone_WithoutItem_WritesNoItemFlag()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5076000, 1);
+        var handler = CreateHandler();
+        var body = CashItemMegaphoneBody("selling", ear: false, includeItem: false);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 4);
+
+        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 8);
+        Assert.Equal("CashPlayer : selling", reader.ReadMapleString());
+        Assert.Equal(3, reader.ReadByte());
+        Assert.Equal(0, reader.ReadByte());
+        Assert.Equal(0, reader.ReadByte());
+        Assert.Equal(0, reader.Remaining);
+    }
+
+    [Fact]
+    public void ItemMegaphone_WithItem_WritesItemInfo()
+    {
+        var player = CreatePlayerWithCashItemAndItems(
+            5076000,
+            BagItem(InventoryType.Use, 2000000, 2));
+        var handler = CreateHandler();
+        var body = CashItemMegaphoneBody("selling item", ear: true, includeItem: true);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 4);
+
+        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 8);
+        Assert.Equal("CashPlayer : selling item", reader.ReadMapleString());
+        Assert.Equal(3, reader.ReadByte());
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal(2, reader.ReadByte());
+        Assert.Equal(2000000, reader.ReadInt());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void TripleMegaphone_WritesRequestedLineCount(int lineCount)
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5077000, 1);
+        var handler = CreateHandler();
+        var messages = Enumerable.Range(1, lineCount).Select(i => $"line {i}").ToArray();
+        var body = CashTripleMegaphoneBody(messages, ear: true);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 2);
+
+        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 10);
+        Assert.Equal("CashPlayer : line 1", reader.ReadMapleString());
+        Assert.Equal(lineCount, reader.ReadByte());
+        if (lineCount > 1)
+        {
+            Assert.Equal("CashPlayer : line 2", reader.ReadMapleString());
+        }
+
+        if (lineCount > 2)
+        {
+            Assert.Equal("CashPlayer : line 3", reader.ReadMapleString());
+        }
+
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal(1, reader.ReadByte());
+    }
+
+    [Fact]
+    public void TripleMegaphone_TooManyLines_DoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5077000, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5077000)
+            .WriteByte(4)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 2);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Empty(result.MapPackets);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void AvatarMegaphone_FallsBackToSuperMegaphone()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5390029, 1);
+        var handler = CreateHandler();
+        var body = CashMegaphoneBody(5390029, "avatar", ear: true);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 6);
+
+        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 3);
+        Assert.Equal("CashPlayer : avatar", reader.ReadMapleString());
+        Assert.Equal(5, reader.ReadByte());
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
     public void OpcodeConstant_MatchesJavaValue()
     {
         Assert.Equal(0x49, V113ChannelRecvOp.UseCashItem);
@@ -653,6 +963,17 @@ public sealed class ChannelUseCashItemTests
             pets ?? new PetService(),
             new NoteService(notes ?? new TestNoteRepository()),
             NullLogger<V113UseCashItemHandler>.Instance);
+
+    private static void AssertWarpConsumed(V113UseCashItemResult result, Player player, int expectedMapId)
+    {
+        Assert.True(result.Handled);
+        Assert.True(result.CharacterMutated);
+        Assert.Equal(expectedMapId, result.WarpToMapId);
+        Assert.Equal(2, result.Packets.Count);
+        Assert.Equal(V113ChannelSendOp.ModifyInventoryItem, BitConverter.ToInt16(result.Packets[0], 0));
+        Assert.Equal(V113ChannelSendOp.UpdateStats, BitConverter.ToInt16(result.Packets[1], 0));
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
 
     private sealed class TestOwlSearchCatalog : IOwlSearchCatalog
     {
@@ -683,12 +1004,13 @@ public sealed class ChannelUseCashItemTests
         return new Player(character, new Position(0, 0, 0, 0));
     }
 
-    private static Player CreatePlayerWithCashItem(int mapId, int itemId, short slot)
+    private static Player CreatePlayerWithCashItem(int mapId, int itemId, short slot, byte level = 10)
     {
         var character = new Character
         {
             Id = 1,
             Name = "CashPlayer",
+            Level = level,
             MapId = mapId,
             Items =
             [
@@ -712,6 +1034,7 @@ public sealed class ChannelUseCashItemTests
         {
             Id = 1,
             Name = "CashPlayer",
+            Level = 10,
             MapId = 910000000,
             Items =
             [
@@ -759,6 +1082,7 @@ public sealed class ChannelUseCashItemTests
         {
             Id = 1,
             Name = "CashPlayer",
+            Level = 10,
             MapId = 910000000,
             Items = records,
         };
@@ -773,6 +1097,56 @@ public sealed class ChannelUseCashItemTests
             .WriteInt((int)type)
             .WriteInt(targetSlot)
             .ToArray();
+
+    private static byte[] CashMegaphoneBody(int cashItemId, string message, bool ear)
+        => new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(cashItemId)
+            .WriteMapleString(message)
+            .WriteByte(ear ? 1 : 0)
+            .ToArray();
+
+    private static byte[] CashItemMegaphoneBody(string message, bool ear, bool includeItem)
+    {
+        var writer = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5076000)
+            .WriteMapleString(message)
+            .WriteByte(ear ? 1 : 0)
+            .WriteByte(includeItem ? 1 : 0);
+
+        if (includeItem)
+        {
+            writer.WriteInt((int)InventoryType.Use);
+            writer.WriteInt(2);
+        }
+
+        return writer.ToArray();
+    }
+
+    private static byte[] CashTripleMegaphoneBody(IReadOnlyList<string> messages, bool ear)
+    {
+        var writer = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5077000)
+            .WriteByte(messages.Count);
+
+        foreach (var message in messages)
+        {
+            writer.WriteMapleString(message);
+        }
+
+        writer.WriteByte(ear ? 1 : 0);
+        return writer.ToArray();
+    }
+
+    private static PacketReader ReadServerMessage(byte[] packet, int expectedType)
+    {
+        var reader = new PacketReader(packet);
+        Assert.Equal(V113ChannelSendOp.ServerMessage, reader.ReadShort());
+        Assert.Equal((byte)expectedType, reader.ReadByte());
+        return reader;
+    }
 
     private static ItemRecord BagItem(
         InventoryType type,

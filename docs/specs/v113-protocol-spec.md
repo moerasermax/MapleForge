@@ -1409,4 +1409,58 @@ S→C：
 證據層級：Java source map + Core/Adapters targeted tests；`Maple.Adapters.V113.Tests` 367 passed + 1 skipped、`Maple.Core.Tests` 102 passed。真 v113 client cash-item UI smoke 未跑，S2C item update 沿用既有 candidate layout。
 
 ---
+## USE_CASH_ITEM Batch D 傳送石（2026-06-18）
+
+來源：
+
+- `InventoryHandler.UseCashItem` lines 997-1037
+- `InventoryHandler.UseTeleRock` lines 2744-2780
+- `FieldLimitType.VipRock` Java check；MapleForge domain enum 已存在，但 per-map field-limit data 尚未載入
+
+C→S common prefix:
+
+```
+writeShort(cashSlot)
+writeInt(cashItemId)
+```
+
+Implemented payloads:
+
+```
+Fixed destination 5042000:
+// no extra payload; warp intent mapId=701000200
+
+Fixed destination 5042001:
+// no extra payload; warp intent mapId=741000000
+
+Cash teleport rocks 5040000 / 5040001 / 5041000 / 2320000:
+writeByte(mode)          // 0 = map id, 1 = player name
+if mode == 0:
+  writeInt(mapId)
+if mode == 1:
+  writeMapleAsciiString(characterName) // deferred
+
+Any-door tickets 5560000 / 5561000:
+writeByte(mode)          // MapleForge MVP supports only 0
+if mode == 0:
+  writeInt(mapId)
+```
+
+語義：
+
+- Success path consumes one Cash inventory item and returns `V113UseCashItemResult.WarpToMapId`; the channel connection handler performs the actual transition through existing `WarpAsync`.
+- Fixed destination rocks map to Java constants: `5042000 → 701000200` and `5042001 → 741000000`.
+- Teleport rock map mode reads the requested map id and warps directly for MVP.
+- Teleport rock player-name mode is logged and returns `EnableActions` without consuming, because `V113UseCashItemHandler` has no online-player registry access.
+- Any-door map mode currently rejects `mapId <= 2000000` to preserve the Java mainland guard, then returns a warp intent.
+- TODO: MapleLand, saved-rock eligibility, same-continent/VIP distinction, event-instance checks, and `FieldLimitType.VipRock` checks are deferred until map field-limit and rock-map data are loaded.
+
+S→C：
+
+- cash item consumption uses existing `MODIFY_INVENTORY_ITEM(0x1B)` quantity mutation packet plus `UPDATE_STATS(0x1D)` `EnableActions`.
+- warp uses the existing `SET_FIELD` flow emitted by `WarpAsync`; no new cash-item-specific transfer-result packet is emitted.
+
+證據層級：Java source map + Adapters focused tests；`Maple.Adapters.V113.Tests` 377 passed + 1 skipped。真 v113 client teleport UI smoke 未跑。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

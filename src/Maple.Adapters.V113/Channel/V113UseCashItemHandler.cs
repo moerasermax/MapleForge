@@ -14,7 +14,8 @@ namespace Maple.Adapters.V113.Channel;
 internal sealed record V113UseCashItemResult(
     bool Handled,
     bool CharacterMutated,
-    IReadOnlyList<byte[]> Packets)
+    IReadOnlyList<byte[]> Packets,
+    int? WarpToMapId = null)
 {
     public IReadOnlyList<byte[]> BroadcastPackets { get; init; } = Array.Empty<byte[]>();
 
@@ -45,12 +46,19 @@ public sealed class V113UseCashItemHandler
         _log = log;
     }
 
-    internal V113UseCashItemResult Handle(PacketReader reader, Player player)
-        => HandleAsync(reader, player, CancellationToken.None).GetAwaiter().GetResult();
+    internal V113UseCashItemResult Handle(PacketReader reader, Player player, int channel = 1)
+        => HandleAsync(reader, player, channel, CancellationToken.None).GetAwaiter().GetResult();
+
+    internal Task<V113UseCashItemResult> HandleAsync(
+        PacketReader reader,
+        Player player,
+        CancellationToken ct = default)
+        => HandleAsync(reader, player, channel: 1, ct);
 
     internal async Task<V113UseCashItemResult> HandleAsync(
         PacketReader reader,
         Player player,
+        int channel,
         CancellationToken ct = default)
     {
         if (reader.Remaining < 6)
@@ -73,6 +81,9 @@ public sealed class V113UseCashItemHandler
         return itemId switch
         {
             OwlService.CashOwlItemId => HandleOwlOfMinerva(reader, player, slot, itemId),
+            2320000 or 5040000 or 5040001 or 5041000 => HandleCashTeleportRock(reader, player, slot, itemId),
+            5042000 => HandleFixedDestinationTeleport(player, slot, itemId, mapId: 701000200),
+            5042001 => HandleFixedDestinationTeleport(player, slot, itemId, mapId: 741000000),
             5050000 => HandleApReset(reader, player, slot, itemId),
             >= 5050001 and <= 5050004 => HandleSpReset(reader, player, slot, itemId),
             5060000 => HandleItemTag(reader, player, slot, itemId),
@@ -82,6 +93,37 @@ public sealed class V113UseCashItemHandler
             5061000 => HandleSealingLock(reader, player, slot, itemId, lockDays: 7),
             5061001 => HandleSealingLock(reader, player, slot, itemId, lockDays: 30),
             5061002 => HandleSealingLock(reader, player, slot, itemId, lockDays: 90),
+            5070000 => HandleMegaphone(
+                reader,
+                player,
+                slot,
+                itemId,
+                channel,
+                static (message, _, _) => V113BroadcastPackets.Megaphone(message)),
+            5071000 or 5072000 => HandleMegaphone(
+                reader,
+                player,
+                slot,
+                itemId,
+                channel,
+                static (message, broadcastChannel, ear) => V113BroadcastPackets.SuperMegaphone(message, broadcastChannel, ear)),
+            5073000 => HandleMegaphone(
+                reader,
+                player,
+                slot,
+                itemId,
+                channel,
+                static (message, broadcastChannel, ear) => V113BroadcastPackets.HeartMegaphone(message, broadcastChannel, ear)),
+            5074000 => HandleMegaphone(
+                reader,
+                player,
+                slot,
+                itemId,
+                channel,
+                static (message, broadcastChannel, ear) => V113BroadcastPackets.SkullMegaphone(message, broadcastChannel, ear)),
+            >= 5075000 and <= 5075002 => HandleMapleTvStub(itemId),
+            5076000 => HandleItemMegaphone(reader, player, slot, itemId, channel),
+            5077000 => HandleTripleMegaphone(reader, player, slot, itemId, channel),
             5090000 or 5090100 => await HandleNoteAsync(reader, player, slot, itemId, ct).ConfigureAwait(false),
             5100000 => HandleCongratulatorySong(player, slot, itemId),
             >= 5152100 and <= 5152107 => HandleStub(itemId, "Contact lenses"),
@@ -94,12 +136,203 @@ public sealed class V113UseCashItemHandler
             5320000 => HandleStub(itemId, "Predict card"),
             5330000 => HandleStub(itemId, "NPC script cash item"),
             5370000 or 5370001 => HandleChalkboard(reader, player),
+            >= 5390000 and <= 5390006 => HandleAvatarMegaphoneFallback(reader, player, slot, itemId, channel),
+            5390029 => HandleAvatarMegaphoneFallback(reader, player, slot, itemId, channel),
             5450000 => HandleStub(itemId, "Travelling merchant"),
             5520000 or 5520001 => HandleKarma(reader, player, slot, itemId),
+            5560000 or 5561000 => HandleAnyDoorTicket(reader, player, slot, itemId),
             5570000 => HandleViciousHammer(reader, player, slot, itemId),
             5610000 or 5610001 => HandleVegaStub(reader, itemId),
             _ => HandleUnknown(itemId),
         };
+    }
+
+    private V113UseCashItemResult HandleMegaphone(
+        PacketReader reader,
+        Player player,
+        short slot,
+        int itemId,
+        int channel,
+        Func<string, int, bool, byte[]> buildPacket,
+        int maxMessageLength = 65)
+    {
+        if (!TryReadMegaphoneMessage(reader, player, maxMessageLength, out var message, out var ear))
+        {
+            return EnableActionsOnly();
+        }
+
+        var packet = buildPacket(message, NormalizeChannel(channel), ear);
+        return ConsumeCashItemWithMapPacket(player, slot, itemId, packet);
+    }
+
+    private V113UseCashItemResult HandleTripleMegaphone(
+        PacketReader reader,
+        Player player,
+        short slot,
+        int itemId,
+        int channel)
+    {
+        if (!CanUseMegaphone(player) || reader.Remaining < 1)
+        {
+            return EnableActionsOnly();
+        }
+
+        var lineCount = reader.ReadByte();
+        if (lineCount is < 1 or > 3)
+        {
+            return EnableActionsOnly();
+        }
+
+        var messages = new string[lineCount];
+        for (var i = 0; i < lineCount; i++)
+        {
+            string line;
+            try
+            {
+                line = reader.ReadMapleString();
+            }
+            catch (InvalidDataException)
+            {
+                return EnableActionsOnly();
+            }
+
+            if (line.Length > 65)
+            {
+                return EnableActionsOnly();
+            }
+
+            messages[i] = FormatMegaphoneMessage(player, line);
+        }
+
+        if (reader.Remaining < 1)
+        {
+            return EnableActionsOnly();
+        }
+
+        var ear = reader.ReadByte() > 0;
+        var packet = V113BroadcastPackets.TripleMegaphone(messages, NormalizeChannel(channel), ear);
+        return ConsumeCashItemWithMapPacket(player, slot, itemId, packet);
+    }
+
+    private V113UseCashItemResult HandleItemMegaphone(
+        PacketReader reader,
+        Player player,
+        short slot,
+        int itemId,
+        int channel)
+    {
+        if (!TryReadMegaphoneMessage(reader, player, maxMessageLength: 65, out var message, out var ear) ||
+            reader.Remaining < 1)
+        {
+            return EnableActionsOnly();
+        }
+
+        Item? item = null;
+        var hasItem = reader.ReadByte() == 1;
+        if (hasItem)
+        {
+            if (!TryReadInventoryTarget(reader, out var type, out var itemSlot))
+            {
+                return EnableActionsOnly();
+            }
+
+            item = player.Inventory.By(type).Get(itemSlot);
+        }
+
+        var packet = V113BroadcastPackets.ItemMegaphone(message, NormalizeChannel(channel), ear, item);
+        return ConsumeCashItemWithMapPacket(player, slot, itemId, packet);
+    }
+
+    private V113UseCashItemResult HandleAvatarMegaphoneFallback(
+        PacketReader reader,
+        Player player,
+        short slot,
+        int itemId,
+        int channel)
+        => HandleMegaphone(
+            reader,
+            player,
+            slot,
+            itemId,
+            channel,
+            static (message, broadcastChannel, ear) => V113BroadcastPackets.SuperMegaphone(message, broadcastChannel, ear),
+            maxMessageLength: 55);
+
+    private V113UseCashItemResult HandleMapleTvStub(int itemId)
+    {
+        _log.LogDebug("[UseCashItem] MapleTV cash item {ItemId} deferred: no MapleTV broadcast system", itemId);
+        return EnableActionsOnly();
+    }
+
+    private V113UseCashItemResult HandleFixedDestinationTeleport(
+        Player player,
+        short slot,
+        int itemId,
+        int mapId)
+        => ConsumeCashItemForWarp(player, slot, itemId, mapId);
+
+    private V113UseCashItemResult HandleCashTeleportRock(PacketReader reader, Player player, short slot, int itemId)
+    {
+        if (reader.Remaining < 1)
+        {
+            return EnableActionsOnly();
+        }
+
+        var mode = reader.ReadByte();
+        if (mode == 0)
+        {
+            if (reader.Remaining < 4)
+            {
+                return EnableActionsOnly();
+            }
+
+            var mapId = reader.ReadInt();
+            // TODO: Apply MapleLand, saved-rock, continent, event-instance, and FieldLimitType.VipRock checks
+            // once MapleForge has per-map field-limit data and full rock-map persistence semantics.
+            return ConsumeCashItemForWarp(player, slot, itemId, mapId);
+        }
+
+        if (mode == 1)
+        {
+            try
+            {
+                var targetName = reader.ReadMapleString();
+                _log.LogDebug(
+                    "[UseCashItem] Teleport rock player mode deferred itemId={ItemId} target={Target}",
+                    itemId,
+                    targetName);
+            }
+            catch (InvalidDataException)
+            {
+                _log.LogDebug("[UseCashItem] Teleport rock player mode malformed itemId={ItemId}", itemId);
+            }
+        }
+
+        return EnableActionsOnly();
+    }
+
+    private V113UseCashItemResult HandleAnyDoorTicket(PacketReader reader, Player player, short slot, int itemId)
+    {
+        if (reader.Remaining < 1)
+        {
+            return EnableActionsOnly();
+        }
+
+        var mode = reader.ReadByte();
+        if (mode != 0 || reader.Remaining < 4)
+        {
+            _log.LogDebug("[UseCashItem] Any-door deferred itemId={ItemId} mode={Mode}", itemId, mode);
+            return EnableActionsOnly();
+        }
+
+        var mapId = reader.ReadInt();
+        if (mapId <= 2_000_000)
+        {
+            return EnableActionsOnly();
+        }
+
+        // TODO: Apply MapleLand, event-instance, and FieldLimitType.VipRock checks once map field limits are loaded.
+        return ConsumeCashItemForWarp(player, slot, itemId, mapId);
     }
 
     private V113UseCashItemResult HandleApReset(PacketReader reader, Player player, short slot, int itemId)
@@ -515,6 +748,26 @@ public sealed class V113UseCashItemHandler
             });
     }
 
+    private V113UseCashItemResult ConsumeCashItemForWarp(Player player, short slot, int itemId, int mapId)
+    {
+        var result = ConsumeCashItem(player, slot, itemId);
+        return result.CharacterMutated
+            ? result with { WarpToMapId = mapId }
+            : result;
+    }
+
+    private V113UseCashItemResult ConsumeCashItemWithMapPacket(
+        Player player,
+        short slot,
+        int itemId,
+        byte[] mapPacket)
+    {
+        var result = ConsumeCashItem(player, slot, itemId);
+        return result.CharacterMutated
+            ? result with { MapPackets = One(mapPacket) }
+            : result;
+    }
+
     private V113UseCashItemResult ConsumeCashItemWithPackets(
         Player player,
         short slot,
@@ -553,6 +806,49 @@ public sealed class V113UseCashItemHandler
         => new(true, false, One(V113StatsPackets.EnableActions()));
 
     private static IReadOnlyList<byte[]> One(byte[] packet) => new[] { packet };
+
+    private static bool TryReadMegaphoneMessage(
+        PacketReader reader,
+        Player player,
+        int maxMessageLength,
+        out string formattedMessage,
+        out bool ear)
+    {
+        formattedMessage = string.Empty;
+        ear = false;
+        if (!CanUseMegaphone(player))
+        {
+            return false;
+        }
+
+        string message;
+        try
+        {
+            message = reader.ReadMapleString();
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+
+        if (message.Length > maxMessageLength || reader.Remaining < 1)
+        {
+            return false;
+        }
+
+        ear = reader.ReadByte() != 0;
+        formattedMessage = FormatMegaphoneMessage(player, message);
+        return true;
+    }
+
+    private static bool CanUseMegaphone(Player player)
+        => player.Character.Level >= 10;
+
+    private static string FormatMegaphoneMessage(Player player, string message)
+        => $"{player.Character.Name} : {message}";
+
+    private static int NormalizeChannel(int channel)
+        => channel <= 0 ? 1 : channel;
 
     private static bool TryReadInventoryTarget(PacketReader reader, out InventoryType type, out short slot)
     {
