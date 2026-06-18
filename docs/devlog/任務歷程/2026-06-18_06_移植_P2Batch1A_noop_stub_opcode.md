@@ -7,7 +7,7 @@
 更新: 2026-06-18 11:48
 關聯里程碑: P2 opcode migration
 關聯記憶:
-關聯commit: 未 checkpoint（同檔存在非本批 Batch 1B 變更）
+關聯commit: 7e587e8 (Wave 1 aggregate)
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）

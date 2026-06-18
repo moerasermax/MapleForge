@@ -7,7 +7,7 @@
 更新: 2026-06-18 11:47
 關聯里程碑: M4/M6+
 關聯記憶: current-state-resume, pm-dispatch-only-workflow
-關聯commit: 待填
+關聯commit: 7e587e8 (Wave 1 aggregate)
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）

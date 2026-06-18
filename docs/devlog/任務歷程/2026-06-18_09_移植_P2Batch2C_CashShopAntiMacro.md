@@ -7,7 +7,7 @@
 更新: 2026-06-18 12:32
 關聯里程碑: M6-1 / P2 opcode migration
 關聯記憶:
-關聯commit: 待填
+關聯commit: 08a8db7 (Wave 2 aggregate)
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）

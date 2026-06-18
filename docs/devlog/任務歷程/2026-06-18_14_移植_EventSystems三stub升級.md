@@ -7,7 +7,7 @@
 更新: 2026-06-18 14:42
 關聯里程碑: M6-4
 關聯記憶: 
-關聯commit: 未提交（工作區混有非本任務同檔變更）
+關聯commit: e337dee (Phase A+B aggregate)
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）
@@ -48,7 +48,7 @@
 
 ## ⏯️ 接手點（★崩潰救命行★ — 永遠保持最新一行）
 
-> 本任務完成。後續接手：若要 commit，需先拆分本任務與非本任務 Phase-A 類變更，尤其 `V113ChannelConnectionHandler.cs` 同檔混有 TeleRock/ItemUnlock/MobNode/ScriptedNpcItem edits，不能整檔提交當成本任務。
+✅ 已完成。commit e337dee pushed。
 
 ## ✅ 結果與結論
 
