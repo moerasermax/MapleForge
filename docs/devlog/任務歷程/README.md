@@ -40,6 +40,8 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
+| 2026-06-18_26 | 修補 | P002 三輪稽核最終修補 | ✅ 完成 |
+| 2026-06-18_25 | 驗證 | P002 三輪稽核 | ✅ 完成 |
 | 2026-06-18_24 | 修補 | P002 二輪稽核殘留修補 | ✅ 完成 |
 | 2026-06-18_23 | 修補 | P002 稽核缺陷修補 | ✅ 完成 |
 | 2026-06-18_22 | 驗證 | P002 鐵律合規稽核 | ✅ 完成 |
@@ -52,6 +54,7 @@ YYYY-MM-DD_序號_類型_簡述.md
 | 2026-06-18_16 | 移植 | USE_CASH_ITEM Batch A 現金道具路由 | ✅ 完成 |
 | 2026-06-18_16 | 移植 | USE_SKILL_BOOK 技能書 catalog 全鏈 | ✅ 完成 |
 | 2026-06-18_15 | 驗證 | 鐵律與最高流程稽核 | ✅ 完成 |
+| 2026-06-18_14 | 重構 | P002 技術債清償：ENTER_CASH_SHOP / USE_SKILL_BOOK / USE_CASH_ITEM 完整路由 | ✅ 完成（645 綠；cb66272+） |
 | 2026-06-18_12 | 移植 | P2 Migration Wave 4 heavy opcode MVP stubs | ✅ 完成（Host.Shared build；Adapters.V113 299+1skip） |
 | 2026-06-18_14 | 移植 | EventSystems 三個 MVP stub 升級 | ✅ 完成（Host.Shared build；full suite 綠，S2C candidate） |
 | 2026-06-18_13 | 移植 | P2 MVP stub 補完整實作 + 技術債清償 | ✅ 完成 |
