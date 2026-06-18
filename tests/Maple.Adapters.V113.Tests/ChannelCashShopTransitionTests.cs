@@ -54,6 +54,23 @@ public sealed class ChannelCashShopTransitionTests
     }
 
     [Fact]
+    public void TryConsumeCashShopTransition_StaleTransitionReturnsFalseAndRemovesEntry()
+    {
+        var pending = new ConcurrentDictionary<int, CashShopTransitionData>();
+        pending[42] = new CashShopTransitionData(
+            CharacterId: 42,
+            PreviousMapId: 100000000,
+            PreviousChannel: 0,
+            RegisteredAt: DateTimeOffset.UtcNow - TimeSpan.FromSeconds(31));
+
+        var consumed = V113ChannelConnectionHandler.TryConsumeCashShopTransition(pending, 42, out var transition);
+
+        Assert.False(consumed);
+        Assert.Null(transition);
+        Assert.Empty(pending);
+    }
+
+    [Fact]
     public void LeaveCashShop_UsesChangeMapRequestAndChannelChangeReconnect()
     {
         var reconnect = V113ChannelChangePackets.ChangeChannel([127, 0, 0, 1], 8585);

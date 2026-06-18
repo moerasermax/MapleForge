@@ -213,7 +213,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         ConcurrentDictionary<int, CashShopTransitionData> pendingTransitions,
         int characterId,
         out CashShopTransitionData transition)
-        => pendingTransitions.TryRemove(characterId, out transition!);
+    {
+        if (pendingTransitions.TryRemove(characterId, out transition!))
+        {
+            if (DateTimeOffset.UtcNow - transition.RegisteredAt < TimeSpan.FromSeconds(30))
+            {
+                return true;
+            }
+        }
+
+        transition = default!;
+        return false;
+    }
 
     public async Task HandleChannelConnectionAsync(MapleSession session, CancellationToken ct)
     {

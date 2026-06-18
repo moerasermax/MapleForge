@@ -40,6 +40,7 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
+| 2026-06-18_21 | 驗證 | D9 P002 技術債批次 code review | ✅ 完成（禁區 clean；Adapters/Content/Core/Host build 綠；2 blocker + 1 warning） |
 | 2026-06-18_20 | 移植 | USE_CASH_ITEM Batch C 廣播現金道具 | ✅ 完成（Adapters.V113 391+1skip；map-level broadcast MVP） |
 | 2026-06-18_19 | 移植 | USE_CASH_ITEM Batch D 傳送石現金道具 | 🚧 執行中 |
 | 2026-06-18_18 | 移植 | USE_CASH_ITEM Batch B 現金道具邏輯 | 🚧 執行中 |

@@ -91,7 +91,8 @@ internal static class V113SkillBookHandler
             return Broadcast(player, canUse: false, success: false, skillId, definition.MasterLevel);
         }
 
-        var success = definition.SuccessRate > 0 && Random.Shared.Next(100) < definition.SuccessRate;
+        // Java explicitly rejects 0% books before rolling; keep that guard for parity.
+        var success = definition.SuccessRate != 0 && Random.Shared.Next(100) < definition.SuccessRate;
         var oldQuantity = item.Quantity;
         _ = useInventory.TryTake(request.Slot, 1, out _);
 
