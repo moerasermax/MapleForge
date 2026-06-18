@@ -23,6 +23,7 @@ using Maple.Application.Reactors;
 using Maple.Application.Security;
 using Maple.Application.Shops;
 using Maple.Application.Skills;
+using Maple.Application.Alliances;
 using Maple.Application.Social;
 using Maple.Application.Stats;
 using Maple.Application.Storage;
@@ -176,6 +177,18 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113ScrollHandler>();
         builder.Services.AddSingleton<V113UseConsumableHandler>();
         builder.Services.AddSingleton<V113UseCashItemHandler>();
+        builder.Services.AddSingleton<Maple.Core.Alliances.IAllianceRepository, InMemoryAllianceRepository>();
+        builder.Services.AddSingleton<AllianceService>();
+        builder.Services.AddSingleton<IV113AllianceSessionHook, CentralAllianceSessionHook>();
+        builder.Services.AddSingleton<V113AllianceHandler>();
+        builder.Services.AddSingleton<MessengerService>();
+        builder.Services.AddSingleton<IV113MessengerSessionHook, CentralMessengerSessionHook>();
+        builder.Services.AddSingleton<V113MessengerHandler>();
+        builder.Services.AddSingleton<DoorService>();
+        builder.Services.AddSingleton<V113DoorHandler>();
+        builder.Services.AddSingleton<Maple.Core.Social.INoteRepository, Maple.Persistence.Notes.LiteDbNoteRepository>();
+        builder.Services.AddSingleton<NoteService>();
+        builder.Services.AddSingleton<V113NoteHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>

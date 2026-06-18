@@ -78,6 +78,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly ItemUseService _itemUseService;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
+    private readonly V113AllianceHandler _allianceHandler;
+    private readonly V113MessengerHandler _messengerHandler;
+    private readonly V113DoorHandler _doorHandler;
+    private readonly V113NoteHandler _noteHandler;
     private readonly V113ChannelOptions _options;
 
     public V113ChannelConnectionHandler(
@@ -119,6 +123,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         ItemUseService itemUseService,
         QuestService questService,
         StatsService statsService,
+        V113AllianceHandler allianceHandler,
+        V113MessengerHandler messengerHandler,
+        V113DoorHandler doorHandler,
+        V113NoteHandler noteHandler,
         V113ChannelOptions options)
     {
         _log = log;
@@ -159,6 +167,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _itemUseService = itemUseService;
         _questService = questService;
         _statsService = statsService;
+        _allianceHandler = allianceHandler;
+        _messengerHandler = messengerHandler;
+        _doorHandler = doorHandler;
+        _noteHandler = noteHandler;
         _options = options;
     }
 
@@ -929,6 +941,54 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.PartySearchStop:
                         if (player is null) break;
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.Messenger:
+                        if (player is null) break;
+                        await _messengerHandler.HandleMessengerAsync(
+                            reader,
+                            player,
+                            _options.ChannelIndex + 1,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.AllianceOperation:
+                        if (player is null) break;
+                        {
+                            var allianceResult = await _allianceHandler.HandleAllianceOperationAsync(reader, player, token);
+                            foreach (var pkt in allianceResult.SelfPackets)
+                                await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.DenyAllianceRequest:
+                        if (player is null) break;
+                        {
+                            var denyResult = await _allianceHandler.HandleDenyAllianceRequestAsync(reader, player, token);
+                            foreach (var pkt in denyResult.SelfPackets)
+                                await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.NoteAction:
+                        if (player is null) break;
+                        await _noteHandler.HandleNoteActionAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.UseDoor:
+                        if (player is null || currentField is null) break;
+                        {
+                            var doorResult = await _doorHandler.HandleUseDoorAsync(reader, player, player.Character.MapId);
+                            foreach (var pkt in doorResult.SelfPackets)
+                                await s.SendAsync(pkt, token);
+                            if (doorResult.Warp is { CanWarp: true } doorWarp)
+                            {
+                                currentField = await WarpAsync(
+                                    player, currentField, npcOidToId, s,
+                                    doorWarp.DestinationMapId, sessionToken, token);
+                            }
+                        }
                         break;
 
                     case V113ChannelRecvOp.Pong:
