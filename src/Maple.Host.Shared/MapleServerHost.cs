@@ -8,6 +8,7 @@ using Maple.Application.Chats;
 using Maple.Application.Combat;
 using Maple.Application.Duey;
 using Maple.Application.Drops;
+using Maple.Application.Events;
 using Maple.Application.Fame;
 using Maple.Application.Guilds;
 using Maple.Application.Guilds.Bbs;
@@ -194,6 +195,8 @@ public static class MapleServerHost
         builder.Services.AddSingleton<Maple.Application.Families.FamilyService>();
         builder.Services.AddSingleton<IV113FamilySessionHook, CentralFamilySessionHook>();
         builder.Services.AddSingleton<V113FamilyHandler>();
+        builder.Services.AddSingleton<CoconutEventService>();
+        builder.Services.AddSingleton<V113EventMiniGameHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>

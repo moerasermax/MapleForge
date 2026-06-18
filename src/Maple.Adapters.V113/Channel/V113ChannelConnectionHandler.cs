@@ -83,6 +83,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113DoorHandler _doorHandler;
     private readonly V113NoteHandler _noteHandler;
     private readonly V113FamilyHandler _familyHandler;
+    private readonly V113EventMiniGameHandler _eventMiniGameHandler;
     private readonly V113ChannelOptions _options;
 
     public V113ChannelConnectionHandler(
@@ -129,6 +130,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113DoorHandler doorHandler,
         V113NoteHandler noteHandler,
         V113FamilyHandler familyHandler,
+        V113EventMiniGameHandler eventMiniGameHandler,
         V113ChannelOptions options)
     {
         _log = log;
@@ -174,6 +176,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _doorHandler = doorHandler;
         _noteHandler = noteHandler;
         _familyHandler = familyHandler;
+        _eventMiniGameHandler = eventMiniGameHandler;
         _options = options;
     }
 
@@ -500,10 +503,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.MobNode:
-                        if (player is null) break;
-                        if (reader.Remaining < 8) break;
-                        _ = reader.ReadInt();
-                        _ = reader.ReadInt();
+                        if (player is null || currentField is null) break;
+                        await HandleMobNodeAsync(reader, player, currentField);
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
@@ -596,7 +597,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.OldAntiMacroQuestion:
                         if (player is null) break;
-                        _ = reader.ReadMapleString();
+                        var antiMacroAnswer = reader.ReadMapleString();
+                        _log.LogInformation(
+                            "[Channel] OLD_ANTI_MACRO answer charId={CharId} inputCode={InputCode}",
+                            player.Character.Id,
+                            antiMacroAnswer);
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
@@ -743,8 +748,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     // this v113 recv.properties disables them, and candidate FOLLOW_REPLY 0x7A conflicts with BuddyListModify.
                     case V113ChannelRecvOp.RpsGame:
                         if (player is null) break;
-                        _ = reader.ReadByte();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleEventMiniGameResultAsync(
+                            _eventMiniGameHandler.HandleRpsGame(reader, player),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.RingAction:
@@ -764,8 +772,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.ItemUnlock:
                         if (player is null) break;
-                        _ = reader.ReadShort();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleItemUnlockAsync(reader, player, s, token);
                         break;
 
                     case V113ChannelRecvOp.ChangeKeymap:
@@ -838,10 +845,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.UseScriptedNpcItem:
                         if (player is null) break;
-                        if (reader.Remaining < 6) break;
-                        _ = reader.ReadShort();
-                        _ = reader.ReadInt();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleScriptedNpcItemAsync(reader, player, s, token);
                         break;
 
                     case V113ChannelRecvOp.UseCatchItem:
@@ -857,11 +861,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     }
 
                     case V113ChannelRecvOp.UseTeleRock:
-                        if (player is null) break;
-                        if (reader.Remaining < 5) break;
-                        _ = reader.ReadByte();
-                        _ = reader.ReadInt();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        if (player is null || currentField is null) break;
+                        currentField = await HandleUseTeleRockAsync(reader, player, currentField, npcOidToId, s, sessionToken, token);
                         break;
 
                     case V113ChannelRecvOp.UseReturnScroll:
@@ -992,8 +993,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.Coconut:
                         if (player is null) break;
-                        _ = reader.ReadShort();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleEventMiniGameResultAsync(
+                            _eventMiniGameHandler.HandleCoconut(reader, player),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.MonsterCarnival:
@@ -1169,8 +1173,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.BeansGameAction:
                         if (player is null) break;
-                        _ = reader.ReadByte();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleEventMiniGameResultAsync(
+                            _eventMiniGameHandler.HandleBeansGameAction(reader, player),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.AranCombo:
@@ -2019,6 +2026,111 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         await session.SendAsync(V113TrockPackets.MapTransferResult(player.Character, request.Vip, request.IsDelete), ct);
+    }
+
+    private async Task<FieldInstance> HandleUseTeleRockAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance currentField,
+        Dictionary<int, int> npcOidToId,
+        MapleSession session,
+        object sessionToken,
+        CancellationToken ct)
+    {
+        var result = V113TeleRockHandler.HandleUseTeleRock(reader, _mapService);
+        foreach (var packet in result.Packets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (result.Success && result.WarpMapId is { } warpMapId)
+        {
+            _log.LogInformation(
+                "[Channel] USE_TELE_ROCK charId={CharId} rockType={RockType} mapId={MapId}",
+                player.Character.Id,
+                result.Request.RockType,
+                warpMapId);
+            return await WarpAsync(player, currentField, npcOidToId, session, warpMapId, sessionToken, ct);
+        }
+
+        _log.LogDebug(
+            "[Channel] USE_TELE_ROCK rejected charId={CharId} rockType={RockType} mode={Mode} mapId={MapId} name={Name}",
+            player.Character.Id,
+            result.Request.RockType,
+            result.Request.Mode,
+            result.Request.MapId,
+            result.Request.CharacterName);
+        return currentField;
+    }
+
+    private async Task HandleItemUnlockAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        var result = V113ItemUnlockHandler.Handle(reader, player);
+        foreach (var packet in result.Packets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+            _log.LogInformation(
+                "[Channel] ITEM_UNLOCK charId={CharId} slot={Slot}",
+                player.Character.Id,
+                result.Request.Slot);
+        }
+    }
+
+    private async Task HandleScriptedNpcItemAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    {
+        var result = V113ScriptedNpcItemHandler.Handle(reader, player);
+        foreach (var packet in result.Packets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+            _log.LogInformation(
+                "[Channel] USE_SCRIPTED_NPC_ITEM consumed charId={CharId} slot={Slot} itemId={ItemId}",
+                player.Character.Id,
+                result.Request.Slot,
+                result.Request.ItemId);
+        }
+    }
+
+    private Task HandleMobNodeAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field)
+    {
+        try
+        {
+            var result = V113MobNodeHandler.Handle(reader, field);
+            if (result.MobFound)
+            {
+                _log.LogInformation(
+                    "[Channel] MOB_NODE charId={CharId} mobOid={MobOid} nodeIndex={NodeIndex}",
+                    player.Character.Id,
+                    result.Request.MobObjectId,
+                    result.Request.NodeIndex);
+            }
+            else
+            {
+                _log.LogDebug(
+                    "[Channel] MOB_NODE ignored missing mob charId={CharId} mobOid={MobOid} nodeIndex={NodeIndex}",
+                    player.Character.Id,
+                    result.Request.MobObjectId,
+                    result.Request.NodeIndex);
+            }
+        }
+        catch (InvalidDataException ex)
+        {
+            _log.LogWarning(ex, "[Channel] MOB_NODE packet invalid charId={CharId}", player.Character.Id);
+        }
+
+        return Task.CompletedTask;
     }
 
     private async Task HandleMonsterBookCoverAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
@@ -3081,6 +3193,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     {
         await session.SendAsync(packet, ct);
         await BroadcastPacketToOthersAsync(chr, packet, ct);
+    }
+
+    private async Task HandleEventMiniGameResultAsync(
+        V113EventMiniGameHandleResult result,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        foreach (var packet in result.MapPackets)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
     }
 
     // ── Hello ──────────────────────────────────────────────────────────────────

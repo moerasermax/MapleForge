@@ -52,6 +52,9 @@ public sealed class Character
 
     public int GachExp { get; set; }
 
+    /// <summary>小鋼珠持有數；對照 Java characters.beans。</summary>
+    public int Beans { get; set; }
+
     /// <summary>角色資訊頁個人訊息（對照 Java charmessage）。</summary>
     public string CharacterMessage { get; set; } = string.Empty;
 
@@ -209,6 +212,14 @@ public sealed class Character
         BirthMonth = month;
         BirthDay = day;
         Constellation = constellation;
+    }
+
+    public void GainBeans(int delta)
+    {
+        var next = (long)Beans + delta;
+        if (next < 0) next = 0;
+        if (next > int.MaxValue) next = int.MaxValue;
+        Beans = (int)next;
     }
 
     public bool UpdatePetAutoPot(int type, int itemId)

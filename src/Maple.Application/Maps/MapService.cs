@@ -51,6 +51,9 @@ public sealed class MapService
         };
     }
 
+    /// <summary>Returns whether static map data exists for the map id.</summary>
+    public bool MapExists(int mapId) => _data.GetAt("Map", GetMapImagePath(mapId)) is not null;
+
     /// <summary>從 Mob.wz 載入怪物模板數值；找不到時回傳 null。</summary>
     public MobStats? LoadMobStats(int monsterId)
     {

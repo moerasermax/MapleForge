@@ -244,5 +244,12 @@ internal static class V113ChannelSendOp
     public const short FamilyNotifyLoginOrLogout = 0x5E;
     public const short FamilySetPrivilege = 0x5F;
     public const short FamilySummonRequestSend = 0x60;
+    public const short UpdateBeans = 0x6A;
     public const short SendMessenger = 0x145;
+    public const short HitCoconut = 0x11B;
+    public const short CoconutScore = 0x11C;
+    public const short RpsGame = 0x144;
+    public const short BeansTips = 0x152;
+    public const short BeanGameShow = 0x153;
+    public const short BeanGameShoot = 0x154;
 }

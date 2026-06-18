@@ -38,4 +38,13 @@ internal static class V113TrockPackets
 
         return w.ToArray();
     }
+
+    /// <summary>MAP_TRANSFER_RESULT MVP response for USE_TELE_ROCK. Java has no matching helper; mode 0/1 is MapleForge candidate.</summary>
+    public static byte[] MapTransferUseResult(bool success)
+    {
+        var w = new PacketWriter(3);
+        w.WriteShort(V113ChannelSendOp.MapTransferResult);
+        w.WriteByte(success ? (byte)0 : (byte)1);
+        return w.ToArray();
+    }
 }

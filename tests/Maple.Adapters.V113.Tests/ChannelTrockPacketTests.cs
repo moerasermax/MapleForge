@@ -1,5 +1,7 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Maps;
 using Maple.Core.Characters;
+using Maple.Core.Data;
 using Maple.Core.IO;
 
 namespace Maple.Adapters.V113.Tests;
@@ -94,5 +96,78 @@ public sealed class ChannelTrockPacketTests
             Assert.Equal(Character.EmptyRockMapId, vip.ReadInt());
         }
         Assert.Equal(0, vip.Remaining);
+    }
+
+    [Fact]
+    public void UseTeleRock_MapModeWithExistingMapReturnsWarpIntent()
+    {
+        var body = new PacketWriter()
+            .WriteByte(0)
+            .WriteByte(0)
+            .WriteInt(100000000)
+            .ToArray();
+        var service = new MapService(new FakeDataProvider("Map/Map1/100000000.img"));
+
+        var result = V113TeleRockHandler.HandleUseTeleRock(new PacketReader(body), service);
+
+        Assert.True(result.Success);
+        Assert.Equal(100000000, result.WarpMapId);
+        Assert.Single(result.Packets);
+
+        var packet = new PacketReader(result.Packets[0]);
+        Assert.Equal(V113ChannelSendOp.MapTransferResult, packet.ReadShort());
+        Assert.Equal((byte)0, packet.ReadByte());
+        Assert.Equal(0, packet.Remaining);
+    }
+
+    [Fact]
+    public void UseTeleRock_InvalidMapReturnsFailureAndEnableActions()
+    {
+        var body = new PacketWriter()
+            .WriteByte(0)
+            .WriteByte(0)
+            .WriteInt(999999999)
+            .ToArray();
+        var service = new MapService(new FakeDataProvider());
+
+        var result = V113TeleRockHandler.HandleUseTeleRock(new PacketReader(body), service);
+
+        Assert.False(result.Success);
+        Assert.Null(result.WarpMapId);
+        Assert.Equal(2, result.Packets.Count);
+
+        var packet = new PacketReader(result.Packets[0]);
+        Assert.Equal(V113ChannelSendOp.MapTransferResult, packet.ReadShort());
+        Assert.Equal((byte)1, packet.ReadByte());
+        Assert.Equal(V113StatsPackets.EnableActions(), result.Packets[1]);
+    }
+
+    private sealed class FakeDataProvider : IDataProvider
+    {
+        private readonly HashSet<string> _paths;
+
+        public FakeDataProvider(params string[] existingPaths)
+        {
+            _paths = existingPaths.ToHashSet(StringComparer.Ordinal);
+        }
+
+        public IDataNode GetRoot(string fileName) => new FakeDataNode(fileName);
+
+        public IDataNode? GetAt(string fileName, string path)
+            => fileName == "Map" && _paths.Contains(path) ? new FakeDataNode(path) : null;
+    }
+
+    private sealed class FakeDataNode : IDataNode
+    {
+        public FakeDataNode(string name) => Name = name;
+
+        public string Name { get; }
+
+        public IReadOnlyDictionary<string, IDataNode> Children { get; } =
+            new Dictionary<string, IDataNode>();
+
+        public object? Value => null;
+
+        public IDataNode? this[string name] => null;
     }
 }

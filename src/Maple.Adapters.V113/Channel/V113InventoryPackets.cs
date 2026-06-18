@@ -73,6 +73,29 @@ internal static class V113InventoryPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// Full item update for metadata changes such as equip flags. MapleForge uses remove+add so the client
+    /// receives the full item-info block instead of Java mode 1's quantity-only shape.
+    /// </summary>
+    public static byte[] ModifyItemUpdate(InventoryType type, short slot, Item item)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.ModifyInventoryItem);
+        w.WriteByte(0);              // updateTick=false, matching Java UnlockItem call
+        w.WriteByte(2);              // remove + add
+
+        w.WriteByte(3);              // remove
+        w.WriteByte((byte)type);
+        w.WriteShort(slot);
+
+        w.WriteByte(0);              // add
+        w.WriteByte((byte)type);
+        w.WriteShort(slot);
+        AddItemInfo(w, item);
+
+        return w.ToArray();
+    }
+
     private static byte[] InventoryArrangeResult(short opcode, byte type)
     {
         var w = new PacketWriter(4);
@@ -80,5 +103,58 @@ internal static class V113InventoryPackets
         w.WriteByte(1);
         w.WriteByte(type);
         return w.ToArray();
+    }
+
+    private static void AddItemInfo(PacketWriter w, Item item)
+    {
+        w.WriteByte(item.IsEquip ? 1 : 2);
+        w.WriteInt(item.ItemId);
+        w.WriteByte(0);
+        w.WriteLong(GetTime(item.Expiration));
+
+        if (item is Equip equip)
+        {
+            w.WriteByte(equip.UpgradeSlots);
+            w.WriteByte(equip.Level);
+            w.WriteShort(equip.Str);
+            w.WriteShort(equip.Dex);
+            w.WriteShort(equip.Int);
+            w.WriteShort(equip.Luk);
+            w.WriteShort(equip.Hp);
+            w.WriteShort(equip.Mp);
+            w.WriteShort(equip.Watk);
+            w.WriteShort(equip.Matk);
+            w.WriteShort(equip.Wdef);
+            w.WriteShort(equip.Mdef);
+            w.WriteShort(equip.Acc);
+            w.WriteShort(equip.Avoid);
+            w.WriteShort(equip.Hands);
+            w.WriteShort(equip.Speed);
+            w.WriteShort(equip.Jump);
+            w.WriteMapleString(equip.Owner);
+            w.WriteShort(equip.Flag);
+            w.WriteByte(0);
+            w.WriteByte(equip.ItemLevel);
+            w.WriteInt(equip.ItemExp);
+            w.WriteLong(equip.UniqueId);
+            w.WriteLong(GetTime(-2));
+            w.WriteInt(-1);
+            return;
+        }
+
+        w.WriteShort(item.Quantity);
+        w.WriteMapleString(item.Owner);
+        w.WriteShort(item.Flag);
+    }
+
+    private static long GetTime(long offset)
+    {
+        const long KoreanEpochOffset = 116444736000000000L;
+        if (offset < 0)
+        {
+            return KoreanEpochOffset + offset;
+        }
+
+        return KoreanEpochOffset + (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 10000);
     }
 }
