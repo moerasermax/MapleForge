@@ -576,6 +576,41 @@ writeByte(portalId)
 
 備註：MapleForge 目前驗證當前地圖 portal 名稱存在後更新玩家 runtime 位置並回 warp 封包；距離容錯/反作弊與 `CHANGE_MAP_SPECIAL(0x5E)` script portal 尚未移植。
 
+### 傳送門 `USE_DOOR`
+
+來源：
+
+- `recv.properties`：`USE_DOOR = 0x7D`
+- `PlayersHandler.UseDoor`：讀 `ownerId` 與 mode byte，mode byte 為 `0` 時 Java 傳入 `toTown=true`
+- `MapleDoor.warp`：只允許 owner 或同 party 成員使用；`toTown=true` 換到 town portal，否則換回 target map 的 target position
+- `MaplePacketCreator.spawnDoor/removeDoor/spawnPortal/partyPortal`
+
+C→S：
+
+```
+writeShort(0x7D)
+writeInt(ownerId)
+writeByte(mode)     // 0 = target-to-town/backwarp, 1 = town-to-target
+```
+
+S→C door spawn/remove（本輪先提供 encoder，creation/cleanup 接線待 SPECIAL_MOVE）：
+
+```
+SPAWN_DOOR:
+writeShort(0x10E)
+writeByte(town ? 1 : 0)
+writeInt(ownerId)
+writeShort(x)
+writeShort(y)
+
+REMOVE_DOOR:
+writeShort(0x10F)
+writeByte(1)
+writeInt(ownerId)
+```
+
+備註：MapleForge 本輪新增 runtime-only `Door` 與 `DoorService`，以 ownerId 在 town/target 兩側地圖查找同一扇門並回傳 warp map/position decision；真正換圖仍由未來 channel dispatch 接既有 `WarpAsync`。`SPECIAL_MOVE(0x55)` Mystic Door 建立尚未移植。證據層級為 Java source + Core/Application/Adapters 編譯 + Adapters handler tests；真 v113 client smoke 待後續接線後驗證。
+
 ### 背包聚集/排序 `ITEM_GATHER` / `ITEM_SORT`
 
 來源：
@@ -751,6 +786,141 @@ MODIFY_INVENTORY_ITEM(0x1B) remove+add equip update, or remove equip on curse
 - 無 upgrade slots：本 MVP 回 `Fail`，不改裝備數值/slot，但仍消耗卷軸以符合本任務明定的 "always consume scroll" 範圍。
 - 目前 catalog 為 hardcoded MVP：2040200/201/202、2044000/001/002 與 204xxxx catch-all；完整 WZ scroll metadata 待後續接入。
 - 證據層級：Java source + Application/Adapters 單元測試；真 v113 client scroll UI/effect smoke 待 #12 批量驗證。
+
+---
+## P1 社交追加 opcode 註記（2026-06-18）
+
+### 留言 `NOTE_ACTION` / `SHOW_NOTES`
+
+來源：
+
+- `recv.properties`：`NOTE_ACTION = 0x7B`
+- `send.properties`：`SHOW_NOTES = 0x26`
+- Java 來源：`PlayersHandler.Note`、`MapleCharacterUtil.sendNote`、`MapleCharacter.showNote/deleteNote`、`MTSCSPacket.showNotes`
+
+C→S send note：
+
+```
+writeShort(0x7B)
+writeByte(0)
+writeMapleAsciiString(receiverName)
+writeMapleAsciiString(message)
+writeByte(fame > 0)
+writeInt(0)
+writeLong(cashId)
+```
+
+C→S delete notes：
+
+```
+writeShort(0x7B)
+writeByte(1)
+writeByte(count)
+writeShort(0)
+repeat count:
+  writeInt(noteId)
+  writeByte(gainFame > 0)
+```
+
+S→C show notes：
+
+```
+writeShort(0x26)
+writeByte(3)
+writeByte(count)
+repeat count:
+  writeInt(noteId)
+  writeMapleAsciiString(senderName)
+  writeMapleAsciiString(message)
+  writeLong(PacketHelper.getKoreanTimestamp(timestampMillis))
+  writeByte(fame)
+```
+
+備註：Java send branch 會用 cash inventory 驗證 cash note item/gift source/是否已寄過；MapleForge MVP 依任務範圍不做 cash item 驗證，只解析 cashId 並建立 note。刪除時 Application 會以被刪 note 的 `Fame` 與 client gain flag 共同決定 fame delta，保留 Java 防濫用語義。證據層級為 Java source + Adapters 單元測試；真 v113 client note UI smoke 待後續 dispatch/DI 接線後驗證。
+
+### 家族 Family 系統 9 opcode
+
+來源：
+
+- `recv.properties`：`REQUEST_FAMILY=0x88`、`OPEN_FAMILY=0x89`、`FAMILY_OPERATION=0x8A`、`DELETE_JUNIOR=0x8B`、`DELETE_SENIOR=0x8C`、`ACCEPT_FAMILY=0x8D`、`USE_FAMILY=0x8E`、`FAMILY_PRECEPT=0x8F`、`FAMILY_SUMMON=0x90`
+- `send.properties` / `SendPacketOpcode.java`：`FAMILY_CHART_RESULT=0x56`、`FAMILY_INFO_RESULT=0x57`、`FAMILY_RESULT=0x58`、`FAMILY_JOIN_REQUEST=0x59`、`FAMILY_JOIN_REQUEST_RESULT/FAMILY_JUNIOR=0x5A`、`FAMILY_JOIN_ACCEPTED=0x5B`、`FAMILY_PRIVILEGE_LIST=0x5C`、`FAMILY_FAMOUS_POINT_INC_RESULT=0x5D`、`FAMILY_NOTIFY_LOGIN_OR_LOGOUT=0x5E`、`FAMILY_SET_PRIVILEGE=0x5F`、`FAMILY_SUMMON_REQUEST=0x60`
+- Java 來源：`FamilyHandler.java`、`MapleFamily.java`、`MapleFamilyCharacter.java`、`MapleFamilyBuff.java`、`FamilyPacket.java`
+
+C→S：
+
+```
+REQUEST_FAMILY:
+writeShort(0x88)
+writeMapleAsciiString(targetName)
+
+OPEN_FAMILY:
+writeShort(0x89)
+
+FAMILY_OPERATION:
+writeShort(0x8A)
+writeMapleAsciiString(targetName)
+
+DELETE_JUNIOR:
+writeShort(0x8B)
+writeInt(juniorCharacterId)
+
+DELETE_SENIOR:
+writeShort(0x8C)
+
+ACCEPT_FAMILY:
+writeShort(0x8D)
+writeInt(inviterCharacterId)
+writeMapleAsciiString(inviterName)
+writeByte(accepted)
+
+USE_FAMILY:
+writeShort(0x8E)
+writeInt(buffType)
+if buffType == 0 or 1:
+  writeMapleAsciiString(targetName)
+
+FAMILY_PRECEPT:
+writeShort(0x8F)
+writeMapleAsciiString(notice)
+
+FAMILY_SUMMON:
+writeShort(0x90)
+writeMapleAsciiString(summonerName)
+writeByte(accepted)
+```
+
+S→C 主布局：
+
+```
+FAMILY_JOIN_REQUEST(0x59):
+writeInt(inviterCharacterId)
+writeMapleAsciiString(inviterName)
+
+FAMILY_JUNIOR / FAMILY_JOIN_REQUEST_RESULT(0x5A):
+writeByte(accepted)
+writeMapleAsciiString(acceptedCharacterName)
+
+FAMILY_JOIN_ACCEPTED(0x5B):
+writeMapleAsciiString(seniorName)
+
+FAMILY_FAMOUS_POINT_INC_RESULT(0x5D):
+writeInt(repDelta)
+writeInt(0)
+
+FAMILY_SUMMON_REQUEST(0x60):
+writeMapleAsciiString(summonerName)
+writeMapleAsciiString(mapName)
+```
+
+`FAMILY_INFO_RESULT(0x57)` 對齊 Java `FamilyPacket.getFamilyInfo`：`currentRep/totalRep/todayRep`、junior count、leader id/name、notice、used buff list。`FAMILY_CHART_RESULT(0x56)` 對齊 Java `getFamilyPedigree/addFamilyCharInfo`：角色 id、senior id、job、level、online flag、rep、channel/time、name、descendant summary、used buff list。MapleForge 目前由 `FamilyService` 產生 protocol-neutral DTO，`V113FamilyPackets` 負責 byte layout。
+
+語義：
+
+- Core 新增 `Family` / `FamilyMember` / `FamilyBuff` / `IFamilyRepository`，Application `FamilyService` 承載 invite、accept、delete junior/senior、rep spend、notice、tree split、pending summon。
+- Java `USE_FAMILY` 與 `FAMILY_SUMMON` 的 GM-only gate 是舊服停用開關；MapleForge 依本輪任務移除，家族 buff/召喚對一般玩家可用。
+- `FamilyBuff` 目錄提供 type `0..10`：0 teleport、1 summon、2/3 50% drop/exp 15m、4 pedigree 100% drop+exp 30m、5..10 100% self/party drop/exp。
+- 本輪不修改 `V113ChannelConnectionHandler.cs` / `V113ChannelOpcodes.cs`；dispatch、實際 warp/buff application、map name lookup 與真 v113 client smoke 待後續接線後驗證。
+- 證據層級：Java source + Core/Application/Adapters build + Adapters family handler tests；S2C pedigree/info layout 仍為 Java-source candidate，尚未 live-client verified。
 
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*
