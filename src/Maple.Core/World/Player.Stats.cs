@@ -61,6 +61,16 @@ public sealed record PlayerStatsMutation(
         => new(failure, Array.Empty<PlayerStatUpdate>());
 }
 
+public sealed record SkillPointTransferMutation(
+    PlayerStatsFailure Failure,
+    IReadOnlyList<CharacterSkillRecord> UpdatedSkills)
+{
+    public bool Applied => Failure == PlayerStatsFailure.None && UpdatedSkills.Count > 0;
+
+    public static SkillPointTransferMutation Failed(PlayerStatsFailure failure)
+        => new(failure, Array.Empty<CharacterSkillRecord>());
+}
+
 public sealed partial class Player
 {
     private const short MaxBaseStat = 999;
@@ -173,6 +183,35 @@ public sealed partial class Player
         return new PlayerStatsMutation(PlayerStatsFailure.None, updates);
     }
 
+    public PlayerStatsMutation ResetBaseAbilityPoint(AbilityPointTarget to, AbilityPointTarget from)
+    {
+        if (to == from)
+        {
+            return PlayerStatsMutation.Failed(PlayerStatsFailure.NoChange);
+        }
+
+        var toValue = GetBaseStat(to);
+        if (toValue >= MaxBaseStat)
+        {
+            return PlayerStatsMutation.Failed(PlayerStatsFailure.StatLimitReached);
+        }
+
+        var fromValue = GetBaseStat(from);
+        if (fromValue <= 4)
+        {
+            return PlayerStatsMutation.Failed(PlayerStatsFailure.NotEnoughAbilityPoints);
+        }
+
+        var updates = new List<PlayerStatUpdate>(2);
+        SetBaseStat(to, (short)(toValue + 1));
+        updates.Add(new PlayerStatUpdate(ToStatKind(to), GetBaseStat(to)));
+
+        SetBaseStat(from, (short)(fromValue - 1));
+        updates.Add(new PlayerStatUpdate(ToStatKind(from), GetBaseStat(from)));
+
+        return new PlayerStatsMutation(PlayerStatsFailure.None, updates);
+    }
+
     public PlayerStatsMutation DistributeSkillPoint(int skillId)
     {
         if (skillId <= 0)
@@ -218,6 +257,51 @@ public sealed partial class Player
         }
 
         return new PlayerStatsMutation(PlayerStatsFailure.None, updates, skillId, skill.Level);
+    }
+
+    public SkillPointTransferMutation ResetSkillPoint(int toSkillId, int fromSkillId)
+    {
+        if (toSkillId <= 0 || fromSkillId <= 0)
+        {
+            return SkillPointTransferMutation.Failed(PlayerStatsFailure.InvalidSkill);
+        }
+
+        if (toSkillId == fromSkillId)
+        {
+            return SkillPointTransferMutation.Failed(PlayerStatsFailure.NoChange);
+        }
+
+        if (IsBeginnerSkill(toSkillId) || IsBeginnerSkill(fromSkillId))
+        {
+            return SkillPointTransferMutation.Failed(PlayerStatsFailure.InvalidSkill);
+        }
+
+        var toLevel = GetSkillLevel(toSkillId);
+        var fromLevel = GetSkillLevel(fromSkillId);
+        if (fromLevel <= 0)
+        {
+            return SkillPointTransferMutation.Failed(PlayerStatsFailure.NotEnoughSkillPoints);
+        }
+
+        if (toLevel >= DefaultSkillMaxLevel)
+        {
+            return SkillPointTransferMutation.Failed(PlayerStatsFailure.SkillLevelLimit);
+        }
+
+        var nextFromLevel = (byte)(fromLevel - 1);
+        var nextToLevel = (byte)(toLevel + 1);
+        var fromMaster = (byte)Math.Min(byte.MaxValue, Math.Max(GetMasterLevel(fromSkillId), nextFromLevel));
+        var toMaster = (byte)Math.Min(byte.MaxValue, Math.Max(GetMasterLevel(toSkillId), nextToLevel));
+
+        ChangeSkillLevel(fromSkillId, nextFromLevel, fromMaster);
+        ChangeSkillLevel(toSkillId, nextToLevel, toMaster);
+
+        return new SkillPointTransferMutation(
+            PlayerStatsFailure.None,
+            [
+                Character.Skills.First(s => s.SkillId == fromSkillId),
+                Character.Skills.First(s => s.SkillId == toSkillId),
+            ]);
     }
 
     public PlayerStatsMutation RecoverOverTime(int requestedHp, int requestedMp, long nowUnixMilliseconds)
@@ -480,6 +564,49 @@ public sealed partial class Player
             20011000 or 20011001 or 20011002 => new BeginnerSkillGroup(20011000, 20011001, 20011002, 6),
             30001000 or 30001001 or 30000002 => new BeginnerSkillGroup(30001000, 30001001, 30000002, 9),
             _ => null,
+        };
+
+    private static bool IsBeginnerSkill(int skillId) => GetBeginnerSkillGroup(skillId) is not null;
+
+    private short GetBaseStat(AbilityPointTarget target)
+        => target switch
+        {
+            AbilityPointTarget.Str => Character.Stats.Str,
+            AbilityPointTarget.Dex => Character.Stats.Dex,
+            AbilityPointTarget.Int => Character.Stats.Int,
+            AbilityPointTarget.Luk => Character.Stats.Luk,
+            _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
+        };
+
+    private void SetBaseStat(AbilityPointTarget target, short value)
+    {
+        switch (target)
+        {
+            case AbilityPointTarget.Str:
+                Character.Stats.Str = value;
+                break;
+            case AbilityPointTarget.Dex:
+                Character.Stats.Dex = value;
+                break;
+            case AbilityPointTarget.Int:
+                Character.Stats.Int = value;
+                break;
+            case AbilityPointTarget.Luk:
+                Character.Stats.Luk = value;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(target), target, null);
+        }
+    }
+
+    private static PlayerStatKind ToStatKind(AbilityPointTarget target)
+        => target switch
+        {
+            AbilityPointTarget.Str => PlayerStatKind.Str,
+            AbilityPointTarget.Dex => PlayerStatKind.Dex,
+            AbilityPointTarget.Int => PlayerStatKind.Int,
+            AbilityPointTarget.Luk => PlayerStatKind.Luk,
+            _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
         };
 
     private static int GetExpNeededForLevel(int level)

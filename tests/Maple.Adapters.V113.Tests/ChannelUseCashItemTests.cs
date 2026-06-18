@@ -7,6 +7,7 @@ using Maple.Core.Inventory;
 using Maple.Core.IO;
 using Maple.Core.NpcItemServices;
 using Maple.Core.Pets;
+using Maple.Core.Skills;
 using Maple.Core.Social;
 using Maple.Core.World;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -356,6 +357,280 @@ public sealed class ChannelUseCashItemTests
     }
 
     [Fact]
+    public void ItemTag_SetsEquippedOwnerAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5060000, 1);
+        player.Character.Equips.Add(new EquipEntry { Position = -1, ItemId = 1002000, Expiration = -1 });
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5060000)
+            .WriteByte(-1)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.True(result.CharacterMutated);
+        Assert.Equal("CashPlayer", player.Character.Equips.Single().Owner);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Contains(result.Packets, packet => BitConverter.ToInt16(packet, 0) == V113ChannelSendOp.ModifyInventoryItem);
+    }
+
+    [Fact]
+    public void ItemTag_WithExistingOwner_DoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5060000, 1);
+        player.Character.Equips.Add(new EquipEntry { Position = -1, ItemId = 1002000, Owner = "Tagged", Expiration = -1 });
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5060000)
+            .WriteByte(-1)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal("Tagged", player.Character.Equips.Single().Owner);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Single(result.Packets);
+    }
+
+    [Fact]
+    public void SealingLock_Permanent_SetsLockFlagAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItemAndItems(5060001, BagEquip(1302000, 2, upgradeSlots: 7));
+        var handler = CreateHandler();
+        var body = CashItemTargetBody(5060001, InventoryType.Equip, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.CharacterMutated);
+        var equip = player.Inventory.By(InventoryType.Equip).Get(2)!;
+        Assert.True(ItemFlags.Has(equip.Flag, ItemFlags.Lock));
+        Assert.Equal(-1, equip.Expiration);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Contains(player.Character.Items, item => item is { Type: (byte)InventoryType.Equip, Slot: 2, Flag: ItemFlags.Lock });
+    }
+
+    [Fact]
+    public void SealingLock_Timed_SetsExpirationAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItemAndItems(5061000, BagItem(InventoryType.Use, 2000000, 2));
+        var handler = CreateHandler();
+        var before = DateTimeOffset.UtcNow.AddDays(7).AddMinutes(-1).ToUnixTimeMilliseconds();
+        var body = CashItemTargetBody(5061000, InventoryType.Use, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        var after = DateTimeOffset.UtcNow.AddDays(7).AddMinutes(1).ToUnixTimeMilliseconds();
+        Assert.True(result.CharacterMutated);
+        var item = player.Inventory.By(InventoryType.Use).Get(2)!;
+        Assert.True(ItemFlags.Has(item.Flag, ItemFlags.Lock));
+        Assert.InRange(item.Expiration, before, after);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void SealingLock_WithExistingExpiration_DoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItemAndItems(
+            5061001,
+            BagItem(InventoryType.Use, 2000000, 2, expiration: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        var handler = CreateHandler();
+        var body = CashItemTargetBody(5061001, InventoryType.Use, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Use).Get(2)!.Flag);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void Karma_OnEquip_SetsEquipKarmaFlagAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItemAndItems(5520000, BagEquip(1302000, 2, upgradeSlots: 7));
+        var handler = CreateHandler();
+        var body = CashItemTargetBody(5520000, InventoryType.Equip, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.CharacterMutated);
+        Assert.True(ItemFlags.Has(player.Inventory.By(InventoryType.Equip).Get(2)!.Flag, ItemFlags.KarmaEquip));
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void Karma_OnUseItem_SetsUseKarmaFlagAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItemAndItems(5520001, BagItem(InventoryType.Use, 2040000, 2));
+        var handler = CreateHandler();
+        var body = CashItemTargetBody(5520001, InventoryType.Use, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.CharacterMutated);
+        Assert.True(ItemFlags.Has(player.Inventory.By(InventoryType.Use).Get(2)!.Flag, ItemFlags.KarmaUse));
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void Karma_WhenAlreadyFlagged_DoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItemAndItems(
+            5520000,
+            BagEquip(1302000, 2, upgradeSlots: 7, flag: ItemFlags.KarmaEquip));
+        var handler = CreateHandler();
+        var body = CashItemTargetBody(5520000, InventoryType.Equip, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void SpReset_TransfersOnePointAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5050002, 1);
+        player.Character.Skills.Add(new CharacterSkillRecord { SkillId = 2001002, Level = 5, MasterLevel = 10 });
+        player.Character.Skills.Add(new CharacterSkillRecord { SkillId = 2001003, Level = 1, MasterLevel = 10 });
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5050002)
+            .WriteInt(2001003)
+            .WriteInt(2001002)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.CharacterMutated);
+        Assert.Equal(4, player.GetSkillLevel(2001002));
+        Assert.Equal(2, player.GetSkillLevel(2001003));
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Equal(2, result.Packets.Count(packet => BitConverter.ToInt16(packet, 0) == V113StatsPackets.SendUpdateSkills));
+    }
+
+    [Fact]
+    public void SpReset_WithBeginnerSkill_DoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5050001, 1);
+        player.Character.Skills.Add(new CharacterSkillRecord { SkillId = 2001002, Level = 5, MasterLevel = 10 });
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5050001)
+            .WriteInt(1000)
+            .WriteInt(2001002)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal(5, player.GetSkillLevel(2001002));
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void ApReset_TransfersBasicStatAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5050000, 1);
+        player.Character.Stats.Str = 10;
+        player.Character.Stats.Dex = 5;
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5050000)
+            .WriteInt(0x80)
+            .WriteInt(0x40)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.CharacterMutated);
+        Assert.Equal(9, player.Character.Stats.Str);
+        Assert.Equal(6, player.Character.Stats.Dex);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Contains(result.Packets, packet => BitConverter.ToInt16(packet, 0) == V113StatsPackets.SendUpdateStats);
+    }
+
+    [Fact]
+    public void ApReset_HpMpPathIsDeferredAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5050000, 1);
+        player.Character.Stats.Str = 10;
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5050000)
+            .WriteInt(0x800)
+            .WriteInt(0x40)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal(10, player.Character.Stats.Str);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void ViciousHammer_IncrementsHammerAndSlotsAndConsumesItem()
+    {
+        var player = CreatePlayerWithCashItemAndItems(5570000, BagEquip(1302000, 2, upgradeSlots: 1));
+        var handler = CreateHandler();
+        var body = CashItemTargetBody(5570000, InventoryType.Equip, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        var equip = Assert.IsType<Equip>(player.Inventory.By(InventoryType.Equip).Get(2));
+        Assert.True(result.CharacterMutated);
+        Assert.Equal(1, equip.ViciousHammer);
+        Assert.Equal(2, equip.UpgradeSlots);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void ViciousHammer_WithNoSlots_DoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItemAndItems(5570000, BagEquip(1302000, 2, upgradeSlots: 0));
+        var handler = CreateHandler();
+        var body = CashItemTargetBody(5570000, InventoryType.Equip, 2);
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        var equip = Assert.IsType<Equip>(player.Inventory.By(InventoryType.Equip).Get(2));
+        Assert.False(result.CharacterMutated);
+        Assert.Equal(0, equip.ViciousHammer);
+        Assert.Equal(0, equip.UpgradeSlots);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void VegaScroll_IsDeferredAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5610000, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5610000)
+            .WriteInt((int)InventoryType.Equip)
+            .WriteInt(2)
+            .WriteInt((int)InventoryType.Use)
+            .WriteInt(3)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+        Assert.Single(result.Packets);
+    }
+
+    [Fact]
     public void OpcodeConstant_MatchesJavaValue()
     {
         Assert.Equal(0x49, V113ChannelRecvOp.UseCashItem);
@@ -464,6 +739,76 @@ public sealed class ChannelUseCashItemTests
 
         return new Player(character, new Position(0, 0, 0, 0));
     }
+
+    private static Player CreatePlayerWithCashItemAndItems(int cashItemId, params ItemRecord[] items)
+    {
+        var records = new List<ItemRecord>
+        {
+            new()
+            {
+                Type = (byte)InventoryType.Cash,
+                ItemId = cashItemId,
+                Slot = 1,
+                Quantity = 1,
+                Expiration = -1,
+            },
+        };
+        records.AddRange(items);
+
+        var character = new Character
+        {
+            Id = 1,
+            Name = "CashPlayer",
+            MapId = 910000000,
+            Items = records,
+        };
+
+        return new Player(character, new Position(0, 0, 0, 0));
+    }
+
+    private static byte[] CashItemTargetBody(int cashItemId, InventoryType type, short targetSlot)
+        => new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(cashItemId)
+            .WriteInt((int)type)
+            .WriteInt(targetSlot)
+            .ToArray();
+
+    private static ItemRecord BagItem(
+        InventoryType type,
+        int itemId,
+        short slot,
+        short flag = 0,
+        long expiration = -1)
+        => new()
+        {
+            Type = (byte)type,
+            ItemId = itemId,
+            Slot = slot,
+            Quantity = 1,
+            Expiration = expiration,
+            Flag = flag,
+        };
+
+    private static ItemRecord BagEquip(
+        int itemId,
+        short slot,
+        byte upgradeSlots,
+        short flag = 0,
+        long expiration = -1,
+        byte viciousHammer = 0)
+        => new()
+        {
+            Type = (byte)InventoryType.Equip,
+            IsEquip = true,
+            ItemId = itemId,
+            Slot = slot,
+            Quantity = 1,
+            Expiration = expiration,
+            Flag = flag,
+            UpgradeSlots = upgradeSlots,
+            ViciousHammer = viciousHammer,
+        };
 
     private sealed class TestNoteRepository : INoteRepository
     {

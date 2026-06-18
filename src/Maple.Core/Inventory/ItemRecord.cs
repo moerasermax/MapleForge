@@ -19,6 +19,7 @@ public sealed class ItemRecord
 
     // equip 專屬（IsEquip=true 時有效）
     public byte UpgradeSlots { get; set; }
+    public byte ViciousHammer { get; set; }
     public byte Level { get; set; }
     public byte ItemLevel { get; set; }
     public int ItemExp { get; set; }
@@ -46,7 +47,7 @@ public sealed class ItemRecord
         return new Equip
         {
             ItemId = ItemId, Slot = Slot, Quantity = 1, Owner = Owner, Expiration = Expiration, Flag = Flag, UniqueId = UniqueId,
-            UpgradeSlots = UpgradeSlots, Level = Level, ItemLevel = ItemLevel, ItemExp = ItemExp,
+            UpgradeSlots = UpgradeSlots, ViciousHammer = ViciousHammer, Level = Level, ItemLevel = ItemLevel, ItemExp = ItemExp,
             Str = Str, Dex = Dex, Int = Int, Luk = Luk, Hp = Hp, Mp = Mp, Watk = Watk, Matk = Matk,
             Wdef = Wdef, Mdef = Mdef, Acc = Acc, Avoid = Avoid, Hands = Hands, Speed = Speed, Jump = Jump,
         };
@@ -61,7 +62,7 @@ public sealed class ItemRecord
         };
         if (it is Equip e)
         {
-            r.UpgradeSlots = e.UpgradeSlots; r.Level = e.Level; r.ItemLevel = e.ItemLevel; r.ItemExp = e.ItemExp;
+            r.UpgradeSlots = e.UpgradeSlots; r.ViciousHammer = e.ViciousHammer; r.Level = e.Level; r.ItemLevel = e.ItemLevel; r.ItemExp = e.ItemExp;
             r.Str = e.Str; r.Dex = e.Dex; r.Int = e.Int; r.Luk = e.Luk; r.Hp = e.Hp; r.Mp = e.Mp;
             r.Watk = e.Watk; r.Matk = e.Matk; r.Wdef = e.Wdef; r.Mdef = e.Mdef; r.Acc = e.Acc; r.Avoid = e.Avoid;
             r.Hands = e.Hands; r.Speed = e.Speed; r.Jump = e.Jump;

@@ -1343,4 +1343,70 @@ writeByte(ear ? 1 : 0)
 - 證據層級：Java source map + `Maple.Adapters.V113.Tests` byte-level tests 340 passed / 1 skipped；真 v113 client megaphone UI smoke 未跑，S2C layout 仍為 Java-source candidate。
 
 ---
+## USE_CASH_ITEM Batch B（2026-06-18）
+
+來源：
+
+- `InventoryHandler.UseCashItem` lines 1040-1519、1845-1895、2059-2225
+- `client/inventory/ItemFlag.java`：`LOCK=0x01`、`KARMA_EQ=0x10`、`KARMA_USE=0x02`
+
+C→S common prefix:
+
+```
+writeShort(cashSlot)
+writeInt(cashItemId)
+```
+
+Implemented payloads:
+
+```
+AP Reset 5050000:
+writeInt(apToStat)      // 0x40 STR, 0x80 DEX, 0x100 INT, 0x200 LUK implemented
+writeInt(apFromStat)    // HP/MP reset deferred
+
+SP Reset 5050001..5050004:
+writeInt(skillTo)
+writeInt(skillFrom)
+
+Item Tag 5060000:
+writeByte(equippedSlot) // signed equipped slot
+
+Sealing Lock 5060001 / 5061000..5061002:
+writeInt(inventoryType)
+writeInt(slot)
+
+Karma 5520000 / Premium Karma 5520001:
+writeInt(inventoryType)
+writeInt(slot)
+
+Vicious Hammer 5570000:
+writeInt(inventoryType) // Java expects Equip
+writeInt(slot)
+
+Vega 5610000/5610001 (deferred):
+writeInt(equipInventoryType)
+writeInt(equipSlot)
+writeInt(scrollInventoryType)
+writeInt(scrollSlot)
+```
+
+語義：
+
+- Item Tag 更新已穿戴裝備 owner 為角色名，僅 owner 空白時消耗現金道具。
+- Sealing Lock 對目標 item 設 `LOCK`；7/30/90 天版本同時設定 item expiration，只有原 expiration `-1` 時生效。
+- Karma 對裝備設 `KARMA_EQ`，其他道具設 `KARMA_USE`；已有任一 Karma flag 時不消耗。
+- SP Reset 只做非 beginner skill 的 1 點轉移，使用 Core `ResetSkillPoint`，每次回兩個 `UPDATE_SKILLS`。
+- AP Reset MVP 僅支援 STR/DEX/INT/LUK 互轉，HP/MP job-specific 公式留 TODO 並 `EnableActions`。
+- Vicious Hammer MVP 依 Java `canHammer` 排除 1122000/1122076 與 16/19 類別，要求現有 upgrade slot > 0 且 hammer count <= 2，成功後 `ViciousHammer++`、`UpgradeSlots++`。
+- Vega、Peanut、Gas/Flower、Predict Card、Travelling Merchant、Contact Lenses、Steel Ball Box、NPC Script、Incubator 目前為 log + `EnableActions` stub，不消耗現金道具。
+
+S→C：
+
+- item metadata change 使用既有 `MODIFY_INVENTORY_ITEM(0x1B)` remove+add full item update。
+- cash item consumption 使用現有 quantity mutation packet。
+- AP reset 使用 `UPDATE_STATS(0x1D)`；SP reset 使用 `UPDATE_SKILLS(0x22)`；所有路徑最後送 `EnableActions`。
+
+證據層級：Java source map + Core/Adapters targeted tests；`Maple.Adapters.V113.Tests` 367 passed + 1 skipped、`Maple.Core.Tests` 102 passed。真 v113 client cash-item UI smoke 未跑，S2C item update 沿用既有 candidate layout。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

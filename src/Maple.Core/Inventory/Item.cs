@@ -35,6 +35,7 @@ public sealed class Equip : Item
     public override bool IsEquip => true;
 
     public byte UpgradeSlots { get; set; }
+    public byte ViciousHammer { get; set; }
     public byte Level { get; set; }
     public byte ItemLevel { get; set; }
     public int ItemExp { get; set; }
@@ -65,6 +66,7 @@ public sealed class Equip : Item
         Flag = Flag,
         UniqueId = UniqueId,
         UpgradeSlots = UpgradeSlots,
+        ViciousHammer = ViciousHammer,
         Level = Level,
         ItemLevel = ItemLevel,
         ItemExp = ItemExp,

@@ -40,6 +40,7 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
+| 2026-06-18_18 | 移植 | USE_CASH_ITEM Batch B 現金道具邏輯 | 🚧 執行中 |
 | 2026-06-18_17 | 移植 | SERVERMESSAGE broadcast packet infrastructure | ✅ 完成（Adapters.V113 340+1skip；S2C Java-source candidate） |
 | 2026-06-18_16 | 移植 | USE_CASH_ITEM Batch A 現金道具路由 | ✅ 完成 |
 | 2026-06-18_15 | 驗證 | 鐵律與最高流程稽核 | ✅ 完成 |

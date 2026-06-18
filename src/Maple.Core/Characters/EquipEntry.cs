@@ -13,6 +13,7 @@ public sealed class EquipEntry
     public long UniqueId { get; set; }
 
     public byte UpgradeSlots { get; set; }
+    public byte ViciousHammer { get; set; }
     public byte Level { get; set; }
     public byte ItemLevel { get; set; }
     public int ItemExp { get; set; }
@@ -43,6 +44,7 @@ public sealed class EquipEntry
         Flag = Flag,
         UniqueId = UniqueId,
         UpgradeSlots = UpgradeSlots,
+        ViciousHammer = ViciousHammer,
         Level = Level,
         ItemLevel = ItemLevel,
         ItemExp = ItemExp,
@@ -71,6 +73,7 @@ public sealed class EquipEntry
         Flag = equip.Flag;
         UniqueId = equip.UniqueId;
         UpgradeSlots = equip.UpgradeSlots;
+        ViciousHammer = equip.ViciousHammer;
         Level = equip.Level;
         ItemLevel = equip.ItemLevel;
         ItemExp = equip.ItemExp;
