@@ -7,6 +7,7 @@ internal static class V113ChannelRecvOp
     public const short StrangeData = unchecked((short)0x7FFF);
     public const short ChangeMap = 0x1E;     // 腳走地圖傳送點 / 死亡復活換圖（CHANGE_MAP）
     public const short ChangeChannel = 0x1F;
+    public const short EnterCashShop = 0x20;
     public const short MovePlayer = 0x21;
     public const short CancelChair = 0x22;
     public const short UseChair = 0x23;
@@ -22,6 +23,7 @@ internal static class V113ChannelRecvOp
     public const short UseItemEffect = 0x2D;
     public const short WheelOfFortune = 0x2E;
     public const short MonsterBookCover = 0x32;
+    public const short HiredMerchantRemoteControl = 0x34;
     public const short DueyAction = 0x3B;
     public const short Owl = 0x3C;
     public const short OwlWarp = 0x3D;
@@ -54,6 +56,7 @@ internal static class V113ChannelRecvOp
     public const short BuddyListModify = 0x7A;
     public const short ChangeKeymap = 0x7F;
     public const short UpdateCharInfo = 0x97;
+    public const short EnterMts = unchecked((short)0x99);
     public const short UpdateQuest = 0x10B;
     public const short QuestItem = unchecked((short)0x10C);
     public const short UseItemQuest = 0x10D;
@@ -61,6 +64,8 @@ internal static class V113ChannelRecvOp
     public const short NpcTalkMore = 0x35;   // 對話中回應（next/prev/yes-no/選單/數字）
     public const short NpcShop = 0x36;
     public const short Storage = 0x37;
+    public const short UseHiredMerchant = 0x38;
+    public const short MerchItemStore = 0x3A;
     public const short ItemSort = 0x3F;
     public const short ItemGather = 0x40;
     public const short ItemMove = 0x41;      // 背包格內移動 / 穿脫裝 / 丟棄（dst=0）
@@ -140,6 +145,8 @@ internal static class V113ChannelRecvOp
     public const short CsUpdate = unchecked((short)0xE5);
     public const short CashShopOperation = unchecked((short)0xE6);
     public const short CouponCode = unchecked((short)0xE7);
+    public const short TouchingMts = unchecked((short)0xFA);
+    public const short MtsTab = unchecked((short)0xFB);
     public const short MapleTV = unchecked((short)0x10A);
     public const short Pong = 0x0E;
 }

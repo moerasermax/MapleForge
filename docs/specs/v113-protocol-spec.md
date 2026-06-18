@@ -1181,4 +1181,54 @@ writeInt(number)
 - 證據層級：Java source map + MapleForge adapter-only implementation；`Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped。真 v113 client crafting/reward/anti-macro/carnival smoke 未跑。
 
 ---
+## P2 Migration Wave 4 heavy opcode MVP stubs（2026-06-18）
+
+來源：
+
+- `recv.properties`：`ENTER_CASH_SHOP=0x20`、`CP_HiredMerchantRemoteControl=0x34`、`USE_HIRED_MERCHANT=0x38`、`MERCH_ITEM_STORE=0x3A`、`ENTER_MTS=0x99`、`TOUCHING_MTS=0xFA`、`MTS_TAB=0xFB`
+- Java dispatch：`MapleServerHandler.java` routes `ENTER_CASH_SHOP` / `ENTER_MTS` near channel transition handling, `CP_HiredMerchantRemoteControl` to `PlayerInteractionHandler.HiredMerchantRemoteControl`, `USE_HIRED_MERCHANT` / `MERCH_ITEM_STORE` to `HiredMerchantHandler`, and `TOUCHING_MTS` / `MTS_TAB` to `MTSOperation`
+- Java handlers：`handling/channel/handler/InterServerHandler.java`、`handling/channel/handler/PlayerInteractionHandler.java`、`handling/channel/handler/HiredMerchantHandler.java`、`handling/cashshop/handler/MTSOperation.java`
+
+C→S MVP layouts:
+
+```
+ENTER_CASH_SHOP:
+writeShort(0x20)
+// mode transition; MapleForge MVP consumes no payload.
+
+CP_HiredMerchantRemoteControl:
+writeShort(0x34)
+writeShort(action)
+
+USE_HIRED_MERCHANT:
+writeShort(0x38)
+writeInt(npcOid)
+
+MERCH_ITEM_STORE:
+writeShort(0x3A)
+writeByte(operation)
+
+ENTER_MTS:
+writeShort(0x99)
+// mode transition; MapleForge MVP consumes no payload.
+
+TOUCHING_MTS:
+writeShort(0xFA)
+writeByte(operation)
+
+MTS_TAB:
+writeShort(0xFB)
+writeInt(tabOrPage)
+```
+
+語義：
+
+- 本輪只把 7 個 heavy subsystem opcode 接成安全 MVP stub：讀取任務指定最小欄位或 no-op 後送 `EnableActions`。
+- `ENTER_CASH_SHOP(0x20)` Java 會保存角色、移除地圖/頻道狀態並回 cash-shop server endpoint；MapleForge MVP 不做跨 server / cash shop mode transition。
+- `CP_HiredMerchantRemoteControl(0x34)`、`USE_HIRED_MERCHANT(0x38)`、`MERCH_ITEM_STORE(0x3A)` 完整語義需要 hired merchant runtime、merchant persistence、owner/visitor UI 與 item store package flow；MapleForge MVP 不建立 merchant subsystem。
+- `ENTER_MTS(0x99)`、`TOUCHING_MTS(0xFA)`、`MTS_TAB(0xFB)` 完整語義需要 MTS cart/listing/buy/sell/search/page state；MapleForge MVP 不建立 MTS storage 或 auction model。
+- 注意：此 Java tree 的部分 full handler 實際 first-read 與本 migration scope 的 MVP 固定欄位不同（例如 remote merchant control 與 MTS update/tab flow）；完整移植時需回到 Java source + 真 v113 client capture 校準最終 layout。
+- 證據層級：Java source map + MapleForge adapter-only implementation；`Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped。真 v113 client CashShop/HiredMerchant/MTS smoke 未跑。
+
+---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

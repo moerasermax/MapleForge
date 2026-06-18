@@ -405,6 +405,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             player.Character.Name, targetChannel, string.Join(".", channelIp), _options.ChannelPort);
                         break;
 
+                    case V113ChannelRecvOp.EnterCashShop:
+                        if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.UseInnerPortal:
                         if (player is null) break;
                         await HandleUseInnerPortalAsync(reader, player, s, token);
@@ -548,6 +553,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.MonsterBookCover:
                         if (player is null) break;
                         await HandleMonsterBookCoverAsync(reader, player, s, token);
+                        break;
+
+                    case V113ChannelRecvOp.HiredMerchantRemoteControl:
+                        if (player is null) break;
+                        _ = reader.ReadShort();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
                     case V113ChannelRecvOp.GiveFame:
@@ -767,6 +778,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleUpdateCharInfoAsync(reader, player, s, token);
                         break;
 
+                    case V113ChannelRecvOp.EnterMts:
+                        if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.Solomon:
                         if (player is null) break;
                         await HandleBuffItemResultAsync(_buffItemHandler.HandleSolomon(reader, player), player, s, token);
@@ -901,6 +917,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         }
                         break;
 
+                    case V113ChannelRecvOp.UseHiredMerchant:
+                        if (player is null) break;
+                        _ = reader.ReadInt();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.MerchItemStore:
+                        if (player is null) break;
+                        _ = reader.ReadByte();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.ItemMove:
                         if (player is null) break;
                         await HandleItemMoveAsync(reader, player, s, token);
@@ -1018,6 +1046,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         if (player is null) break;
                         _ = reader.ReadShort();
                         _ = reader.ReadMapleString();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.TouchingMts:
+                        if (player is null) break;
+                        _ = reader.ReadByte();
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.MtsTab:
+                        if (player is null) break;
+                        _ = reader.ReadInt();
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
