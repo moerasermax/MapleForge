@@ -6,6 +6,35 @@ namespace Maple.Adapters.V113.Channel;
 
 internal static class V113StatsHandlers
 {
+    public static PlayerStatsMutation HandleAutoAssignAp(PacketReader reader, Player player)
+    {
+        reader.ReadInt(); // tick
+        reader.ReadInt(); // unknown 0
+
+        if (reader.Remaining < 16)
+            return PlayerStatsMutation.Failed(PlayerStatsFailure.NoChange);
+
+        var assignments = new (AbilityPointTarget Target, int Count)[2];
+        for (int i = 0; i < 2; i++)
+        {
+            var rawStat = reader.ReadInt();
+            var count = reader.ReadInt();
+            var target = rawStat switch
+            {
+                0x40 => AbilityPointTarget.Str,
+                0x80 => AbilityPointTarget.Dex,
+                0x100 => AbilityPointTarget.Int,
+                0x200 => AbilityPointTarget.Luk,
+                _ => (AbilityPointTarget?)null,
+            };
+            if (target is null || count < 0)
+                return PlayerStatsMutation.Failed(PlayerStatsFailure.UnsupportedAbilityTarget);
+            assignments[i] = (target.Value, count);
+        }
+
+        return player.AutoAssignAbilityPoints(assignments);
+    }
+
     public static PlayerStatsMutation HandleDistributeAp(PacketReader reader, Player player, StatsService statsService)
     {
         var request = V113StatsPackets.ParseDistributeAp(reader);

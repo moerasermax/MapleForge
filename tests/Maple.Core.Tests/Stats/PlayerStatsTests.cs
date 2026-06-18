@@ -124,6 +124,58 @@ public sealed class PlayerStatsTests
 
     private static int RollMax(int min, int max) => max;
 
+    [Fact]
+    public void AutoAssignAbilityPoints_DistributesTwoTargets()
+    {
+        var player = MakePlayer(ap: 10);
+
+        ReadOnlySpan<(AbilityPointTarget, int)> assignments =
+        [
+            (AbilityPointTarget.Str, 6),
+            (AbilityPointTarget.Dex, 4),
+        ];
+        var result = player.AutoAssignAbilityPoints(assignments);
+
+        Assert.True(result.Applied);
+        Assert.Equal((short)18, player.Character.Stats.Str);  // 12+6
+        Assert.Equal((short)9, player.Character.Stats.Dex);   // 5+4
+        Assert.Equal((short)0, player.Character.RemainingAp);
+    }
+
+    [Fact]
+    public void AutoAssignAbilityPoints_CapsAt999AndReturnsExtras()
+    {
+        var player = MakePlayer(ap: 10);
+        player.Character.Stats.Str = 995;
+
+        ReadOnlySpan<(AbilityPointTarget, int)> assignments =
+        [
+            (AbilityPointTarget.Str, 8),
+            (AbilityPointTarget.Dex, 2),
+        ];
+        var result = player.AutoAssignAbilityPoints(assignments);
+
+        Assert.True(result.Applied);
+        Assert.Equal((short)999, player.Character.Stats.Str);
+        Assert.Equal((short)7, player.Character.Stats.Dex);   // 5+2
+        Assert.Equal((short)4, player.Character.RemainingAp); // 10-10+4(extras from str overflow)
+    }
+
+    [Fact]
+    public void AutoAssignAbilityPoints_RejectsWhenNoAp()
+    {
+        var player = MakePlayer(ap: 0);
+
+        ReadOnlySpan<(AbilityPointTarget, int)> assignments =
+        [
+            (AbilityPointTarget.Str, 1),
+            (AbilityPointTarget.Dex, 0),
+        ];
+        var result = player.AutoAssignAbilityPoints(assignments);
+
+        Assert.Equal(PlayerStatsFailure.NotEnoughAbilityPoints, result.Failure);
+    }
+
     private static Player MakePlayer(
         byte level = 1,
         int exp = 0,

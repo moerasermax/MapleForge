@@ -117,6 +117,62 @@ public sealed partial class Player
         });
     }
 
+    public PlayerStatsMutation AutoAssignAbilityPoints(ReadOnlySpan<(AbilityPointTarget Target, int Count)> assignments)
+    {
+        if (Character.RemainingAp <= 0)
+            return PlayerStatsMutation.Failed(PlayerStatsFailure.NotEnoughAbilityPoints);
+
+        var totalRequested = 0;
+        foreach (var (_, count) in assignments)
+        {
+            if (count < 0 || count > Character.RemainingAp)
+                return PlayerStatsMutation.Failed(PlayerStatsFailure.NotEnoughAbilityPoints);
+            totalRequested += count;
+        }
+        if (totalRequested == 0 || totalRequested > Character.RemainingAp)
+            return PlayerStatsMutation.Failed(PlayerStatsFailure.NotEnoughAbilityPoints);
+
+        var stats = Character.Stats;
+        var updates = new List<PlayerStatUpdate>(assignments.Length + 1);
+        var extras = 0;
+
+        foreach (var (target, count) in assignments)
+        {
+            if (count == 0) continue;
+            switch (target)
+            {
+                case AbilityPointTarget.Str:
+                    var newStr = Math.Min(stats.Str + count, MaxBaseStat);
+                    extras += (stats.Str + count) - newStr;
+                    stats.Str = (short)newStr;
+                    updates.Add(new PlayerStatUpdate(PlayerStatKind.Str, stats.Str));
+                    break;
+                case AbilityPointTarget.Dex:
+                    var newDex = Math.Min(stats.Dex + count, MaxBaseStat);
+                    extras += (stats.Dex + count) - newDex;
+                    stats.Dex = (short)newDex;
+                    updates.Add(new PlayerStatUpdate(PlayerStatKind.Dex, stats.Dex));
+                    break;
+                case AbilityPointTarget.Int:
+                    var newInt = Math.Min(stats.Int + count, MaxBaseStat);
+                    extras += (stats.Int + count) - newInt;
+                    stats.Int = (short)newInt;
+                    updates.Add(new PlayerStatUpdate(PlayerStatKind.Int, stats.Int));
+                    break;
+                case AbilityPointTarget.Luk:
+                    var newLuk = Math.Min(stats.Luk + count, MaxBaseStat);
+                    extras += (stats.Luk + count) - newLuk;
+                    stats.Luk = (short)newLuk;
+                    updates.Add(new PlayerStatUpdate(PlayerStatKind.Luk, stats.Luk));
+                    break;
+            }
+        }
+
+        Character.RemainingAp = (short)(Character.RemainingAp - totalRequested + extras);
+        updates.Add(new PlayerStatUpdate(PlayerStatKind.AvailableAp, Character.RemainingAp));
+        return new PlayerStatsMutation(PlayerStatsFailure.None, updates);
+    }
+
     public PlayerStatsMutation DistributeSkillPoint(int skillId)
     {
         if (skillId <= 0)

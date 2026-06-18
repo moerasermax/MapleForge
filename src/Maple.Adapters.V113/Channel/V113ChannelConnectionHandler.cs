@@ -903,6 +903,34 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await HandleSkillEffectAsync(reader, player, token);
                         break;
 
+                    case V113ChannelRecvOp.CancelDebuff:
+                        break;
+
+                    case V113ChannelRecvOp.AutoAssignAp:
+                        if (player is null) break;
+                        await HandleStatsMutationAsync(
+                            V113StatsHandlers.HandleAutoAssignAp(reader, player),
+                            s,
+                            sendSkill: false,
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.DenyPartyRequest:
+                        if (player is null) break;
+                        await _partyOperationHandler.HandleDenyPartyRequestAsync(
+                            reader,
+                            player,
+                            _options.ChannelIndex,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
+                            token);
+                        break;
+
+                    case V113ChannelRecvOp.PartySearchStart:
+                    case V113ChannelRecvOp.PartySearchStop:
+                        if (player is null) break;
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
                     case V113ChannelRecvOp.Pong:
                         break;
 

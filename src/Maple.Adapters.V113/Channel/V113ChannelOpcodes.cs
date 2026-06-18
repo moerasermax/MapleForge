@@ -86,7 +86,26 @@ internal static class V113ChannelRecvOp
     public const short DamageSummon = unchecked((short)0xAE);
     public const short SubSummon = unchecked((short)0xAF);
     public const short NpcAction = unchecked((short)0xBF);
+    public const short AutoAssignAp = 0x52;
+    public const short CancelDebuff = 0x5D;
     public const short ChangeMapSpecial = 0x5E;
+    public const short Messenger = 0x72;
+    public const short DenyPartyRequest = 0x75;
+    public const short NoteAction = 0x7B;
+    public const short UseDoor = 0x7D;
+    public const short AllianceOperation = unchecked((short)0x86);
+    public const short DenyAllianceRequest = unchecked((short)0x87);
+    public const short RequestFamily = unchecked((short)0x88);
+    public const short OpenFamily = unchecked((short)0x89);
+    public const short FamilyOperation = unchecked((short)0x8A);
+    public const short DeleteJunior = unchecked((short)0x8B);
+    public const short DeleteSenior = unchecked((short)0x8C);
+    public const short AcceptFamily = unchecked((short)0x8D);
+    public const short UseFamily = unchecked((short)0x8E);
+    public const short FamilyPrecept = unchecked((short)0x8F);
+    public const short FamilySummon = unchecked((short)0x90);
+    public const short PartySearchStart = unchecked((short)0xD9);
+    public const short PartySearchStop = unchecked((short)0xDA);
     public const short CashShopOperation = unchecked((short)0xE6);
     public const short Pong = 0x0E;
 }
@@ -170,4 +189,19 @@ internal static class V113ChannelSendOp
     public const short UpdateQuestInfo = unchecked((short)0xCC);
     public const short UseSkillBook = 0x31;
     public const short NpcAction = unchecked((short)0xFC);
+
+    public const short ShowNotes = 0x26;
+    public const short SendAllianceOperation = 0x3B;
+    public const short FamilyChartResult = 0x56;
+    public const short FamilyInfoResult = 0x57;
+    public const short FamilyResult = 0x58;
+    public const short FamilyJoinRequest = 0x59;
+    public const short FamilyJunior = 0x5A;
+    public const short FamilyJoinAccepted = 0x5B;
+    public const short FamilyPrivilegeList = 0x5C;
+    public const short FamilyFamousPointIncResult = 0x5D;
+    public const short FamilyNotifyLoginOrLogout = 0x5E;
+    public const short FamilySetPrivilege = 0x5F;
+    public const short FamilySummonRequestSend = 0x60;
+    public const short SendMessenger = 0x145;
 }

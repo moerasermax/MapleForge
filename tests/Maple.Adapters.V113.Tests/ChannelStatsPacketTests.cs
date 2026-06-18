@@ -95,6 +95,33 @@ public sealed class ChannelStatsPacketTests
     }
 
     [Fact]
+    public void HandleAutoAssignAp_ParsesTwoSlots_DistributesBoth()
+    {
+        var chr = new Maple.Core.Characters.Character
+        {
+            Id = 1, Name = "T", Level = 10, Job = 100, RemainingAp = 10,
+            Stats = new Maple.Core.Characters.CharacterStats
+            { Str = 12, Dex = 5, Int = 4, Luk = 4, Hp = 50, MaxHp = 50, Mp = 5, MaxMp = 5 }
+        };
+        var player = new Maple.Core.World.Player(chr, new Maple.Core.World.Position(0, 0, 0, 0));
+
+        var w = new PacketWriter();
+        w.WriteInt(999);   // tick
+        w.WriteInt(0);     // unknown
+        w.WriteInt(0x40);  // STR mask
+        w.WriteInt(6);     // count
+        w.WriteInt(0x80);  // DEX mask
+        w.WriteInt(4);     // count
+
+        var result = V113StatsHandlers.HandleAutoAssignAp(new PacketReader(w.ToArray()), player);
+
+        Assert.True(result.Applied);
+        Assert.Equal((short)18, chr.Stats.Str);
+        Assert.Equal((short)9, chr.Stats.Dex);
+        Assert.Equal((short)0, chr.RemainingAp);
+    }
+
+    [Fact]
     public void UpdateSkill_WritesJavaUpdateSkillsLayout()
     {
         var packet = V113StatsPackets.UpdateSkill(1000000, 1, 1);

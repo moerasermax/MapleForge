@@ -84,6 +84,74 @@ public sealed class V113PartyOperationHandler
         }
     }
 
+    public async Task HandleDenyPartyRequestAsync(
+        PacketReader reader,
+        Player player,
+        int channelIndex,
+        Func<byte[], CancellationToken, Task> sendSelf,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(sendSelf);
+
+        byte action;
+        int partyId;
+        try
+        {
+            action = reader.ReadByte();
+            partyId = reader.ReadInt();
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        if (_parties.GetPartyForCharacter(player.Character.Id) is not null)
+        {
+            return;
+        }
+
+        var party = _parties.GetParty(partyId);
+        if (party is null)
+        {
+            return;
+        }
+
+        if (action == 0x1B)
+        {
+            if (party.Members.Count >= 6)
+            {
+                await sendSelf(V113PartyPackets.PartyStatusMessage(V113PartyPackets.StatusPartyFull), ct);
+                return;
+            }
+
+            var member = PartyMember.FromCharacter(player.Character, channelIndex);
+            var result = _parties.JoinParty(partyId, member);
+            if (result.Succeeded)
+            {
+                await BroadcastPartyUpdateAsync(result, player, channelIndex, sendSelf, ct);
+            }
+            else
+            {
+                await sendSelf(V113PartyPackets.PartyStatusMessage(ToPartyStatusMessage(result.Status)), ct);
+            }
+        }
+        else
+        {
+            // Decline: notify the party leader
+            try
+            {
+                await _sessions.SendToCharacterAsync(
+                    party.LeaderId,
+                    V113PartyPackets.PartyStatusMessage(23, player.Character.Name),
+                    ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch { /* best effort */ }
+        }
+    }
+
     private async Task HandleCreateAsync(
         Player player,
         int channelIndex,
