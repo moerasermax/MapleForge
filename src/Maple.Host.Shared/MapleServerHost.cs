@@ -189,6 +189,11 @@ public static class MapleServerHost
         builder.Services.AddSingleton<Maple.Core.Social.INoteRepository, Maple.Persistence.Notes.LiteDbNoteRepository>();
         builder.Services.AddSingleton<NoteService>();
         builder.Services.AddSingleton<V113NoteHandler>();
+        builder.Services.AddSingleton<Maple.Core.Families.IFamilyRepository, Maple.Application.Families.InMemoryFamilyRepository>();
+        builder.Services.AddSingleton<Maple.Application.Families.IFamilyRegistry, Maple.Application.Families.FamilyService>();
+        builder.Services.AddSingleton<Maple.Application.Families.FamilyService>();
+        builder.Services.AddSingleton<IV113FamilySessionHook, CentralFamilySessionHook>();
+        builder.Services.AddSingleton<V113FamilyHandler>();
 
         // v113 登入選項（由實例設定投影）。
         builder.Services.AddSingleton(sp =>

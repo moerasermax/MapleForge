@@ -82,6 +82,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113MessengerHandler _messengerHandler;
     private readonly V113DoorHandler _doorHandler;
     private readonly V113NoteHandler _noteHandler;
+    private readonly V113FamilyHandler _familyHandler;
     private readonly V113ChannelOptions _options;
 
     public V113ChannelConnectionHandler(
@@ -127,6 +128,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113MessengerHandler messengerHandler,
         V113DoorHandler doorHandler,
         V113NoteHandler noteHandler,
+        V113FamilyHandler familyHandler,
         V113ChannelOptions options)
     {
         _log = log;
@@ -171,6 +173,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _messengerHandler = messengerHandler;
         _doorHandler = doorHandler;
         _noteHandler = noteHandler;
+        _familyHandler = familyHandler;
         _options = options;
     }
 
@@ -987,6 +990,90 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 currentField = await WarpAsync(
                                     player, currentField, npcOidToId, s,
                                     doorWarp.DestinationMapId, sessionToken, token);
+                            }
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.RequestFamily:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleRequestFamilyAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.OpenFamily:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleOpenFamilyAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.FamilyOperation:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleFamilyOperationAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.DeleteJunior:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleDeleteJuniorAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.DeleteSenior:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleDeleteSeniorAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.AcceptFamily:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleAcceptFamilyAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.UseFamily:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleUseFamilyAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                            if (famResult.Warp is { } famWarp)
+                            {
+                                currentField = await WarpAsync(
+                                    player, currentField, npcOidToId, s,
+                                    famWarp.DestinationMapId, sessionToken, token);
+                            }
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.FamilyPrecept:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleFamilyPreceptAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                        }
+                        break;
+
+                    case V113ChannelRecvOp.FamilySummon:
+                        if (player is null) break;
+                        {
+                            var famResult = await _familyHandler.HandleFamilySummonAsync(reader, player, token);
+                            foreach (var pkt in famResult.SelfPackets) await s.SendAsync(pkt, token);
+                            if (famResult.Warp is { } summonWarp)
+                            {
+                                currentField = await WarpAsync(
+                                    player, currentField, npcOidToId, s,
+                                    summonWarp.DestinationMapId, sessionToken, token);
                             }
                         }
                         break;
