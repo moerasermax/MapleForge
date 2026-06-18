@@ -1,6 +1,7 @@
 using Maple.Application.CashShop;
 using Maple.Core.Accounts;
 using Maple.Core.CashShop;
+using Maple.Core.Characters;
 using Maple.Core.Inventory;
 using Maple.Core.IO;
 using Maple.Core.World;
@@ -22,11 +23,13 @@ public sealed record V113CashShopOperationResult(
 internal static class V113CashShopPackets
 {
     public const short RecvCashShopOperation = unchecked((short)0xE6);
-    public const short SendCashShopUpdate = 0x157;
-    public const short SendCashShopOperation = 0x158;
+    public const short SendCashShopUpdate = V113ChannelSendOp.CashShopUpdate;
+    public const short SendCashShopOperation = V113ChannelSendOp.CashShopOperation;
 
     public const byte ClientBuyItem = 0x03;
     public const byte ServerShowCashInventory = 0x46;
+    public const byte ServerShowGifts = 0x48;
+    public const byte ServerShowWishList = 0x4A;
     public const byte ServerBoughtCashItem = 0x4E;
     public const byte ServerBoughtCashItemFailed = 0x4F;
 
@@ -41,6 +44,45 @@ internal static class V113CashShopPackets
         var currency = (CashCurrencyType)(reader.ReadByte() + 1);
         var serialNumber = reader.ReadInt();
         return new V113CashShopPurchaseRequest(action, currency, serialNumber);
+    }
+
+    public static IReadOnlyList<byte[]> InitialCashShopPackets(
+        Character character,
+        Account account,
+        IEnumerable<Item> cashItems,
+        short storageSlots,
+        short characterSlots)
+        =>
+        [
+            WarpCashShop(character, account.AccountName),
+            ShowCashShopAccount(account.AccountName),
+            ShowGiftsEmpty(),
+            ShowCashInventory(cashItems, account.Id, storageSlots, characterSlots),
+            ShowCashBalances(account),
+            EnableCashShopUse(),
+            ShowWishListEmpty(),
+        ];
+
+    public static byte[] WarpCashShop(Character character, string accountName)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.SetCashShop);
+        V113ChannelPackets.AddCharacterInfo(w, character);
+        w.WriteMapleString(accountName);
+        w.WriteInt(0);
+        w.WriteShort(0);
+        w.WriteShort(0);
+        w.WriteByte(0);
+        return w.ToArray();
+    }
+
+    public static byte[] ShowCashShopAccount(string accountName)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.CashShopAccount);
+        w.WriteByte(1);
+        w.WriteMapleString(accountName);
+        return w.ToArray();
     }
 
     public static byte[] ShowBoughtCashItem(Item item, int serialNumber, int accountId)
@@ -75,6 +117,15 @@ internal static class V113CashShopPackets
         return w.ToArray();
     }
 
+    public static byte[] ShowGiftsEmpty()
+    {
+        var w = new PacketWriter();
+        w.WriteShort(SendCashShopOperation);
+        w.WriteByte(ServerShowGifts);
+        w.WriteShort(0);
+        return w.ToArray();
+    }
+
     public static byte[] ShowCashInventory(IEnumerable<Item> items, int accountId, short storageSlots, short characterSlots)
     {
         var materialized = items.ToArray();
@@ -89,6 +140,28 @@ internal static class V113CashShopPackets
 
         w.WriteShort(storageSlots);
         w.WriteShort(characterSlots);
+        return w.ToArray();
+    }
+
+    public static byte[] EnableCashShopUse()
+    {
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.CashShopUse);
+        w.WriteByte(1);
+        w.WriteInt(0);
+        return w.ToArray();
+    }
+
+    public static byte[] ShowWishListEmpty()
+    {
+        var w = new PacketWriter();
+        w.WriteShort(SendCashShopOperation);
+        w.WriteByte(ServerShowWishList);
+        for (var i = 0; i < 10; i++)
+        {
+            w.WriteInt(0);
+        }
+
         return w.ToArray();
     }
 

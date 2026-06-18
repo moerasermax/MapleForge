@@ -36,7 +36,7 @@ internal static class V113ChannelPackets
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
-    private static void AddCharacterInfo(PacketWriter w, Character chr)
+    internal static void AddCharacterInfo(PacketWriter w, Character chr)
     {
         w.WriteLong(-1L);               // placeholder / version marker
         w.WriteByte(0);

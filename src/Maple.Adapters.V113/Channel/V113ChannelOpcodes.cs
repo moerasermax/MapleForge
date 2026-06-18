@@ -156,6 +156,7 @@ internal static class V113ChannelSendOp
 {
     public const short SetField = 0x7B;   // WARP_TO_MAP / initial login / map change
     public const short ChangeChannel = 0x08;
+    public const short CashShopUse = 0x0A;
     public const short ChatText = unchecked((short)0x9B);   // 地圖聊天泡泡
     public const short ShowScrollEffect = unchecked((short)0x9F);
     public const short Ping = 0x09;
@@ -185,6 +186,7 @@ internal static class V113ChannelSendOp
     public const short BbsOperation = 0x68;
     public const short AvatarMega = 0x6D;
     public const short SkillMacro = 0x7A;
+    public const short SetCashShop = 0x7D;
     public const short MultiChat = 0x84;
     public const short Whisper = 0x85;
     public const short CashSong = unchecked((short)0x89);
@@ -212,6 +214,7 @@ internal static class V113ChannelSendOp
     public const short PlayerInteraction = 0x146;
     public const short CashShopUpdate = 0x157;
     public const short CashShopOperation = 0x158;
+    public const short CashShopAccount = 0x15F;
     public const short Duey = 0x155;
     public const short XmasSurprise = 0x161;
     public const short Keymap = 0x163;

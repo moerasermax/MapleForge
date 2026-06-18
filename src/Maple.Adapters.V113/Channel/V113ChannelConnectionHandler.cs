@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Maple.Adapters.V113.Crypto;
 using Maple.Application.Buddies;
 using Maple.Application.Characters;
@@ -34,12 +35,19 @@ namespace Maple.Adapters.V113.Channel;
 /// <summary>v113 Channel 連線選項（由 Host 從實例設定投影）。</summary>
 public sealed record V113ChannelOptions(int ChannelIndex = 0, byte[]? ChannelIp = null, int ChannelPort = 8585);
 
+internal sealed record CashShopTransitionData(
+    int CharacterId,
+    int PreviousMapId,
+    int PreviousChannel,
+    DateTimeOffset RegisteredAt);
+
 /// <summary>
 /// v113 Channel 連線處理：握手 → PLAYER_LOGGEDIN → 載入角色 → SET_FIELD（進地圖）→ 廣播移動。
 /// </summary>
 public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 {
     private readonly IVersionCipherFactory _ciphers = new V113CipherFactory();
+    private readonly ConcurrentDictionary<int, CashShopTransitionData> _pendingCashShopTransitions = new();
     private readonly ILogger<V113ChannelConnectionHandler> _log;
     private readonly CharacterService _charService;
     private readonly IAccountRepository _accounts;
@@ -183,6 +191,30 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _options = options;
     }
 
+    internal static bool CanEnterCashShopFromMap(int mapId)
+        => !IsMapleLand(mapId) && mapId != 220080001;
+
+    internal static CashShopTransitionData RegisterCashShopTransition(
+        ConcurrentDictionary<int, CashShopTransitionData> pendingTransitions,
+        int characterId,
+        int previousMapId,
+        int previousChannel)
+    {
+        var data = new CashShopTransitionData(
+            characterId,
+            previousMapId,
+            previousChannel,
+            DateTimeOffset.UtcNow);
+        pendingTransitions[characterId] = data;
+        return data;
+    }
+
+    internal static bool TryConsumeCashShopTransition(
+        ConcurrentDictionary<int, CashShopTransitionData> pendingTransitions,
+        int characterId,
+        out CashShopTransitionData transition)
+        => pendingTransitions.TryRemove(characterId, out transition!);
+
     public async Task HandleChannelConnectionAsync(MapleSession session, CancellationToken ct)
     {
         byte[] recvIv = { 0x46, 0x72, 0x7A, (byte)Random.Shared.Next(256) };
@@ -203,6 +235,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         int? storageNpcId = null;
         var npcOidToId = new Dictionary<int, int>();   // 地圖 NPC objectId → npcId（SpawnMapNpcs 時建）
         NpcConversation? conversation = null;           // 當前對話（session-local，不進 registry）
+        var cashShopMode = false;
+        CashShopTransitionData? cashShopTransition = null;
 
         async Task OpenShopFromNpcAsync(int shopOrNpcId, CancellationToken token)
         {
@@ -304,12 +338,33 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                 await SendExpiredBuffCancelsAsync(s, token);
 
+                if (cashShopMode)
+                {
+                    await HandleCashShopModePacketAsync(opcode, reader, player, account, s, token);
+                    return;
+                }
+
                 switch (opcode)
                 {
                     case V113ChannelRecvOp.PlayerLoggedIn:
-                        chr = await HandlePlayerLoggedInAsync(reader, s, token);
+                    {
+                        var charId = reader.ReadInt();
+                        _log.LogInformation("[Channel] PLAYER_LOGGEDIN charId={Id}", charId);
+                        var enteringCashShop = TryConsumeCashShopTransition(
+                            _pendingCashShopTransitions,
+                            charId,
+                            out var transition);
+
+                        chr = await _charService.GetByIdAsync(charId, token);
                         if (chr is not null)
                         {
+                            if (enteringCashShop)
+                            {
+                                cashShopTransition = transition;
+                                cashShopMode = true;
+                                chr.MapId = transition.PreviousMapId;
+                            }
+
                             account = await _accounts.FindByIdAsync(chr.AccountId, token);
 
                             // 執行期玩家（持有位置；spawn 暫定 0,0，之後接 portal/SpawnPoint）
@@ -322,6 +377,19 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             {
                                 _log.LogWarning("[Channel] 角色 {Name} 找不到 AccountId={AccountId}，倉庫不會持久化", chr.Name, chr.AccountId);
                             }
+
+                            if (cashShopMode)
+                            {
+                                await SendCashShopInitialPacketsAsync(player, account, s, token);
+                                _log.LogInformation(
+                                    "[Channel] 角色 {Name} 進入 CashShop mode，原地圖 {Map} channel={Channel}",
+                                    chr.Name,
+                                    cashShopTransition?.PreviousMapId,
+                                    cashShopTransition?.PreviousChannel);
+                                break;
+                            }
+
+                            await SendNormalChannelEntryPacketsAsync(chr, s, token);
 
                             var channel = _options.ChannelIndex + 1;
                             _onlinePlayers.Register(
@@ -371,7 +439,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
                         }
+                        else
+                        {
+                            _log.LogWarning("[Channel] 找不到角色 id={Id}", charId);
+                        }
                         break;
+                    }
 
                     case V113ChannelRecvOp.MovePlayer:
                         if (player is null) break;
@@ -413,8 +486,32 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.EnterCashShop:
                         if (player is null) break;
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
-                        break;
+                        if (!CanEnterCashShopFromMap(player.Character.MapId))
+                        {
+                            await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                            break;
+                        }
+
+                        player.FlushInventory();
+                        await _charService.UpdateAsync(player.Character, token);
+                        await RemoveFromCurrentFieldForTransitionAsync(player, currentField, sessionToken, token);
+                        currentField = null;
+
+                        var cashShopTransitionData = RegisterCashShopTransition(
+                            _pendingCashShopTransitions,
+                            player.Character.Id,
+                            player.Character.MapId,
+                            _options.ChannelIndex + 1);
+                        var cashShopIp = _options.ChannelIp ?? new byte[] { 127, 0, 0, 1 };
+                        await s.SendAsync(V113ChannelChangePackets.ChangeChannel(cashShopIp, (short)_options.ChannelPort), token);
+                        _log.LogInformation(
+                            "[Channel] {Name} ENTER_CASH_SHOP pending transition map={Map} channel={Channel} → {Ip}:{Port}",
+                            player.Character.Name,
+                            cashShopTransitionData.PreviousMapId,
+                            cashShopTransitionData.PreviousChannel,
+                            string.Join(".", cashShopIp),
+                            _options.ChannelPort);
+                        throw new OperationCanceledException("Cash shop reconnect requested.");
 
                     case V113ChannelRecvOp.UseInnerPortal:
                         if (player is null) break;
@@ -1562,6 +1659,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
     /// <summary>WZ portal 無目標地圖的哨兵值（對照 MapService.LoadPortals 的 tm 預設）。</summary>
     private const int NoTargetMapId = 999999999;
+
+    private static bool IsMapleLand(int mapId) => mapId < 1010004;
 
     // ── NPC 對話（路線圖②）─────────────────────────────────────────────────────
 
@@ -2861,18 +2960,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
     // ── Handlers ──────────────────────────────────────────────────────────────
 
-    private async Task<Character?> HandlePlayerLoggedInAsync(PacketReader reader, MapleSession session, CancellationToken ct)
+    private async Task SendNormalChannelEntryPacketsAsync(Character chr, MapleSession session, CancellationToken ct)
     {
-        var charId = reader.ReadInt();
-        _log.LogInformation("[Channel] PLAYER_LOGGEDIN charId={Id}", charId);
-
-        var chr = await _charService.GetByIdAsync(charId, ct);
-        if (chr is null)
-        {
-            _log.LogWarning("[Channel] 找不到角色 id={Id}", charId);
-            return null;
-        }
-
         var setField = V113ChannelPackets.SetField(chr, _options.ChannelIndex);
         await session.SendAsync(setField, ct);
         if (V113SkillMacroPackets.SkillMacros(chr) is { } macros)
@@ -2881,7 +2970,146 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
         await session.SendAsync(V113KeymapPackets.Keymap(chr), ct);
         _log.LogInformation("[Channel] 角色 {Name} SET_FIELD 送出 → 地圖 {Map}", chr.Name, chr.MapId);
-        return chr;
+    }
+
+    private static async Task SendCashShopInitialPacketsAsync(Player player, Account? account, MapleSession session, CancellationToken ct)
+    {
+        if (account is null)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        foreach (var packet in V113CashShopPackets.InitialCashShopPackets(
+            player.Character,
+            account,
+            player.Inventory.By(Core.Inventory.InventoryType.Cash).Items,
+            account.Storage.Slots,
+            characterSlots: 3))
+        {
+            await session.SendAsync(packet, ct);
+        }
+    }
+
+    private async Task HandleCashShopModePacketAsync(
+        short opcode,
+        PacketReader reader,
+        Player? player,
+        Account? account,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (player is null)
+        {
+            return;
+        }
+
+        switch (opcode)
+        {
+            case V113ChannelRecvOp.ChangeMap:
+                await LeaveCashShopAsync(player, account, session, ct);
+                throw new OperationCanceledException("Leave cash shop reconnect requested.");
+
+            case V113ChannelRecvOp.CsUpdate:
+                await SendCashShopInitialPacketsAsync(player, account, session, ct);
+                break;
+
+            case V113ChannelRecvOp.CashShopOperation:
+                if (account is null) break;
+                var cashShopResult = _cashShopOperationHandler.Handle(reader, account, player);
+                if (!cashShopResult.Handled) break;
+
+                foreach (var packet in cashShopResult.Packets)
+                {
+                    await session.SendAsync(packet, ct);
+                }
+
+                if (cashShopResult.AccountMutated)
+                {
+                    await _accounts.UpdateAsync(account, ct);
+                }
+
+                if (cashShopResult.CharacterMutated)
+                {
+                    await _charService.UpdateAsync(player.Character, ct);
+                }
+                break;
+
+            case V113ChannelRecvOp.CouponCode:
+                if (reader.Remaining >= 2)
+                {
+                    _ = reader.ReadShort();
+                }
+                if (reader.Remaining > 0)
+                {
+                    _ = reader.ReadMapleString();
+                }
+                await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+                break;
+
+            case V113ChannelRecvOp.Pong:
+                break;
+
+            default:
+                _log.LogDebug("[Channel] CashShop mode ignored opcode=0x{Op:X2}", opcode);
+                await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+                break;
+        }
+    }
+
+    private async Task LeaveCashShopAsync(Player player, Account? account, MapleSession session, CancellationToken ct)
+    {
+        player.FlushInventory();
+        if (account is not null)
+        {
+            player.FlushStorage(account);
+            await _accounts.UpdateAsync(account, ct);
+        }
+
+        await _charService.UpdateAsync(player.Character, ct);
+
+        var channelIp = _options.ChannelIp ?? new byte[] { 127, 0, 0, 1 };
+        await session.SendAsync(V113ChannelChangePackets.ChangeChannel(channelIp, (short)_options.ChannelPort), ct);
+        _log.LogInformation(
+            "[Channel] {Name} leave CashShop → {Ip}:{Port}",
+            player.Character.Name,
+            string.Join(".", channelIp),
+            _options.ChannelPort);
+    }
+
+    private async Task RemoveFromCurrentFieldForTransitionAsync(
+        Player player,
+        FieldInstance? currentField,
+        object sessionToken,
+        CancellationToken ct)
+    {
+        if (currentField is not null)
+        {
+            lock (currentField)
+            {
+                currentField.Remove(player.ObjectId);
+            }
+        }
+
+        var mapId = player.Character.MapId;
+        if (!_mapRegistry.Deregister(mapId, player.Character.Id, sessionToken))
+        {
+            return;
+        }
+
+        var removePacket = V113MapPackets.RemovePlayer(player.Character.Id);
+        var others = _mapRegistry.GetOthers(mapId, player.Character.Id);
+        foreach (var other in others)
+        {
+            try
+            {
+                await other.SendPacket(removePacket, ct);
+            }
+            catch
+            {
+                // Peer sessions may be closing; transition cleanup must continue.
+            }
+        }
     }
 
     /// <summary>

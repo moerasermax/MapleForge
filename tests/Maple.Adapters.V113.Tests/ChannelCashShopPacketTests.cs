@@ -12,6 +12,19 @@ namespace Maple.Adapters.V113.Tests;
 public sealed class ChannelCashShopPacketTests
 {
     [Fact]
+    public void Opcodes_MatchJavaCashShopProperties()
+    {
+        Assert.Equal(0x20, V113ChannelRecvOp.EnterCashShop);
+        Assert.Equal(0xE6, (ushort)V113ChannelRecvOp.CashShopOperation);
+        Assert.Equal(0xE5, (ushort)V113ChannelRecvOp.CsUpdate);
+        Assert.Equal(0x7D, V113ChannelSendOp.SetCashShop);
+        Assert.Equal(0x0A, V113ChannelSendOp.CashShopUse);
+        Assert.Equal(0x15F, V113ChannelSendOp.CashShopAccount);
+        Assert.Equal(0x157, V113CashShopPackets.SendCashShopUpdate);
+        Assert.Equal(0x158, V113CashShopPackets.SendCashShopOperation);
+    }
+
+    [Fact]
     public void ParsePurchase_ReadsJavaBuyItemLayout()
     {
         var w = new PacketWriter();
@@ -25,6 +38,40 @@ public sealed class ChannelCashShopPacketTests
         Assert.Equal(V113CashShopPackets.ClientBuyItem, request!.Value.Action);
         Assert.Equal(CashCurrencyType.Cash, request.Value.Currency);
         Assert.Equal(10000001, request.Value.SerialNumber);
+    }
+
+    [Fact]
+    public void WarpCashShop_WritesSetCashShopCharacterAndEmptyCatalogSkeleton()
+    {
+        var character = NewCharacter(gender: 0);
+
+        var packet = V113CashShopPackets.WarpCashShop(character, "cashacct");
+        var reader = new PacketReader(packet);
+
+        Assert.Equal(V113ChannelSendOp.SetCashShop, reader.ReadShort());
+        Assert.Equal(-1L, BitConverter.ToInt64(packet, 2));
+        Assert.Equal((byte)0, packet[10]);
+        Assert.Equal(character.Id, BitConverter.ToInt32(packet, 11));
+
+        var accountNameOffset = IndexOf(packet, "cashacct"u8.ToArray());
+        Assert.True(accountNameOffset > 0);
+        Assert.Equal((short)8, BitConverter.ToInt16(packet, accountNameOffset - 2));
+        Assert.Equal(0, BitConverter.ToInt32(packet, accountNameOffset + 8));
+        Assert.Equal(0, BitConverter.ToInt16(packet, accountNameOffset + 12));
+    }
+
+    [Fact]
+    public void ShowCashShopAccount_WritesCsAcc()
+    {
+        byte[] expected =
+        [
+            0x5F, 0x01,
+            0x01,
+            0x04, 0x00,
+            (byte)'t', (byte)'e', (byte)'s', (byte)'t',
+        ];
+
+        Assert.Equal(expected, V113CashShopPackets.ShowCashShopAccount("test"));
     }
 
     [Fact]
@@ -54,6 +101,14 @@ public sealed class ChannelCashShopPacketTests
     }
 
     [Fact]
+    public void ShowGiftsEmpty_WritesJavaEmptyGiftList()
+    {
+        Assert.Equal(
+            [0x58, 0x01, V113CashShopPackets.ServerShowGifts, 0x00, 0x00],
+            V113CashShopPackets.ShowGiftsEmpty());
+    }
+
+    [Fact]
     public void ShowCashBalances_WritesCsUpdate()
     {
         byte[] expected =
@@ -66,6 +121,52 @@ public sealed class ChannelCashShopPacketTests
         var packet = V113CashShopPackets.ShowCashBalances(new Account { CashPoints = 55, MaplePoints = 5 });
 
         Assert.Equal(expected, packet);
+    }
+
+    [Fact]
+    public void EnableCashShopUse_WritesCsUse()
+    {
+        Assert.Equal(
+            [0x0A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00],
+            V113CashShopPackets.EnableCashShopUse());
+    }
+
+    [Fact]
+    public void ShowWishListEmpty_WritesTenZeroSerialNumbers()
+    {
+        var packet = V113CashShopPackets.ShowWishListEmpty();
+        var reader = new PacketReader(packet);
+
+        Assert.Equal(V113CashShopPackets.SendCashShopOperation, reader.ReadShort());
+        Assert.Equal(V113CashShopPackets.ServerShowWishList, reader.ReadByte());
+        for (var i = 0; i < 10; i++)
+        {
+            Assert.Equal(0, reader.ReadInt());
+        }
+        Assert.Equal(0, reader.Remaining);
+    }
+
+    [Fact]
+    public void InitialCashShopPackets_WritesJavaInitializationOrder()
+    {
+        var account = new Account { Id = 7, AccountName = "cashacct", CashPoints = 55, MaplePoints = 5 };
+        var player = NewPlayer(gender: 0);
+
+        var packets = V113CashShopPackets.InitialCashShopPackets(
+            player.Character,
+            account,
+            player.Inventory.By(InventoryType.Cash).Items,
+            storageSlots: 16,
+            characterSlots: 3);
+
+        Assert.Equal(7, packets.Count);
+        Assert.Equal(V113ChannelSendOp.SetCashShop, BitConverter.ToInt16(packets[0], 0));
+        Assert.Equal(V113ChannelSendOp.CashShopAccount, BitConverter.ToInt16(packets[1], 0));
+        Assert.Equal(V113CashShopPackets.ServerShowGifts, packets[2][2]);
+        Assert.Equal(V113CashShopPackets.ServerShowCashInventory, packets[3][2]);
+        Assert.Equal(V113CashShopPackets.SendCashShopUpdate, BitConverter.ToInt16(packets[4], 0));
+        Assert.Equal(V113ChannelSendOp.CashShopUse, BitConverter.ToInt16(packets[5], 0));
+        Assert.Equal(V113CashShopPackets.ServerShowWishList, packets[6][2]);
     }
 
     [Fact]
@@ -143,13 +244,42 @@ public sealed class ChannelCashShopPacketTests
 
     private static Player NewPlayer(byte gender)
         => new(
-            new Character
-            {
-                Id = 1,
-                Name = "CashShopAdapter",
-                Gender = gender,
-            },
+            NewCharacter(gender),
             new Position(0, 0, 0, 0));
+
+    private static Character NewCharacter(byte gender)
+        => new()
+        {
+            Id = 1,
+            AccountId = 7,
+            Name = "CashShopAdapter",
+            Gender = gender,
+            MapId = 100000000,
+            Level = 10,
+        };
+
+    private static int IndexOf(byte[] source, byte[] pattern)
+    {
+        for (var i = 0; i <= source.Length - pattern.Length; i++)
+        {
+            var found = true;
+            for (var j = 0; j < pattern.Length; j++)
+            {
+                if (source[i + j] != pattern[j])
+                {
+                    found = false;
+                    break;
+                }
+            }
+
+            if (found)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 
     private sealed class FakeCashItemCatalog : ICashItemCatalog
     {
