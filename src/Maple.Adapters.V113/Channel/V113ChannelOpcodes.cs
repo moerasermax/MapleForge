@@ -170,6 +170,7 @@ internal static class V113ChannelSendOp
     public const short ShowStatusInfo = 0x25;
     public const short MapTransferResult = 0x27;
     public const short ShowQuestCompletion = 0x2E;
+    public const short EntrustedShopCheckResult = 0x2F;
     public const short GatherItemResult = 0x32;
     public const short SortItemResult = 0x33;
     public const short CharInfo = 0x36;
@@ -213,6 +214,8 @@ internal static class V113ChannelSendOp
     public const short OpenNpcShop = 0x13D;
     public const short ConfirmShopTransaction = 0x13E;
     public const short OpenStorage = 0x141;
+    public const short MerchItemMessage = 0x142;
+    public const short MerchItemStore = 0x143;
     public const short PlayerInteraction = 0x146;
     public const short CashShopUpdate = 0x157;
     public const short CashShopOperation = 0x158;
@@ -239,6 +242,9 @@ internal static class V113ChannelSendOp
     public const short PetFlagChange = unchecked((short)0xCE);
     public const short UseSkillBook = 0x31;
     public const short NpcAction = unchecked((short)0xFC);
+    public const short SpawnHiredMerchant = 0x103;
+    public const short DestroyHiredMerchant = 0x104;
+    public const short UpdateHiredMerchant = 0x106;
 
     public const short ShowNotes = 0x26;
     public const short SendAllianceOperation = 0x3B;

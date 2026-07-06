@@ -1260,6 +1260,85 @@ writeInt(number)
 - 證據層級：Java source map + MapleForge adapter implementation + fixture tests；P003-D4 `dotnet build` 0 warning/0 error，逐專案測試 747 passed / 1 skipped。真 v113 client crafting/reward/anti-macro/carnival smoke 未跑。
 
 ---
+## P003 D6 HiredMerchant Cut2 Adapters（2026-07-06）
+
+來源：
+
+- `recv.properties`：`CP_HiredMerchantRemoteControl=0x34`、`USE_HIRED_MERCHANT=0x38`、`MERCH_ITEM_STORE=0x3A`
+- `send.properties`：`ENTRUSTED_SHOP_CHECK_RESULT=0x2F`、`SPAWN_HIRED_MERCHANT=0x103`、`DESTROY_HIRED_MERCHANT=0x104`、`UPDATE_HIRED_MERCHANT=0x106`、`MERCH_ITEM_MSG=0x142`、`MERCH_ITEM_STORE=0x143`、`PLAYER_INTERACTION=0x146`
+- Java oracle：`PlayerInteractionHandler.HiredMerchantRemoteControl`、`HiredMerchantHandler.UseHiredMerchant` / `MerchantItemStore`、`PlayerShopPacket`
+
+C→S layouts：
+
+```
+CP_HiredMerchantRemoteControl(0x34):
+writeByte(action)       // Java accepts action == 3
+
+USE_HIRED_MERCHANT(0x38):
+// Java only checks slea.available() > 0 before title box.
+// MapleForge supports this probe plus an adapter candidate create fragment:
+writeMapleAsciiString(title)
+writeByte(passwordFlag) // consumed by Java create flow before merchant branch
+writeShort(cashSlot)
+writeInt(merchantItemId) // 5030000 series
+
+MERCH_ITEM_STORE(0x3A):
+writeByte(operation)
+if operation == 20:
+  writeMapleAsciiString(secondPassword) // currently consumed/ignored; auth not yet modeled
+```
+
+語義：
+
+- `0x34`：對照 Java 遠端操控入口，要求 action 3、持有 `5470000`、人在 `910000000`、不在 party；找到 owner active merchant 後轉 maintenance 並送 owner 管理視窗，若只有 pending package 則送 Fredrick item data。
+- `0x38`：要求商人房 `910000001..910000022` 與 Cash 背包 `5030000` series permit；無 active/pending merchant 時送 Java title box `ENTRUSTED_SHOP_CHECK_RESULT(0x2F), byte 7`。MapleForge 另支援 Java create fragment candidate 以建立/open `HiredMerchant` 並廣播 spawn，但真 client title submit 仍待 `PLAYER_INTERACTION(0x73)` createType 5 校準。
+- `0x3A`：operation 20 顯示 active merchant location 或 pending package；25 回 take-out confirmation `MERCH_ITEM_STORE(0x143), op 0x24`；26 走 D5 `PlayerShopService.ClaimAsync` 領回暫存物與楓幣並刪 package；27 exit no-op。
+- 進場/換圖 replay：channel 進入商人房時查 `IHiredMerchantRepository.FindOpenByMapAsync` 並送 `SPAWN_HIRED_MERCHANT(0x103)`。D5 domain/persistence 未保存 merchant position，現階段 replay fallback position 為 `(0,0)`，create path 使用 owner current position。
+- `PLAYER_INTERACTION(0x73)` 缺口：目前 `V113PlayerInteractionRouter` 仍只支援 trade；Java 的 merchant createType 5、visit、set item、remove item、buy item hired merchant 等子指令尚未完整接線，列 Cut3/後續 TODO，不在 D6 硬塞。
+
+S→C layouts（Java-source candidate / unverified）：
+
+```
+TitleBox:
+writeShort(0x2F)
+writeByte(7)
+
+ShowMerchItemStore:
+writeShort(0x143)
+writeByte(0x25)
+writeInt(9030000)
+writeInt(mapId)
+writeByte(channel - 1)
+
+MerchItemStoreItemData:
+writeShort(0x143)
+writeByte(0x23)
+writeInt(9030000)
+writeInt(storeId)
+writeZeroBytes(5)
+writeInt(mesos)
+writeByte(0)
+writeByte(itemCount)
+repeat itemCount: addItemInfo(item)
+writeZeroBytes(3)
+
+MerchItemMessage:
+writeShort(0x142)
+writeByte(op) // 0x1D success, 0x21 inventory/meso full
+
+SpawnHiredMerchant:
+writeShort(0x103)
+writeInt(ownerId)
+writeInt(merchantItemId)
+writePos(x,y)
+writeShort(0)
+writeMapleAsciiString(ownerName)
+addInteraction(candidate)
+```
+
+證據層級：Java source map + MapleForge Adapters implementation + fixture tests；`dotnet build` 0 warning / 0 error，逐專案測試 767 passed / 1 skipped，Core/Application 禁區 grep 無 V113 依賴。真 v113 client HiredMerchant GUI smoke 未跑，所有 HiredMerchant S2C fixture 仍為 unverified。
+
+---
 ## P2 Migration Wave 4 heavy opcode MVP stubs（2026-06-18）
 
 來源：

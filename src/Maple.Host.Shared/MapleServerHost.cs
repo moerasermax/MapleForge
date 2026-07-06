@@ -19,6 +19,7 @@ using Maple.Application.NpcItemServices;
 using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
 using Maple.Application.Pets;
+using Maple.Application.PlayerShops;
 using Maple.Application.Quests;
 using Maple.Application.Reactors;
 using Maple.Application.Security;
@@ -149,6 +150,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<StatsService>();
         builder.Services.AddSingleton<DueyService>();
         builder.Services.AddSingleton<TradeService>();
+        builder.Services.AddSingleton<PlayerShopService>();
         builder.Services.AddSingleton<RingService>();
         builder.Services.AddSingleton<FollowService>();
         builder.Services.AddSingleton<IEquipRepairCatalog, EmptyEquipRepairCatalog>();
@@ -163,6 +165,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113CashShopOperationHandler>();
         builder.Services.AddSingleton<V113ChatHandler>();
         builder.Services.AddSingleton<V113PlayerInteractionRouter>();
+        builder.Services.AddSingleton<V113HiredMerchantHandler>();
         builder.Services.AddSingleton<V113DueyHandler>();
         builder.Services.AddSingleton<V113BbsHandler>();
         builder.Services.AddSingleton<V113RingHandler>();

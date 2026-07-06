@@ -74,6 +74,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113CashShopOperationHandler _cashShopOperationHandler;
     private readonly V113ChatHandler _chatHandler;
     private readonly V113PlayerInteractionRouter _playerInteractionRouter;
+    private readonly V113HiredMerchantHandler _hiredMerchantHandler;
     private readonly V113DueyHandler _dueyHandler;
     private readonly V113BbsHandler _bbsHandler;
     private readonly V113RingHandler _ringHandler;
@@ -123,6 +124,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113CashShopOperationHandler cashShopOperationHandler,
         V113ChatHandler chatHandler,
         V113PlayerInteractionRouter playerInteractionRouter,
+        V113HiredMerchantHandler hiredMerchantHandler,
         V113DueyHandler dueyHandler,
         V113BbsHandler bbsHandler,
         V113RingHandler ringHandler,
@@ -171,6 +173,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _cashShopOperationHandler = cashShopOperationHandler;
         _chatHandler = chatHandler;
         _playerInteractionRouter = playerInteractionRouter;
+        _hiredMerchantHandler = hiredMerchantHandler;
         _dueyHandler = dueyHandler;
         _bbsHandler = bbsHandler;
         _ringHandler = ringHandler;
@@ -447,6 +450,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                             // 地圖物件同步：把該地圖的 NPC / monster spawn 給剛進場的玩家。
                             await SpawnMapNpcsAsync(chr.MapId, s, npcOidToId, token);
+                            await SendFieldHiredMerchantsAsync(chr.MapId, s, token);
                             await SendFieldMonstersAsync(currentField, s, token);
                             await SendFieldDropsAsync(currentField, s, token);
                             await V113ReactorHandler.SendFieldReactorsAsync(currentField, s, token);
@@ -665,8 +669,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.HiredMerchantRemoteControl:
                         if (player is null) break;
-                        _ = reader.ReadShort();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await SendHiredMerchantResultAsync(
+                            await _hiredMerchantHandler.HandleRemoteControlAsync(
+                                reader,
+                                player,
+                                DateTimeOffset.UtcNow,
+                                token),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.GiveFame:
@@ -1055,14 +1066,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.UseHiredMerchant:
                         if (player is null) break;
-                        _ = reader.ReadInt();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await SendHiredMerchantResultAsync(
+                            await _hiredMerchantHandler.HandleUseHiredMerchantAsync(
+                                reader,
+                                player,
+                                (byte)(_options.ChannelIndex + 1),
+                                DateTimeOffset.UtcNow,
+                                token),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.MerchItemStore:
                         if (player is null) break;
-                        _ = reader.ReadByte();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await SendHiredMerchantResultAsync(
+                            await _hiredMerchantHandler.HandleMerchItemStoreAsync(reader, player, token),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.ItemMove:
@@ -1734,6 +1756,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    private async Task SendFieldHiredMerchantsAsync(int mapId, MapleSession session, CancellationToken ct)
+    {
+        var packets = await _hiredMerchantHandler.SpawnOpenMerchantPacketsAsync(
+            (byte)(_options.ChannelIndex + 1),
+            mapId,
+            new Position(0, 0, 0, 0),
+            ct);
+
+        foreach (var packet in packets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (packets.Count > 0)
+        {
+            _log.LogInformation("[Channel] 地圖 {Map} replay {Count} 個 hired merchant", mapId, packets.Count);
+        }
+    }
+
     /// <summary>NPC 地圖物件 id 起始值（避開玩家以 charId 充當的小號 objectId）。</summary>
     private const int NpcObjectIdBase = 1000;
 
@@ -1898,6 +1939,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var field = EnterField(mapId, player);
         _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn), sessionToken);
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
+        await SendFieldHiredMerchantsAsync(mapId, session, ct);
         await SendFieldMonstersAsync(field, session, ct);
         await SendFieldDropsAsync(field, session, ct);
         await V113ReactorHandler.SendFieldReactorsAsync(field, session, ct);
@@ -2031,6 +2073,33 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var packet in result.Packets)
         {
             await session.SendAsync(packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+    }
+
+    private async Task SendHiredMerchantResultAsync(
+        V113HiredMerchantHandleResult result,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (!result.Handled)
+        {
+            return;
+        }
+
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        foreach (var packet in result.MapPackets)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
         }
 
         if (result.CharacterMutated)
