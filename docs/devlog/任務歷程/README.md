@@ -45,6 +45,8 @@ YYYY-MM-DD_序號_類型_簡述.md
 | 2026-07-07_01 | 移植 | HiredMerchant Cut3 收尾刀 | ✅ 完成 |
 | 2026-07-06_03 | 移植 | HiredMerchant Cut2 Adapters | ✅ 完成 |
 | 2026-07-06_02 | 移植 | HiredMerchant Cut1 Core App Persistence | ✅ 完成 |
+| 2026-07-06_02 | 移植 | SkillBook catalog 資料萃取（D4b） | ✅ 完成 |
+| 2026-07-06_01 | 移植 | P003 移植清尾 + MVP stub 補完整（D0-D9 總覽） | ✅ 完成（775 passed / 1 skipped，agy 複核可收案） |
 | 2026-06-18_26 | 修補 | P002 三輪稽核最終修補 | ✅ 完成 |
 | 2026-06-18_25 | 驗證 | P002 三輪稽核 | ✅ 完成 |
 | 2026-06-18_24 | 修補 | P002 二輪稽核殘留修補 | ✅ 完成 |

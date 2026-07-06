@@ -1,6 +1,6 @@
 # P003: 移植清尾 + MVP stub 補完整（Codex 主刀）
 
-> 狀態：🚧 執行中（W3 D6 完成，2026-07-06）
+> 狀態：✅ 完成（D9 鐵律歸檔，2026-07-07；agy 複核 9 項缺陷全 ✅，判定可收案）
 > 任務歷程：`docs/devlog/任務歷程/2026-07-06_01_移植_P003清尾與stub補完整.md`
 
 ## 計畫凍結區（批准後不改）
@@ -69,7 +69,13 @@
 | D4b | 42164→13560 | ✅ | 0 | bc021dc | ✅ SkillBook catalog Item.wz 萃取 165 筆，已 push |
 | D5 | 50044(撞限)→45832 | ✅ | 0 | f64bce1 | ✅ HiredMerchant Cut1：Core `IPlayerShop`/`PlayerShop`/`HiredMerchant` + Application `PlayerShopService` + LiteDB/Mongo `hired_merchants`/`hired_merchant_items`；新增 14 測試；逐專案總測 761+1skip、`dotnet build` 綠、禁區 grep clean |
 | D6 | 53288 | ✅ | 0 | 8c22d6a | ✅ HiredMerchant Cut2：0x34/0x38/0x3A dispatch 接 `PlayerShopService`/repository + 未驗證 PlayerShop/Fredrick/spawn S2C 封包；新增 6 測試；逐專案總測 767+1skip、`dotnet build` 綠、禁區 grep clean；0x73 商人子指令留 Cut3/後續 |
-| D7 | 23468(撞限)→本輪續跑 | ✅ | 0 | 待填 | ✅ HiredMerchant Cut3：0x73 merchant create/visit/add/remove/buy/exit/chat/open/close 接線；startup reload service；position 持久化；新增 5 測試；772 passed / 1 skipped，`dotnet build` 綠，禁區 grep clean |
+| D7 | 23468(撞限)→22992(續) | ✅ | 0 | 7a6f347 | ✅ HiredMerchant Cut3：0x73 merchant create/visit/add/remove/buy/exit/chat/open/close 接線；startup reload service；position 持久化；新增 5 測試；772 passed / 1 skipped，`dotnet build` 綠，禁區 grep clean |
+| D8-前置 | 252 | ✅ | 0 | —（唯讀） | ✅ agy 審 f638132..8c22d6a：2 BLOCKER（coupon S2C 版型錯位/ClaimAsync race）+ 2 WARNING（coupon 永久期限語意/unverified 註記缺失）；判定需修補 |
+| D7b | 48452 | ✅ | 0 | ed49640 | ✅ 修補 D8-前置四項；新增 3 測試；775 passed / 1 skipped，`dotnet build` 綠，禁區 grep clean，已 push |
+| D8 | 49356 | ✅ | 0 | —（唯讀） | ✅ GPT-5.5 終審 D7+D7b：5 項缺陷（店內 UI 廣播範圍/鎖紀律繞過/CLOSE_MERCHANT 版型/啟動降級/unverified 註記）；判定需修補 |
+| D8b | 26136 | ✅ | 0 | f3eadf1 | ✅ 修補 D8 五項；775 passed / 1 skipped（不退化），`dotnet build` 綠，禁區 grep clean，已 push |
+| D8複核 | 35860 | ✅ | 0 | —（唯讀） | ✅ agy 複核 D8 五項＋D7b 四項共 9 項全數確認修補到位，**判定 P003 可收案** |
+| D9 | 本次（Sonnet） | ✅ | 0 | 待補（歸檔 commit） | ✅ 三本帳歸檔（任務追蹤/進度日誌/移植狀態地圖/計畫檔）+ session report + 本檔狀態切完成 |
 
 ## 執行結果
 
@@ -85,5 +91,21 @@
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 110 passed；Application 150 passed；Persistence 10 passed；Content 21 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 417 passed / 1 skipped；逐專案測試合計 761 passed / 1 skipped；Core/Application 禁區 `rg -n "Maple.Adapters.V113" src/Maple.Core src/Maple.Application` 無命中。本刀未修改 `src/Maple.Adapters.V113`，Cut2 接 opcode dispatch/packet。
 - **D6 完成（2026-07-06）**：HiredMerchant Cut2 接 `CP_HiredMerchantRemoteControl(0x34)`、`USE_HIRED_MERCHANT(0x38)`、`MERCH_ITEM_STORE(0x3A)`。新增 `V113HiredMerchantHandler` 與 `V113HiredMerchantPackets`：遠端商人管理、商人 permit/title box、Fredrick pending package list/claim、claim 後背包/楓幣更新、進場/換圖 replay open merchant spawn；S2C 對照 Java `PlayerShopPacket`，全部標 unverified。`V113PlayerInteractionRouter` 仍只支援 trade，Java merchant 進店/上架/購買/移除等 0x73 子指令列後續。
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 110 passed；Application 150 passed；Persistence 10 passed；Content 21 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 423 passed / 1 skipped；逐專案測試合計 767 passed / 1 skipped；Core/Application 禁區 `rg -n "Maple.Adapters.V113" src/Maple.Core src/Maple.Application` 無命中。
-- **D7 完成（2026-07-07，待最終 commit 回填）**：HiredMerchant Cut3 對照 Java `PlayerInteractionHandler.java` merchant 分支，將 `PLAYER_INTERACTION(0x73)` 的 createType 5、visit、add/remove item、buy、exit、chat、open/maintenance off、close merchant 接到 `PlayerShopService`；補 Host startup reload service，啟動時過期 open/maintenance merchant 轉 claimable，未過期 open merchant 由 map-entry replay spawn；補 merchant position 持久化，去除新資料 spawn fallback `(0,0)`。
+- **D7 完成（2026-07-07，commit `7a6f347`）**：HiredMerchant Cut3 對照 Java `PlayerInteractionHandler.java` merchant 分支，將 `PLAYER_INTERACTION(0x73)` 的 createType 5、visit、add/remove item、buy、exit、chat、open/maintenance off、close merchant 接到 `PlayerShopService`；補 Host startup reload service，啟動時過期 open/maintenance merchant 轉 claimable，未過期 open merchant 由 map-entry replay spawn；補 merchant position 持久化，去除新資料 spawn fallback `(0,0)`。
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 111 passed；Application 151 passed；Persistence 11 passed；Content 21 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 425 passed / 1 skipped；逐專案測試合計 772 passed / 1 skipped；Core/Application 禁區 `rg -n "Maple.Adapters.V113" src/Maple.Core src/Maple.Application` 無命中。
+- **D8-前置（agy 前置審查，2026-07-07）**：對 `f638132..8c22d6a`（D0-D6 全 diff）唯讀審查，抓到 2 BLOCKER（① `ShowCouponRedeemedItem` S2C 版型錯位有 crash 風險 ② `PlayerShopService.ClaimAsync` 雙重領取 race）+ 2 WARNING（③ coupon `days==0` 應為永久 `-1` ④ HiredMerchant 測試缺 unverified 註記）；判定需修補。
+- **D7b 完成（2026-07-07，commit `ed49640`）**：修補 D8-前置四項缺陷——`ShowCouponRedeemedItem` 改 Java multi-item 版型；`PlayerShopService` 加 owner/store instance `SemaphoreSlim` 鎖消除 claim race（Buy/CollectMesos/Add/Take/Close/Open/Expire 全數依 store 序列化，無 static mutable state）；coupon `days<=0` 改永久 `-1` 語意；補 HiredMerchant fixture unverified 註記。新增 3 測試。
+- 驗證：`dotnet build --nologo --verbosity minimal` 0 warning / 0 error；Core 111、Application 153、Persistence 11、Content 21、Net 2、Tools.PacketDecoder 22、Tools.HeadlessClient 29 全綠；Adapters 426 passed / 1 skipped；逐專案測試合計 **775 passed / 1 skipped**；Core/Application 禁區 grep 無 V113 依賴。
+- **D8（GPT-5.5 終審，2026-07-07）**：獨立終審 D7+D7b 全 diff，抓到 5 項缺陷——①HiredMerchant 店內 UI 更新誤走全圖廣播，應只送 owner+visitors ②adapter 部分 mutation 直接改 repository 繞過 `PlayerShopService` 鎖 ③`CLOSE_MERCHANT` owner 回應封包版型錯誤 ④`HiredMerchantReloadHostedService` 啟動 reload 例外未捕捉降級 ⑤D7 E2E fixture 缺 unverified 註記；判定需修補。
+- **D8b 完成（2026-07-07，commit `f3eadf1`）**：修補 D8 五項缺陷——新增 `IHiredMerchantSessionDispatcher` 把店內 UI 封包收斂到 owner+visitors（商人外觀 spawn/destroy 維持 map-level broadcast）；enter/leave/maintenance mutation 移入 `PlayerShopService` 鎖；`CLOSE_MERCHANT` 改 Java `PlayerShopPacket.shopErrorMessage(0x15,0)`；啟動 reload try/catch + log 降級；補齊 unverified 註記並擴充訪客/非訪客廣播範圍測試。
+- 驗證：`dotnet build --nologo --verbosity minimal` 0 warning / 0 error；Core 111、Application 153、Persistence 11、Content 21、Net 2、Tools.PacketDecoder 22、Tools.HeadlessClient 29 全綠；Adapters 426 passed / 1 skipped；逐專案測試合計 **775 passed / 1 skipped**（不退化）；Core/Application 禁區 grep 無 V113 依賴。
+- **D8複核（agy，2026-07-07）**：複核 D8 五項＋回頭複查 D7b 四項共 9 項缺陷，全數確認修補到位、無殘留、無新缺陷，**判定 P003 可收案**。
+- **D9 完成（2026-07-07）**：鐵律歸檔——回填本計畫派工紀錄與本節、任務歷程 `2026-07-06_01` 五欄與狀態、`任務追蹤.md` 新增 P003 段落與里程碑註記、`進度日誌.md` 補 D0/D0b/D8/D8複核/D9 敘事、`docs/design/移植狀態地圖.md` 把 REWARD_ITEM/USE_TREASUER_CHEST/HiredMerchant×3 共 5 條 🟨→✅ 並重算統計（✅146/🟨12/🟦1/❌0/🚫5，合計 164）、新增 session report `docs/devlog/session-reports/2026-07-07_P003.md`。
+
+### P003 最終總結
+
+- **測試**：起點基線 645 → **775 passed / 1 skipped**（+130），全程 `dotnet build` 0 warning / 0 error，Core/Application 禁區 grep 全程無 V113 命中。
+- **交付**：13 個小件 stub 補完整（opcode 對調 bug、ARAN_COMBO combo buff、MONSTER_BOMB、COUPON_CODE 兌換全鏈等）、ItemMaker 合成系統完整（WZ 787 配方）、SkillBook catalog 165 筆、HiredMerchant 全套（Core 領域+PlayerShopService+LiteDB/Mongo 持久化+0x34/0x38/0x3A+0x73 子指令+啟動重載+E2E 整合測試）。
+- **審查**：agy 前置審查 4 缺陷（D7b 修）、GPT-5.5 終審 5 缺陷（D8b 修），agy 複核 9 項全 ✅，判定可收案。
+- **過程事實**：3 次 Codex 額度撞限（W2 的 D4+D4b 共用一次、D5 一次、D7 一次，皆兌換 usage limit reset 因應）、多次 CLI 假死中斷續跑（D2、D4×2、D4b×2）。
+- **殘餘 TODO（列待辦不擋收案，P004 候選）**：HiredMerchant/ItemMaker 全數 S2C 為 Java-source candidate/unverified 待真機 GUI smoke；REWARD_ITEM/寶箱 RandomRewards 權重 catalog；Snowball event 子系統、Shammos/Node 依賴（FRIENDLY_DAMAGE/HYPNOTIZE_DMG/DISPLAY_NODE）、MonsterCarnival、MTS 完整拍賣；562x 技能書未萃取。
