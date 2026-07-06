@@ -883,8 +883,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.CygnusSummon:
                         if (player is null) break;
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                    {
+                        var result = V113PlayerEventHandler.HandleCygnusSummon(player);
+                        if (result.StartNpcId is { } npcId)
+                        {
+                            conversation = await StartNpcConversationByNpcIdAsync(
+                                npcId,
+                                player,
+                                s,
+                                OpenShopFromNpcAsync,
+                                OpenStorageFromNpcAsync,
+                                WarpFromNpcAsync,
+                                token);
+                            if (conversation is null)
+                            {
+                                await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                            }
+                            break;
+                        }
+
+                        await SendPlayerEventResultAsync(result, s, token);
                         break;
+                    }
 
                     case V113ChannelRecvOp.ItemUnlock:
                         if (player is null) break;
@@ -1159,9 +1179,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.Snowball:
+                        if (player is null) break;
+                        await SendPlayerEventResultAsync(V113PlayerEventHandler.HandleSnowball(reader), s, token);
+                        break;
+
                     case V113ChannelRecvOp.LeftKnockBack:
                         if (player is null) break;
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await SendPlayerEventResultAsync(V113PlayerEventHandler.HandleLeftKnockBack(reader, player), s, token);
                         break;
 
                     case V113ChannelRecvOp.CsUpdate:
@@ -1333,16 +1357,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.AranCombo:
                         if (player is null) break;
-                        if (reader.Remaining >= 4)
-                        {
-                            _ = reader.ReadInt();
-                        }
-                        if (player.Character.Job < 2000)
-                        {
-                            await s.SendAsync(V113StatsPackets.EnableActions(), token);
-                            break;
-                        }
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await SendPlayerEventResultAsync(
+                            V113PlayerEventHandler.HandleAranCombo(reader, player, _skillService, DateTimeOffset.UtcNow),
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.Messenger:
@@ -1741,6 +1759,53 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
         return convo.Active ? convo : null;
+    }
+
+    private async Task<NpcConversation?> StartNpcConversationByNpcIdAsync(
+        int npcId,
+        Player player,
+        MapleSession session,
+        Func<int, CancellationToken, Task> openShop,
+        Func<int, CancellationToken, Task> openStorage,
+        Func<int, CancellationToken, Task> warp,
+        CancellationToken ct)
+    {
+        var ctx = new NpcContext(npcId, player, _questService);
+        var script = _npcScripts.TryCreate(npcId, ctx);
+        if (script is null)
+        {
+            _log.LogDebug("[Channel] NPC {Npc} 無對應腳本，略過", npcId);
+            return null;
+        }
+
+        var convo = new NpcConversation(
+            npcId, script, ctx,
+            sendDialog: (dlg, c) => session.SendAsync(V113NpcDialogEncoder.Encode(dlg), c),
+            warp: warp,
+            openShop: openShop,
+            openStorage: openStorage,
+            sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
+            sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c));
+
+        await convo.StartAsync(ct);
+        _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
+        return convo.Active ? convo : null;
+    }
+
+    private static async Task SendPlayerEventResultAsync(
+        V113PlayerEventResult result,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (!result.Handled)
+        {
+            return;
+        }
+
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
     }
 
     /// <summary>

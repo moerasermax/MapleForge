@@ -24,6 +24,15 @@ public enum CancelBuffStatus
     NoActiveBuff,
 }
 
+public enum AranComboStatus
+{
+    Success,
+    NotAranJob,
+    SkillLevelTooLow,
+    UnknownSkill,
+    NoEffect,
+}
+
 public sealed record SkillCastResult(
     SkillCastStatus Status,
     int SkillId,
@@ -36,6 +45,14 @@ public sealed record CancelBuffResult(
     int SourceId,
     MapleSkill? Skill,
     IReadOnlyList<PlayerBuffCancellation> Cancellations);
+
+public sealed record AranComboResult(
+    AranComboStatus Status,
+    int Combo,
+    int RequiredSkillLevel,
+    MapleSkill? Skill,
+    MapleStatEffect? Effect,
+    PlayerBuffChange? AppliedBuff);
 
 public sealed class SkillService
 {
@@ -125,5 +142,45 @@ public sealed class SkillService
     {
         ArgumentNullException.ThrowIfNull(player);
         return player.CancelExpiredBuffs(now);
+    }
+
+    public AranComboResult AddAranCombo(Player player, int amount, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (player.Character.Job is < 2000 or > 2112)
+        {
+            return new AranComboResult(AranComboStatus.NotAranJob, player.AranComboCount, 0, null, null, null);
+        }
+
+        var combo = player.AddAranCombo(amount, now);
+        var requiredLevel = combo is >= 10 and <= 100 && combo % 10 == 0
+            ? combo / 10
+            : 0;
+
+        if (requiredLevel == 0)
+        {
+            return new AranComboResult(AranComboStatus.Success, combo, requiredLevel, null, null, null);
+        }
+
+        if (player.GetSkillLevel(21000000) < requiredLevel)
+        {
+            return new AranComboResult(AranComboStatus.SkillLevelTooLow, combo, requiredLevel, null, null, null);
+        }
+
+        var skill = _skills.GetSkill(21000000);
+        var effect = skill?.GetEffect(requiredLevel) ?? new MapleStatEffect
+        {
+            SourceId = 21000000,
+            Level = (byte)requiredLevel,
+            IsOverTime = true,
+            DurationMilliseconds = 99_999,
+            IsCombo = true,
+        };
+
+        // Java MapleStatEffect.applyComboBuff uses a hard-coded 99999ms duration.
+        // TODO(P003-D4 data): validate 21000000 level effect timing against Skill.wz/live client.
+        var applied = player.ApplyAranComboBuff(21000000, (byte)requiredLevel, combo, 99_999, now);
+        return new AranComboResult(AranComboStatus.Success, combo, requiredLevel, skill, effect, applied);
     }
 }

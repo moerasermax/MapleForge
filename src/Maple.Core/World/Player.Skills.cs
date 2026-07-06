@@ -4,9 +4,16 @@ namespace Maple.Core.World;
 
 public sealed partial class Player
 {
+    private const int AranComboMaximum = 30_000;
+    private static readonly TimeSpan AranComboTimeout = TimeSpan.FromMilliseconds(4_000);
+
     private readonly object _skillsGate = new();
     private readonly Dictionary<MapleBuffStat, ActiveBuffStat> _activeBuffs = new();
     private readonly Dictionary<int, ActiveSkillCooldown> _skillCooldowns = new();
+
+    public int AranComboCount { get; private set; }
+
+    public DateTimeOffset? LastAranComboAt { get; private set; }
 
     public IReadOnlyList<CharacterSkillRecord> Skills => Character.Skills;
 
@@ -132,6 +139,45 @@ public sealed partial class Player
         return new PlayerSkillApplication(
             PlayerSkillApplicationStatus.Applied,
             new PlayerBuffChange(effect.SourceId, effect.DurationMilliseconds, now, stats));
+    }
+
+    public int AddAranCombo(int amount, DateTimeOffset now)
+    {
+        if (amount <= 0)
+        {
+            return AranComboCount;
+        }
+
+        lock (_skillsGate)
+        {
+            if (AranComboCount > 0 &&
+                LastAranComboAt is { } last &&
+                now - last > AranComboTimeout)
+            {
+                AranComboCount = 0;
+            }
+
+            AranComboCount = Math.Min(AranComboMaximum, AranComboCount + amount);
+            LastAranComboAt = now;
+            return AranComboCount;
+        }
+    }
+
+    public PlayerBuffChange ApplyAranComboBuff(int sourceId, byte skillLevel, int combo, int durationMilliseconds, DateTimeOffset now)
+    {
+        var stats = new[] { new BuffStatValue(MapleBuffStat.ARAN_COMBO, combo) };
+        lock (_skillsGate)
+        {
+            _activeBuffs[MapleBuffStat.ARAN_COMBO] = new ActiveBuffStat(
+                MapleBuffStat.ARAN_COMBO,
+                combo,
+                sourceId,
+                skillLevel,
+                now,
+                durationMilliseconds);
+        }
+
+        return new PlayerBuffChange(sourceId, durationMilliseconds, now, stats);
     }
 
     public IReadOnlyList<PlayerBuffCancellation> CancelBuffBySource(int sourceId)

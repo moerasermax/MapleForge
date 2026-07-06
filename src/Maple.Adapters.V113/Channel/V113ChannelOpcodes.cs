@@ -207,6 +207,7 @@ internal static class V113ChannelSendOp
     public const short GiveForeignBuff = unchecked((short)0xC0);
     public const short CancelForeignBuff = unchecked((short)0xC1);
     public const short RepairWindow = unchecked((short)0xD5);
+    public const short AranCombo = unchecked((short)0xDA);
     public const short NpcTalk = 0x13C;   // NPC 對話框（getNPCTalk，2-byte opcode）
     public const short OpenNpcShop = 0x13D;
     public const short ConfirmShopTransaction = 0x13E;
@@ -260,4 +261,8 @@ internal static class V113ChannelSendOp
     public const short BeansTips = 0x152;
     public const short BeanGameShow = 0x153;
     public const short BeanGameShoot = 0x154;
+    public const short RollSnowball = 0x117;
+    public const short HitSnowball = 0x118;
+    public const short SnowballMessage = 0x119;
+    public const short LeftKnockBack = 0x11A;
 }

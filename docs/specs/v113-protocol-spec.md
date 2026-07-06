@@ -951,15 +951,15 @@ Channel C→S handling:
 STRANGE_DATA(0x7FFF): no-op
 CP_UserCalcDamageStatSetRequest(0x66): no-op
 SHOW_EXP_CHAIR(0x24): readInt(chairId); ENABLE_ACTIONS
-CYGNUS_SUMMON(0x91): ENABLE_ACTIONS stub; NPC script start deferred
-SNOWBALL(0xCD): ENABLE_ACTIONS stub; real hit logic belongs to attack flow/event system
-LEFT_KNOCK_BACK(0xCE): ENABLE_ACTIONS stub
+CYGNUS_SUMMON(0x91): no C2S payload; job 2000 starts NPC 1202000, job 1000 starts NPC 1101008
+SNOWBALL(0xCD): read byte team + short unknown + byte position + byte stage; ENABLE_ACTIONS
+LEFT_KNOCK_BACK(0xCE): no required C2S payload; snowball maps send LEFT_KNOCK_BACK + ENABLE_ACTIONS
 GAME_POLL(0xA3): ENABLE_ACTIONS stub
 MAPLETV(0x10A): ENABLE_ACTIONS stub; no MapleTV broadcast system yet
 CP_BeansUpdate(0xE1): ENABLE_ACTIONS stub; bean system not implemented yet
 ```
 
-備註：本批只把已知 trivial opcode 從未處理狀態降噪/解除 client action lock，不建立新 domain service。2026-07-06 P003-D1 修正 `CLIENT_FEEDBACK`/`CLIENT_ERROR` 對調 bug，並補 Login opcode fixture。`SHOW_EXP_CHAIR` 對照 Java `PlayerHandler.ShowExpChair` 後確認本身就是讀 `chairId` 後 `enableActions`，因此 MapleForge 保持 Java parity no-op。證據層級為 Java source + `Maple.Host.Shared` build + `Maple.Adapters.V113.Tests` 402 passed / 1 skipped；真 v113 client smoke 未跑。
+備註：本批只把已知 trivial opcode 從未處理狀態降噪/解除 client action lock，不建立新 domain service。2026-07-06 P003-D1 修正 `CLIENT_FEEDBACK`/`CLIENT_ERROR` 對調 bug，並補 Login opcode fixture。`SHOW_EXP_CHAIR` 對照 Java `PlayerHandler.ShowExpChair` 後確認本身就是讀 `chairId` 後 `enableActions`，因此 MapleForge 保持 Java parity no-op。2026-07-06 P003-D2 對照 Java `UserInterfaceHandler.CygnusSummonNPCRequest` 接入 Cygnus NPC script intent；`SNOWBALL` 對照 Java handler 本身只 `enableActions`，真正 hit 在 close-range attack path 的 `MapleSnowballs.hitSnowball`；`LEFT_KNOCK_BACK` 對照 Java 雪地圖 gate 送 `LEFT_KNOCK_BACK(0x11A)` + `EnableActions`。LEFT_KNOCK_BACK S2C fixture 為 Java-source candidate / unverified。證據層級為 Java source + MapleForge targeted tests；真 v113 client smoke 未跑。
 
 ---
 ## P2 Batch 1B 簡易 handler opcode 註記（2026-06-18）
@@ -983,7 +983,7 @@ writeInt(itemId)    // routed to existing USE_ITEMEFFECT MVP handler
 
 ARAN_COMBO:
 writeShort(0x92)
-writeInt(timestamp) // MapleForge MVP reads when present, then EnableActions
+writeBytes(payload) // Java dispatch ignores payload and calls AranCombo(c, chr, 1); MapleForge preserves optional payload for fixture compatibility.
 
 FRIENDLY_DAMAGE:
 writeShort(0xBA)
@@ -1013,9 +1013,10 @@ writeShort(0xE5)
 
 - `PASSIVE_ENERGY(0x28)` 走既有 close-range attack parser/combat path；Java 的 `energy=true` 細節尚未分離建模。
 - `WHEEL_OF_FORTUNE(0x2E)` 走既有 `USE_ITEMEFFECT(0x2D)` handler，保留持有檢查與視覺廣播語義。
-- `FRIENDLY_DAMAGE`、`MONSTER_BOMB`、`HYPNOTIZE_DMG`、`DISPLAY_NODE`、`ARAN_COMBO` 目前是讀取指定欄位後 `EnableActions` 的 MVP，不做 mob kill、node packet、combo state/buff application。
+- `ARAN_COMBO(0x92)` P003-D2 已不再是 MVP stub：Core `Player` 保存 runtime combo count + last combo time，Application `SkillService.AddAranCombo` 對齊 Java job gate `2000..2112`、4 秒重置、30000 上限、10/20/.../100 門檻與 `21000000` skill level gate；達門檻時套 `ARAN_COMBO` runtime buff，Adapter 送 Java-source candidate `GIVE_BUFF(0x1E)`，mask 為 `ARAN_COMBO`，value=combo，buffId=21000000，duration=99999ms。`21000000` WZ effect 缺資料時仍用 fallback combo effect 產完整封包；TODO：以 Skill.wz/live client 校準 timing/effect。
+- `FRIENDLY_DAMAGE`、`MONSTER_BOMB`、`HYPNOTIZE_DMG`、`DISPLAY_NODE` 目前是讀取指定欄位後 `EnableActions` 的 MVP，不做 mob kill、node packet。
 - `CS_UPDATE(0xE5)` 目前送既有 cash balances 與 Cash inventory snapshot；Java 的 gifts/wishlist refresh 尚無 MapleForge model/encoder。
-- 證據層級：Java source + Host.Shared build + Adapters.V113 targeted tests；真 v113 client UI/cash-shop/combat smoke 待後續批量驗證。
+- 證據層級：Java source + Host.Shared build + Core/Application/Adapters targeted tests；ARAN combo / LEFT_KNOCK_BACK S2C layout 仍為 Java-source candidate / unverified，真 v113 client UI/combat/event smoke 待後續批量驗證。
 
 ---
 ## P2 Batch 2A Event Systems MVP stubs（2026-06-18） / 三 stub 升級（2026-06-18）

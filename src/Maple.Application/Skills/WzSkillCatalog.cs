@@ -165,7 +165,7 @@ public sealed class WzSkillCatalog : ISkillCatalog
             CooldownSeconds = GetInt(source, "cooltime", 0),
             MoveTo = GetInt(source, "moveTo", -1),
             Statups = statups.ToArray(),
-            IsCombo = skillId is 1111002 or 11111001,
+            IsCombo = skillId is 1111002 or 11111001 or 21000000,
             IsFinalAttack = IsFinalAttackSkill(skillId),
             IsFieldObjectSkill = IsFieldObjectSkill(skillId),
         };

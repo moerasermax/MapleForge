@@ -1,6 +1,6 @@
 # P003: 移植清尾 + MVP stub 補完整（Codex 主刀）
 
-> 狀態：🚧 執行中（D1 完成，2026-07-06）
+> 狀態：🚧 執行中（D2 完成，2026-07-06）
 > 任務歷程：`docs/devlog/任務歷程/2026-07-06_01_移植_P003清尾與stub補完整.md`
 
 ## 計畫凍結區（批准後不改）
@@ -62,9 +62,12 @@
 |------|-----|------|------|--------|------|
 | D0 | 42912 | ✅ | 0 | 34a7f91 + ff87115 | ✅ 地圖新統計 ✅129/🟨29/🟦1/❌0/🚫5，grep 逐項核對吻合；SOLOMON 等 4 項複查有真實邏輯維持 ✅ |
 | D0b | 38652 | ✅ | 0 | —（唯讀） | ✅ 結論：**D3 的 Mob 四項只補 MONSTER_BOMB(0xBB)**（機甲技能，selfDestruction 動畫+無獎勵擊殺路徑）；FRIENDLY_DAMAGE/HYPNOTIZE_DMG/DISPLAY_NODE 維持 stub（共同前置＝Shammos 護送+Node 資料模型不存在，延 P004 評估） |
-| D1 | Codex | ✅ | 0 | 本次 D1 commit | ✅ `CLIENT_FEEDBACK=0x0C` / `CLIENT_ERROR=0x0F` 修正；SHOW_EXP_CHAIR/ThrowGrenade Java parity parser+EnableActions fixture；REWARD_ITEM/TREASURE_CHEST 升級 deterministic reward path（WZ reward catalog TODO）；Adapters 402+1skip、逐專案總測 714+1skip、`dotnet build` 綠 |
+| D1 | 33980 | ✅ | 0 | f9a7c22 | ✅ `CLIENT_FEEDBACK=0x0C` / `CLIENT_ERROR=0x0F` 修正；SHOW_EXP_CHAIR/ThrowGrenade Java parity parser+EnableActions fixture；REWARD_ITEM/TREASURE_CHEST 升級 deterministic reward path（WZ reward catalog TODO）；Adapters 402+1skip、逐專案總測 714+1skip、`dotnet build` 綠 |
+| D2 | Codex | ✅ | 0 | 本次 D2 commit | ✅ ARAN_COMBO 補 Core runtime combo + Application skill/buff gate + Adapter `GIVE_BUFF(ARAN_COMBO)` candidate；CYGNUS_SUMMON 接 Java NPC script intent；SNOWBALL/LEFT_KNOCK_BACK 做 handler parity，完整 MapleSnowball event 延 P004；新增 8 測試；逐專案總測 722+1skip、`dotnet build` 綠 |
 
 ## 執行結果
 
 - **D1 完成（2026-07-06）**：修正 Login opcode 對調 bug；新增 `V113RewardItemHandler`，統一處理 `SHOW_EXP_CHAIR`、`REWARD_ITEM`、`USE_TREASUER_CHEST`、`CP_UserThrowGrenade` 的解析與回應。`REWARD_ITEM` / `USE_TREASUER_CHEST` 依任務允許先走 deterministic reward path，完整 `Etc.wz` reward / Java `StructRewardItem` / `RandomRewards` 權重資料源留 TODO。`CP_UserThrowGrenade` 以本 Java oracle 為準：`PlayerHandler.ThrowGrenade` 是空 handler，故不猜測 S2C 廣播。
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；`dotnet test tests/Maple.Adapters.V113.Tests/Maple.Adapters.V113.Tests.csproj -v quiet --nologo` 402 passed / 1 skipped；逐專案測試合計 714 passed / 1 skipped；Core/Application 禁區 grep 無 V113 using。
+- **D2 完成（2026-07-06）**：`ARAN_COMBO(0x92)` 對照 Java `PlayerHandler.AranCombo` / `MapleStatEffect.applyComboBuff`，在 Core `Player` 保存 runtime combo count/last time，Application 對齊 Aran job gate、4 秒 reset、30000 cap、10..100 門檻與 `21000000` skill level gate，Adapter 達門檻時送 Java-source candidate `GIVE_BUFF(ARAN_COMBO)`；`CYGNUS_SUMMON(0x91)` 對照 `UserInterfaceHandler.CygnusSummonNPCRequest` 啟 NPC 1202000/1101008；`SNOWBALL(0xCD)` / `LEFT_KNOCK_BACK(0xCE)` 依 PM 接受的深度判定做 handler parity，完整 `MapleSnowball` event 子系統延 P004。
+- 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Adapters 406 passed / 1 skipped；Core 104 passed；Application 136 passed；Content 17 passed；Persistence 6 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；逐專案測試合計 722 passed / 1 skipped；Core/Application 禁區 grep 無 V113 using。

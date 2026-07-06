@@ -69,6 +69,33 @@ public sealed class PlayerSkillsTests
         Assert.Empty(player.ActiveBuffs);
     }
 
+    [Fact]
+    public void AddAranCombo_ResetsAfterJavaTimeoutAndCapsAtMaximum()
+    {
+        var player = MakePlayer();
+        var now = new DateTimeOffset(2026, 7, 6, 1, 2, 3, TimeSpan.Zero);
+
+        Assert.Equal(9, player.AddAranCombo(9, now));
+        Assert.Equal(1, player.AddAranCombo(1, now.AddMilliseconds(4_001)));
+        Assert.Equal(30_000, player.AddAranCombo(40_000, now.AddMilliseconds(4_002)));
+    }
+
+    [Fact]
+    public void ApplyAranComboBuff_RegistersRuntimeAranComboStat()
+    {
+        var player = MakePlayer();
+        var now = new DateTimeOffset(2026, 7, 6, 1, 2, 3, TimeSpan.Zero);
+
+        var applied = player.ApplyAranComboBuff(21000000, skillLevel: 1, combo: 10, durationMilliseconds: 99_999, now);
+
+        Assert.Equal(21000000, applied.SourceId);
+        Assert.Equal(new[] { new BuffStatValue(MapleBuffStat.ARAN_COMBO, 10) }, applied.Stats);
+        var buff = Assert.Single(player.ActiveBuffs);
+        Assert.Equal(MapleBuffStat.ARAN_COMBO, buff.Stat);
+        Assert.Equal(10, buff.Value);
+        Assert.Equal(now.AddMilliseconds(99_999), buff.ExpiresAt);
+    }
+
     private static Player MakePlayer(short mp = 5)
     {
         var chr = new Character
