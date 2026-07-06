@@ -1,6 +1,6 @@
 # P003: 移植清尾 + MVP stub 補完整（Codex 主刀）
 
-> 狀態：🚧 執行中（W1 D3 完成，2026-07-06）
+> 狀態：🚧 執行中（W2 D4/D4b 完成，2026-07-06）
 > 任務歷程：`docs/devlog/任務歷程/2026-07-06_01_移植_P003清尾與stub補完整.md`
 
 ## 計畫凍結區（批准後不改）
@@ -64,7 +64,9 @@
 | D0b | 38652 | ✅ | 0 | —（唯讀） | ✅ 結論：**D3 的 Mob 四項只補 MONSTER_BOMB(0xBB)**（機甲技能，selfDestruction 動畫+無獎勵擊殺路徑）；FRIENDLY_DAMAGE/HYPNOTIZE_DMG/DISPLAY_NODE 維持 stub（共同前置＝Shammos 護送+Node 資料模型不存在，延 P004 評估） |
 | D1 | 33980 | ✅ | 0 | f9a7c22 | ✅ `CLIENT_FEEDBACK=0x0C` / `CLIENT_ERROR=0x0F` 修正；SHOW_EXP_CHAIR/ThrowGrenade Java parity parser+EnableActions fixture；REWARD_ITEM/TREASURE_CHEST 升級 deterministic reward path（WZ reward catalog TODO）；Adapters 402+1skip、逐專案總測 714+1skip、`dotnet build` 綠 |
 | D2 | 41780→46296（CLI 中斷續跑） | ✅ | 0 | 1bc22a1 | ✅ ARAN_COMBO 補 Core runtime combo + Application skill/buff gate + Adapter `GIVE_BUFF(ARAN_COMBO)` candidate；CYGNUS_SUMMON 接 Java NPC script intent；SNOWBALL/LEFT_KNOCK_BACK 做 handler parity，完整 MapleSnowball event 延 P004；新增 8 測試；逐專案總測 722+1skip、`dotnet build` 綠 |
-| D3 | 10448 | ✅ | 0 | 本次 D3 commit | ✅ COUPON_CODE 兌換流程 + GAME_POLL/MAPLETV Java parity + CP_BeansUpdate reset/exit + MONSTER_BOMB 無獎勵擊殺；新增 11 測試；逐專案總測 733+1skip、`dotnet build` 綠 |
+| D3 | 10448 | ✅ | 0 | 9f7a60d | ✅ COUPON_CODE 兌換流程 + GAME_POLL/MAPLETV Java parity + CP_BeansUpdate reset/exit + MONSTER_BOMB 無獎勵擊殺；新增 11 測試；逐專案總測 733+1skip、`dotnet build` 綠 |
+| D4 | 38244→34224 | ✅ | 0 | 本次 D4 commit | ✅ ItemMaker 完整：Content WZ catalog + Application service + v113 handler；WZ 61+726 配方；新增 13 測試；逐專案總測 747+1skip、`dotnet build` 綠 |
+| D4b | 42164→13560 | ✅ | 0 | bc021dc | ✅ SkillBook catalog Item.wz 萃取 165 筆，已 push |
 
 ## 執行結果
 
@@ -74,3 +76,5 @@
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Adapters 406 passed / 1 skipped；Core 104 passed；Application 136 passed；Content 17 passed；Persistence 6 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；逐專案測試合計 722 passed / 1 skipped；Core/Application 禁區 grep 無 V113 using。
 - **D3 完成（2026-07-06）**：`COUPON_CODE(0xE7)` 對照 Java `CashShopOperation.CouponCode` 建 Core coupon model/repository、LiteDB/Mongo persistence 與 CashShopService 兌換流程，支援 Cash/GASH、MaplePoints、item、meso，失敗回 Java cash-shop fail `0xB3`；`GAME_POLL(0xA3)` 對照 Java `PollEnabled=false` 做 parser + `EnableActions` parity；`MAPLETV(0x10A)` 因 Java 無 dispatch/無 broadcaster 做 payload parser + parity；`CP_BeansUpdate(0xE1)` 對照 `BeanGame.BeansUpdate` reset runtime session 並送 exit；`MONSTER_BOMB(0xBB)` 對照 `MobHandler.handleMonsterBomb` 補 selfD WZ stat、無獎勵擊殺路徑與 kill animation 廣播。
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 104 passed；Application 140 passed；Content 17 passed；Persistence 7 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 412 passed / 1 skipped；逐專案測試合計 733 passed / 1 skipped；Core/Application 禁區 grep 無 V113 using。
+- **D4 完成（2026-07-06）**：`ITEM_MAKER(0x6B)` 對照 Java `ItemMakerHandler.ItemMaker` / `ItemMakerFactory`，新增 Core `IItemMakeCatalog` 中性 contract、Content `WzItemMakeCatalog`、Application `ItemMakerService` 與 v113 `V113ItemMakerHandler`。支援 makerType 1 寶石/裝備製作、makerType 3 結晶製作、makerType 4 裝備分解；處理 Maker 技能等級 gate、材料/楓幣驗證與扣除、催化劑 90% 成功率、寶石 stat 加成、裝備 randomize stats、分解產物 RNG。WZ 實讀 `Etc.wz/ItemMake.img`：寶石配方 61 筆、職業裝備配方 726 筆，合計 787 筆。
+- 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 104 passed；Content 21 passed；Application 145 passed；Persistence 7 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 417 passed / 1 skipped；逐專案測試合計 747 passed / 1 skipped；Core/Application 禁區 `rg` 無 V113 依賴。ItemMaker success S2C fixture 為 Java-source candidate / unverified，真 v113 client GUI smoke 未跑。

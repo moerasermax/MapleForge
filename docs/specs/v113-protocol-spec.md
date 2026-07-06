@@ -1114,7 +1114,7 @@ writeByte(action)             // 3 light, 5 reward, 6 exit in Java BeansPacket
 - Java dispatch：`MapleServerHandler.java` routes `USE_SCRIPTED_NPC_ITEM` → `InventoryHandler.UseScriptedNPCItem`、`CP_UserThrowGrenade` → `PlayerHandler.ThrowGrenade`、`MOB_NODE` → `MobHandler.handleMobNode`
 - Java handlers：`MobHandler.handleMobNode`、`InventoryHandler.UseScriptedNPCItem`、`InventoryHandler.UseTeleRock`、`PlayerHandler.ThrowGrenade`
 
-C→S MVP layouts:
+C→S layouts:
 
 ```
 MOB_NODE:
@@ -1222,7 +1222,19 @@ writeInt(itemId)
 ITEM_MAKER:
 writeShort(0x6B)
 writeInt(makerType)
-// full makerType-specific payload deferred
+// makerType 1: create gem/equip
+writeInt(toCreate)
+// equipment recipe may include the optional suffix below when the client sends enhancer/stimulator data
+writeByte(useStimulator)
+writeInt(numEnchanters)
+repeat numEnchanters:
+    writeInt(enchanterItemId)
+// makerType 3: create crystal from ETC stack
+writeInt(etcItemId)
+// makerType 4: disassemble equip
+writeInt(itemId)
+writeInt(tick)
+writeInt(slot)
 
 USE_TREASUER_CHEST:
 writeShort(0x6C)
@@ -1238,13 +1250,14 @@ writeInt(number)
 語義：
 
 - 2026-06-18 本輪原先只把 6 個 complex subsystem opcode 接成安全 MVP stub：讀取任務指定最小欄位後送 `EnableActions`。
-- `ITEM_MAKER(0x6B)` Java 依 `makerType` 分岔處理寶石/道具製作/分解與成功廣播；MapleForge MVP 只讀 `makerType`，不建立 maker catalog 或 crafting/synthesis service。
+- `ITEM_MAKER(0x6B)` P003-D4 已不再是純 stub：對照 Java `ItemMakerHandler.ItemMaker` / `ItemMakerFactory`，MapleForge 解析 makerType 1/3/4，Content `WzItemMakeCatalog` 從 `Etc.wz/ItemMake.img` 實讀 61 筆寶石配方與 726 筆職業裝備配方，並讀取必要 item metadata（`reqLevel`/`tuc`/`inc*`/`itemMakeLevel`/`flag`）供 Application 中性 contract 使用。Application `ItemMakerService` 支援寶石/裝備製作、100 個 ETC 轉結晶、裝備分解；處理 Maker 技能等級、材料/楓幣扣除、催化劑 90% 成功率、寶石 stat 加成、裝備 randomize stats 與分解數量 RNG。Java handler 未以角色等級 gate 擋製作，MapleForge 保留此行為。
+- `ITEM_MAKER` 成功時送 inventory mutations、meso update、add item，再送 Java `MaplePacketCreator.ItemMaker_Success()` 對應效果：self `SHOW_ITEM_GAIN_INCHAT(0xC7)` payload `byte 0x11 + int 0`；同地圖其他玩家 `SHOW_FOREIGN_EFFECT(0xBF)` payload `int charId + byte 0x11 + int 0`。失敗回 `EnableActions`。此 success effect fixture 為 Java-source candidate / unverified，未升 golden truth。
 - `REWARD_ITEM(0x6A)` P003-D1 已不再是純 stub：解析 `short slot + int itemId`，依 `Player.InventoryTypeOf(itemId)` 驗證箱子/獎勵道具，成功時消耗一個來源道具、給 deterministic fallback reward `2000000 x1`、送 `MODIFY_INVENTORY_ITEM`、`SHOW_ITEM_GAIN_INCHAT` reward animation candidate 與 `EnableActions`，並對同圖其他玩家廣播 `SHOW_FOREIGN_EFFECT` reward animation candidate。TODO：以 `Etc.wz` reward 資料或 Java `StructRewardItem` catalog 取代 fallback reward。
 - `USE_TREASUER_CHEST(0x6C)` P003-D1 已不再是純 stub：解析 `short slot + int itemId`，支援 Java 金/銀寶箱 `4280000/4280001`，分別要求 cash key `5490000/5490001`；成功時消耗 ETC 寶箱與 Cash 鑰匙，給 deterministic reward（金箱 `1302059 x1`、銀箱 `1002452 x1`），送背包 mutation、reward gain animation candidate 與 `EnableActions`。TODO：以 Java `RandomRewards` 權重表與完整 rare broadcast 取代 deterministic first-entry reward。
 - `CP_UserAntiMacroItemUseRequest(0x61)` / `CP_UserAntiMacroSkillUseRequest(0x62)` 本輪依 migration wave 範圍讀 `targetCharacterId`/`mode` 或 `targetCharacterId` 後放行，不建立 anti-macro runtime state。注意：目前 Java tree 的 `PlayersHandler.AntiMacro` full handler 讀 target character name string，item 分支再讀 slot/itemId；完整 anti-macro 移植時需重新對齊真 v113 client capture 或最終採用的 Java source map。
 - `MONSTER_CARNIVAL(0xD5)` Java 依 `tab`/`number` 消耗 CP 召喚怪物、debuff 或 guardian；MapleForge MVP 只讀 `tab + number` 後放行，不建立 carnival party/CP/event state machine。
 - reward animation S2C fixture 註記：`SHOW_ITEM_GAIN_INCHAT` / `SHOW_FOREIGN_EFFECT` reward animation layout 目前是 Java-source candidate / unverified，未升 golden truth。
-- 證據層級：Java source map + MapleForge adapter implementation + fixture tests；P003-D1 `dotnet build` 0 warning/0 error，逐專案測試 714 passed / 1 skipped。真 v113 client crafting/reward/anti-macro/carnival smoke 未跑。
+- 證據層級：Java source map + MapleForge adapter implementation + fixture tests；P003-D4 `dotnet build` 0 warning/0 error，逐專案測試 747 passed / 1 skipped。真 v113 client crafting/reward/anti-macro/carnival smoke 未跑。
 
 ---
 ## P2 Migration Wave 4 heavy opcode MVP stubs（2026-06-18）

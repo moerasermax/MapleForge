@@ -30,6 +30,7 @@ using Maple.Application.Stats;
 using Maple.Application.Storage;
 using Maple.Application.Trades;
 using Maple.Content.CashShop;
+using Maple.Content.Items;
 using Maple.Content.Quests;
 using Maple.Content.Shops;
 using Maple.Content.Skills;
@@ -173,6 +174,9 @@ public static class MapleServerHost
         builder.Services.AddSingleton<UseItemService>();
         builder.Services.AddSingleton<IItemUseCatalog, WzItemUseCatalog>();
         builder.Services.AddSingleton<ItemUseService>();
+        builder.Services.AddSingleton<IItemMakeCatalog, WzItemMakeCatalog>();
+        builder.Services.AddSingleton<IItemMakerRandomSource, ItemMakerRandomSource>();
+        builder.Services.AddSingleton<ItemMakerService>();
         builder.Services.AddSingleton<IV113ItemUseRandomSource, V113ItemUseRandomSource>();
         builder.Services.AddSingleton<V113ItemUseHandler>();
         builder.Services.AddSingleton<IScrollCatalog, HardcodedScrollCatalog>();

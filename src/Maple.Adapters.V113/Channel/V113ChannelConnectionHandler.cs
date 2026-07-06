@@ -85,6 +85,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113UseCashItemHandler _useCashItemHandler;
     private readonly PetService _petService;
     private readonly ItemUseService _itemUseService;
+    private readonly ItemMakerService _itemMakerService;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
     private readonly V113AllianceHandler _allianceHandler;
@@ -133,6 +134,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113UseCashItemHandler useCashItemHandler,
         PetService petService,
         ItemUseService itemUseService,
+        ItemMakerService itemMakerService,
         QuestService questService,
         StatsService statsService,
         V113AllianceHandler allianceHandler,
@@ -180,6 +182,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _useCashItemHandler = useCashItemHandler;
         _petService = petService;
         _itemUseService = itemUseService;
+        _itemMakerService = itemMakerService;
         _questService = questService;
         _statsService = statsService;
         _allianceHandler = allianceHandler;
@@ -776,8 +779,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.ItemMaker:
                         if (player is null) break;
-                        _ = reader.ReadInt();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleItemMakerResultAsync(
+                            V113ItemMakerHandler.Handle(reader, player, _itemMakerService),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.UseTreasureChest:
@@ -3637,6 +3643,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var packet in result.MapPackets)
         {
             await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+        }
+    }
+
+    private async Task HandleItemMakerResultAsync(
+        V113ItemMakerHandleResult result,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        foreach (var packet in result.BroadcastPackets)
+        {
+            await BroadcastPacketToOthersAsync(player.Character, packet, ct);
         }
 
         if (result.CharacterMutated)

@@ -35,6 +35,13 @@ public sealed partial class Player
         int itemId,
         int quantity,
         out IReadOnlyList<InventoryQuantityMutation> mutations)
+        => TryConsumeItemById(InventoryType.Use, itemId, quantity, out mutations);
+
+    public bool TryConsumeItemById(
+        InventoryType type,
+        int itemId,
+        int quantity,
+        out IReadOnlyList<InventoryQuantityMutation> mutations)
     {
         mutations = Array.Empty<InventoryQuantityMutation>();
         if (itemId <= 0 || quantity <= 0)
@@ -42,7 +49,7 @@ public sealed partial class Player
             return false;
         }
 
-        var bag = Inventory.By(InventoryType.Use);
+        var bag = Inventory.By(type);
         if (bag.CountById(itemId) < quantity)
         {
             return false;
@@ -70,7 +77,7 @@ public sealed partial class Player
             }
 
             changed.Add(new InventoryQuantityMutation(
-                InventoryType.Use,
+                type,
                 item.Slot,
                 itemId,
                 oldQuantity,
