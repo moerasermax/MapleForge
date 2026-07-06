@@ -129,6 +129,28 @@ public sealed class CashShopServiceTests
     }
 
     [Fact]
+    public async Task RedeemCoupon_ItemRewardWithZeroDaysIsPermanent()
+    {
+        var coupons = new InMemoryCouponRepository(new CashCoupon
+        {
+            Code = "D3PERM",
+            Type = CashCouponRewardType.Item,
+            Item = 2000001,
+            Size = 1,
+            Time = 0,
+        });
+        var service = new CashShopService(new FakeCashItemCatalog(DefaultItem), coupons);
+        var account = new Account();
+        var player = NewPlayer(gender: 0);
+
+        var result = await service.RedeemCouponAsync(account, player, "D3PERM", FixedNow);
+
+        Assert.Equal(CashCouponRedeemStatus.Success, result.Status);
+        Assert.NotNull(result.GainedItem);
+        Assert.Equal(-1, result.GainedItem!.Expiration);
+    }
+
+    [Fact]
     public async Task RedeemCoupon_AlreadyUsedFailsWithoutReward()
     {
         var coupons = new InMemoryCouponRepository(new CashCoupon

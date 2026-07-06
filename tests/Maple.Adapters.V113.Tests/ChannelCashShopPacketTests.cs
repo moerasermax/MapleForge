@@ -101,6 +101,42 @@ public sealed class ChannelCashShopPacketTests
     }
 
     [Fact]
+    public void ShowCouponRedeemedItem_WritesJavaMultiItemCouponLayout()
+    {
+        var item = new Item
+        {
+            ItemId = 2000000,
+            Quantity = 3,
+            UniqueId = 456,
+            Expiration = -1,
+        };
+
+        var packet = V113CashShopPackets.ShowCouponRedeemedItem(
+            item,
+            accountId: 7,
+            serialNumber: 10020030,
+            maplePoints: 12,
+            mesos: 34);
+
+        // Java-source candidate/unverified: MTSCSPacket.showCouponRedeemedItem(Map, int, int, MapleClient);
+        // no true v113 client capture has promoted this S2C fixture to golden truth.
+        Assert.Equal(73, packet.Length);
+        Assert.Equal(V113CashShopPackets.SendCashShopOperation, BitConverter.ToInt16(packet, 0));
+        Assert.Equal(V113CashShopPackets.ServerCouponRedeemed, packet[2]);
+        Assert.Equal(1, packet[3]);
+        Assert.Equal(456, BitConverter.ToInt64(packet, 4));
+        Assert.Equal(7, BitConverter.ToInt64(packet, 12));
+        Assert.Equal(2000000, BitConverter.ToInt32(packet, 20));
+        Assert.Equal(10020030, BitConverter.ToInt32(packet, 24));
+        Assert.Equal(3, BitConverter.ToInt16(packet, 28));
+        Assert.True(packet.Skip(30).Take(15).All(static b => b == 0));
+        Assert.Equal(150842304000000000L, BitConverter.ToInt64(packet, 45));
+        Assert.Equal(0, BitConverter.ToInt64(packet, 53));
+        Assert.Equal(12, BitConverter.ToInt64(packet, 61));
+        Assert.Equal(34, BitConverter.ToInt32(packet, 69));
+    }
+
+    [Fact]
     public void ShowGiftsEmpty_WritesJavaEmptyGiftList()
     {
         Assert.Equal(

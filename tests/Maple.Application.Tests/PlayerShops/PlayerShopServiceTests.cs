@@ -104,6 +104,29 @@ public sealed class PlayerShopServiceTests
     }
 
     [Fact]
+    public async Task Claim_ConcurrentRequestsOnlyOneSucceeds()
+    {
+        var repo = new InMemoryHiredMerchantRepository { YieldOnFindClaimable = true };
+        var service = new PlayerShopService(repo);
+        var merchant = NewOpenMerchant();
+        merchant.TryAddListing(InventoryType.Use, new Item { ItemId = 2000002, Quantity = 2 }, 2, 1, 100);
+        merchant.State.Mesos = 250;
+        merchant.CloseForClaim(_now);
+        await repo.AddAsync(merchant);
+        var owner = NewPlayer(1, "Owner", 10, meso: 100);
+
+        var results = await Task.WhenAll(
+            Task.Run(() => service.ClaimAsync(owner)),
+            Task.Run(() => service.ClaimAsync(owner)));
+
+        Assert.Equal(1, results.Count(static r => r.Status == PlayerShopServiceStatus.Success));
+        Assert.Equal(1, results.Count(static r => r.Status == PlayerShopServiceStatus.MerchantNotFound));
+        Assert.Equal(350, owner.Character.Meso);
+        Assert.Equal(2, owner.Inventory.By(InventoryType.Use).CountById(2000002));
+        Assert.Null(await repo.FindByStoreIdAsync(merchant.StoreId));
+    }
+
+    [Fact]
     public async Task Claim_RejectsMesoOverflowAndKeepsMerchantPackage()
     {
         var repo = new InMemoryHiredMerchantRepository();
@@ -160,6 +183,8 @@ public sealed class PlayerShopServiceTests
         private readonly Dictionary<int, HiredMerchant> _merchants = new();
         private int _nextStoreId = 1;
 
+        public bool YieldOnFindClaimable { get; init; }
+
         public Task<int> AddAsync(HiredMerchant merchant, CancellationToken cancellationToken = default)
         {
             if (merchant.StoreId <= 0)
@@ -186,11 +211,21 @@ public sealed class PlayerShopServiceTests
                 m.OwnerId == ownerId &&
                 m.Status is PlayerShopStatus.Draft or PlayerShopStatus.Open or PlayerShopStatus.Maintenance));
 
-        public Task<HiredMerchant?> FindClaimableByOwnerAsync(int ownerAccountId, int ownerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_merchants.Values.FirstOrDefault(m =>
+        public async Task<HiredMerchant?> FindClaimableByOwnerAsync(
+            int ownerAccountId,
+            int ownerId,
+            CancellationToken cancellationToken = default)
+        {
+            if (YieldOnFindClaimable)
+            {
+                await Task.Yield();
+            }
+
+            return _merchants.Values.FirstOrDefault(m =>
                 m.OwnerAccountId == ownerAccountId &&
                 m.OwnerId == ownerId &&
-                m.Status is PlayerShopStatus.PendingClaim or PlayerShopStatus.Expired));
+                m.Status is PlayerShopStatus.PendingClaim or PlayerShopStatus.Expired);
+        }
 
         public Task<IReadOnlyList<HiredMerchant>> FindOpenByMapAsync(byte channel, int mapId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<HiredMerchant>>(_merchants.Values

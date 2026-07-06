@@ -276,7 +276,7 @@ public sealed class CashShopService
         => (int)Math.Clamp((long)current + delta, 0, int.MaxValue);
 
     private static long ToExpiration(int days, DateTimeOffset now)
-        => days < 0 ? -1 : now.AddDays(days).ToUnixTimeMilliseconds();
+        => days <= 0 ? -1 : now.AddDays(days).ToUnixTimeMilliseconds();
 
     private static int GetBalance(Account account, CashCurrencyType currency)
         => currency == CashCurrencyType.Cash ? account.CashPoints : account.MaplePoints;

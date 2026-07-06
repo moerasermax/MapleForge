@@ -127,18 +127,21 @@ internal static class V113CashShopPackets
         return w.ToArray();
     }
 
-    /// <summary>Java-source candidate/unverified: MTSCSPacket.showCouponRedeemedItem(itemid).</summary>
-    public static byte[] ShowCouponRedeemedItem(int itemId)
+    /// <summary>Java-source candidate/unverified: MTSCSPacket.showCouponRedeemedItem(Map, int, int, MapleClient).</summary>
+    public static byte[] ShowCouponRedeemedItem(
+        Item item,
+        int accountId,
+        int serialNumber = 0,
+        long maplePoints = 0,
+        int mesos = 0)
     {
         var w = new PacketWriter();
         w.WriteShort(SendCashShopOperation);
-        w.WriteShort(ServerCouponRedeemed);
-        w.WriteInt(0);
-        w.WriteInt(1);
-        w.WriteShort(1);
-        w.WriteShort(0x1A);
-        w.WriteInt(itemId);
-        w.WriteInt(0);
+        w.WriteByte(ServerCouponRedeemed);
+        w.WriteByte(1);
+        AddCashItemInfo(w, item, accountId, serialNumber);
+        w.WriteLong(maplePoints);
+        w.WriteInt(mesos);
         return w.ToArray();
     }
 
@@ -302,7 +305,7 @@ public sealed class V113CashShopOperationHandler
         var packets = new List<byte[]>();
         if (result.GainedItem is not null)
         {
-            packets.Add(V113CashShopPackets.ShowCouponRedeemedItem(result.GainedItem.ItemId));
+            packets.Add(V113CashShopPackets.ShowCouponRedeemedItem(result.GainedItem, account.Id));
         }
 
         packets.Add(V113CashShopPackets.ShowCashBalances(account));

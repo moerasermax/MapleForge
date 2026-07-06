@@ -32,6 +32,7 @@ public sealed class ChannelHiredMerchantHandlerTests
 
         Assert.True(result.Handled);
         var packet = Assert.Single(result.SelfPackets);
+        // Java-source candidate/unverified: HiredMerchant S2C interaction window has not been live-client captured.
         var reader = new PacketReader(packet);
         Assert.Equal(V113ChannelSendOp.PlayerInteraction, reader.ReadShort());
         Assert.Equal(5, reader.ReadByte());
@@ -59,6 +60,7 @@ public sealed class ChannelHiredMerchantHandlerTests
             _now);
 
         var packet = Assert.Single(result.SelfPackets);
+        // Java-source candidate/unverified: title-box S2C fixture is not promoted to golden truth.
         Assert.Equal(new byte[] { 0x2F, 0x00, 0x07 }, packet);
     }
 
@@ -83,8 +85,10 @@ public sealed class ChannelHiredMerchantHandlerTests
             _now);
 
         Assert.True(result.Handled);
+        // Java-source candidate/unverified: owner interaction open packet layout is source-derived only.
         Assert.Equal(V113ChannelSendOp.PlayerInteraction, new PacketReader(Assert.Single(result.SelfPackets)).ReadShort());
         var spawn = new PacketReader(Assert.Single(result.MapPackets));
+        // Java-source candidate/unverified: SPAWN_HIRED_MERCHANT fixture still needs true v113 client capture.
         Assert.Equal(V113ChannelSendOp.SpawnHiredMerchant, spawn.ReadShort());
         Assert.Equal(player.Character.Id, spawn.ReadInt());
         Assert.Equal(5030000, spawn.ReadInt());
@@ -114,6 +118,7 @@ public sealed class ChannelHiredMerchantHandlerTests
             owner);
 
         var packet = Assert.Single(result.SelfPackets);
+        // Java-source candidate/unverified: Fredrick package S2C layout is source-derived only.
         var reader = new PacketReader(packet);
         Assert.Equal(V113ChannelSendOp.MerchItemStore, reader.ReadShort());
         Assert.Equal(V113HiredMerchantPackets.MerchItemStoreOpenPackage, reader.ReadByte());
@@ -141,6 +146,7 @@ public sealed class ChannelHiredMerchantHandlerTests
         Assert.Contains(result.SelfPackets, packet => new PacketReader(packet).ReadShort() == V113ChannelSendOp.ModifyInventoryItem);
         Assert.Contains(result.SelfPackets, packet => new PacketReader(packet).ReadShort() == V113ChannelSendOp.UpdateStats);
         var message = result.SelfPackets.Single(packet => new PacketReader(packet).ReadShort() == V113ChannelSendOp.MerchItemMessage);
+        // Java-source candidate/unverified: Fredrick claim response S2C fixture has no live-client ground truth yet.
         var messageReader = new PacketReader(message);
         Assert.Equal(V113ChannelSendOp.MerchItemMessage, messageReader.ReadShort());
         Assert.Equal(V113HiredMerchantPackets.MerchItemClaimSuccess, messageReader.ReadByte());
@@ -156,6 +162,7 @@ public sealed class ChannelHiredMerchantHandlerTests
 
         var packet = V113HiredMerchantPackets.SpawnHiredMerchant(merchant, new Position(12, 34, 0, 5));
 
+        // Java-source candidate/unverified: SPAWN_HIRED_MERCHANT fixture still needs true v113 client capture.
         var reader = new PacketReader(packet);
         Assert.Equal(V113ChannelSendOp.SpawnHiredMerchant, reader.ReadShort());
         Assert.Equal(merchant.OwnerId, reader.ReadInt());

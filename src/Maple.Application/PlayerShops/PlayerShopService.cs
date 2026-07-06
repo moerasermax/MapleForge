@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Maple.Core.Inventory;
 using Maple.Core.PlayerShops;
 using Maple.Core.Shops;
@@ -59,6 +60,8 @@ public sealed class PlayerShopService
     public static readonly TimeSpan DefaultHiredMerchantDuration = TimeSpan.FromDays(1);
 
     private readonly IHiredMerchantRepository _hiredMerchants;
+    private readonly ConcurrentDictionary<int, SemaphoreSlim> _merchantLocks = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _ownerLocks = new();
 
     public PlayerShopService(IHiredMerchantRepository hiredMerchants)
     {
@@ -76,6 +79,9 @@ public sealed class PlayerShopService
         Position position = default,
         CancellationToken cancellationToken = default)
     {
+        using var ownerLock = await EnterOwnerLockAsync(owner.Character.AccountId, owner.Character.Id, cancellationToken)
+            .ConfigureAwait(false);
+
         if (await _hiredMerchants.FindOpenByOwnerAsync(owner.Character.AccountId, owner.Character.Id, cancellationToken)
                 .ConfigureAwait(false) is not null ||
             await _hiredMerchants.FindClaimableByOwnerAsync(owner.Character.AccountId, owner.Character.Id, cancellationToken)
@@ -106,6 +112,8 @@ public sealed class PlayerShopService
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
         var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
         if (merchant is null)
         {
@@ -133,6 +141,8 @@ public sealed class PlayerShopService
         int price,
         CancellationToken cancellationToken = default)
     {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
         var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
         if (merchant is null)
         {
@@ -209,6 +219,8 @@ public sealed class PlayerShopService
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
         var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
         if (merchant is null)
         {
@@ -267,6 +279,8 @@ public sealed class PlayerShopService
         int listingIndex,
         CancellationToken cancellationToken = default)
     {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
         var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
         if (merchant is null)
         {
@@ -307,6 +321,8 @@ public sealed class PlayerShopService
         Player owner,
         CancellationToken cancellationToken = default)
     {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
         var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
         if (merchant is null)
         {
@@ -336,6 +352,8 @@ public sealed class PlayerShopService
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
         var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
         if (merchant is null)
         {
@@ -357,6 +375,9 @@ public sealed class PlayerShopService
         Player owner,
         CancellationToken cancellationToken = default)
     {
+        using var ownerLock = await EnterOwnerLockAsync(owner.Character.AccountId, owner.Character.Id, cancellationToken)
+            .ConfigureAwait(false);
+
         var merchant = await _hiredMerchants
             .FindClaimableByOwnerAsync(owner.Character.AccountId, owner.Character.Id, cancellationToken)
             .ConfigureAwait(false);
@@ -393,11 +414,41 @@ public sealed class PlayerShopService
         var expired = await _hiredMerchants.FindExpiredAsync(now, cancellationToken).ConfigureAwait(false);
         foreach (var merchant in expired)
         {
+            using var merchantLock = await EnterMerchantLockAsync(merchant.StoreId, cancellationToken).ConfigureAwait(false);
             merchant.CloseForClaim(now);
             await _hiredMerchants.UpsertAsync(merchant, cancellationToken).ConfigureAwait(false);
         }
 
         return expired.Count;
+    }
+
+    private async Task<LockReleaser> EnterMerchantLockAsync(int storeId, CancellationToken cancellationToken)
+    {
+        var gate = _merchantLocks.GetOrAdd(storeId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new LockReleaser(gate);
+    }
+
+    private async Task<LockReleaser> EnterOwnerLockAsync(int ownerAccountId, int ownerId, CancellationToken cancellationToken)
+    {
+        var key = ownerAccountId.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            ":" +
+            ownerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var gate = _ownerLocks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new LockReleaser(gate);
+    }
+
+    private readonly struct LockReleaser : IDisposable
+    {
+        private readonly SemaphoreSlim _gate;
+
+        public LockReleaser(SemaphoreSlim gate)
+        {
+            _gate = gate;
+        }
+
+        public void Dispose() => _gate.Release();
     }
 
     private static bool CanHoldAll(Player player, IReadOnlyList<(InventoryType Type, Item Item)> items)
