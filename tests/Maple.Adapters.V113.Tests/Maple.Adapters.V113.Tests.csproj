@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Maple.Adapters.V113\Maple.Adapters.V113.csproj" />
+    <ProjectReference Include="..\..\src\Maple.Persistence\Maple.Persistence.csproj" />
     <ProjectReference Include="..\..\src\Maple.Versioning\Maple.Versioning.csproj" />
   </ItemGroup>
 

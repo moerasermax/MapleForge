@@ -1,4 +1,5 @@
 using Maple.Core.Inventory;
+using Maple.Core.World;
 
 namespace Maple.Core.PlayerShops;
 
@@ -28,6 +29,26 @@ public sealed class PlayerShopState
     public int MapId { get; set; }
 
     public byte Channel { get; set; }
+
+    public short X { get; set; }
+
+    public short Y { get; set; }
+
+    public byte Stance { get; set; }
+
+    public short Foothold { get; set; }
+
+    public Position Position
+    {
+        get => new(X, Y, Stance, Foothold);
+        set
+        {
+            X = value.X;
+            Y = value.Y;
+            Stance = value.Stance;
+            Foothold = value.Foothold;
+        }
+    }
 
     public int Mesos { get; set; }
 

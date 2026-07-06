@@ -36,7 +36,7 @@ internal static class V113HiredMerchantPackets
         w.WriteByte(5);
         w.WriteByte(5);
         w.WriteByte(4);
-        w.WriteByte(merchant.IsOwner(viewer.Character.Id, viewer.Character.Name) ? 0 : 1);
+        w.WriteByte(GetViewerSlot(viewer, merchant));
         w.WriteByte(0);
         w.WriteInt(merchant.ItemId);
         w.WriteMapleString("精靈商人");
@@ -134,6 +134,18 @@ internal static class V113HiredMerchantPackets
         return w.ToArray();
     }
 
+    /// <summary>Unverified: PlayerShopPacket.shopChat(message, slot).</summary>
+    public static byte[] ShopChat(string message, int slot)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(V113ChannelSendOp.PlayerInteraction);
+        w.WriteByte(0x06);
+        w.WriteByte(0x09);
+        w.WriteByte(slot);
+        w.WriteMapleString(message);
+        return w.ToArray();
+    }
+
     /// <summary>Unverified: PlayerShopPacket.Merchant_Buy_Error(message).</summary>
     public static byte[] MerchantBuyError(byte message)
     {
@@ -223,6 +235,17 @@ internal static class V113HiredMerchantPackets
             w.WriteInt(listing.Price);
             AddItemInfo(w, listing.Item.ToItem());
         }
+    }
+
+    private static byte GetViewerSlot(Player viewer, HiredMerchant merchant)
+    {
+        if (merchant.IsOwner(viewer.Character.Id, viewer.Character.Name))
+        {
+            return 0;
+        }
+
+        return merchant.State.Visitors
+            .FirstOrDefault(v => v.CharacterId == viewer.Character.Id)?.Slot ?? (byte)1;
     }
 
     private static void AddInteraction(PacketWriter w, HiredMerchant merchant)

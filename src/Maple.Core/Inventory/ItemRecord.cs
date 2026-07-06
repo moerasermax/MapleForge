@@ -41,12 +41,13 @@ public sealed class ItemRecord
 
     public Item ToItem()
     {
+        var owner = Owner ?? string.Empty;
         if (!IsEquip)
-            return new Item { ItemId = ItemId, Slot = Slot, Quantity = Quantity, Owner = Owner, Expiration = Expiration, Flag = Flag, UniqueId = UniqueId };
+            return new Item { ItemId = ItemId, Slot = Slot, Quantity = Quantity, Owner = owner, Expiration = Expiration, Flag = Flag, UniqueId = UniqueId };
 
         return new Equip
         {
-            ItemId = ItemId, Slot = Slot, Quantity = 1, Owner = Owner, Expiration = Expiration, Flag = Flag, UniqueId = UniqueId,
+            ItemId = ItemId, Slot = Slot, Quantity = 1, Owner = owner, Expiration = Expiration, Flag = Flag, UniqueId = UniqueId,
             UpgradeSlots = UpgradeSlots, ViciousHammer = ViciousHammer, Level = Level, ItemLevel = ItemLevel, ItemExp = ItemExp,
             Str = Str, Dex = Dex, Int = Int, Luk = Luk, Hp = Hp, Mp = Mp, Watk = Watk, Matk = Matk,
             Wdef = Wdef, Mdef = Mdef, Acc = Acc, Avoid = Avoid, Hands = Hands, Speed = Speed, Jump = Jump,
@@ -58,7 +59,7 @@ public sealed class ItemRecord
         var r = new ItemRecord
         {
             Type = (byte)type, IsEquip = it.IsEquip, ItemId = it.ItemId, Slot = it.Slot,
-            Quantity = it.Quantity, Owner = it.Owner, Expiration = it.Expiration, Flag = it.Flag, UniqueId = it.UniqueId,
+            Quantity = it.Quantity, Owner = it.Owner ?? string.Empty, Expiration = it.Expiration, Flag = it.Flag, UniqueId = it.UniqueId,
         };
         if (it is Equip e)
         {

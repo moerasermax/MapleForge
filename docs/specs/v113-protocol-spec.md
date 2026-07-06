@@ -1293,8 +1293,8 @@ if operation == 20:
 - `0x34`：對照 Java 遠端操控入口，要求 action 3、持有 `5470000`、人在 `910000000`、不在 party；找到 owner active merchant 後轉 maintenance 並送 owner 管理視窗，若只有 pending package 則送 Fredrick item data。
 - `0x38`：要求商人房 `910000001..910000022` 與 Cash 背包 `5030000` series permit；無 active/pending merchant 時送 Java title box `ENTRUSTED_SHOP_CHECK_RESULT(0x2F), byte 7`。MapleForge 另支援 Java create fragment candidate 以建立/open `HiredMerchant` 並廣播 spawn，但真 client title submit 仍待 `PLAYER_INTERACTION(0x73)` createType 5 校準。
 - `0x3A`：operation 20 顯示 active merchant location 或 pending package；25 回 take-out confirmation `MERCH_ITEM_STORE(0x143), op 0x24`；26 走 D5 `PlayerShopService.ClaimAsync` 領回暫存物與楓幣並刪 package；27 exit no-op。
-- 進場/換圖 replay：channel 進入商人房時查 `IHiredMerchantRepository.FindOpenByMapAsync` 並送 `SPAWN_HIRED_MERCHANT(0x103)`。D5 domain/persistence 未保存 merchant position，現階段 replay fallback position 為 `(0,0)`，create path 使用 owner current position。
-- `PLAYER_INTERACTION(0x73)` 缺口：目前 `V113PlayerInteractionRouter` 仍只支援 trade；Java 的 merchant createType 5、visit、set item、remove item、buy item hired merchant 等子指令尚未完整接線，列 Cut3/後續 TODO，不在 D6 硬塞。
+- 進場/換圖 replay：channel 進入商人房時查 `IHiredMerchantRepository.FindOpenByMapAsync` 並送 `SPAWN_HIRED_MERCHANT(0x103)`。P003-D7 起新建立商人的 position 會持久化；舊資料若沒有 position 仍以 caller fallback 保底。
+- `PLAYER_INTERACTION(0x73)`：D6 尚未接；P003-D7 已接 merchant 子指令，詳見下一節。
 
 S→C layouts（Java-source candidate / unverified）：
 
@@ -1337,6 +1337,78 @@ addInteraction(candidate)
 ```
 
 證據層級：Java source map + MapleForge Adapters implementation + fixture tests；`dotnet build` 0 warning / 0 error，逐專案測試 767 passed / 1 skipped，Core/Application 禁區 grep 無 V113 依賴。真 v113 client HiredMerchant GUI smoke 未跑，所有 HiredMerchant S2C fixture 仍為 unverified。
+
+---
+## P003 D7 HiredMerchant Cut3 PLAYER_INTERACTION + Reload（2026-07-07）
+
+來源：
+
+- `recv.properties`：`PLAYER_INTERACTION=0x73`
+- Java oracle：`PlayerInteractionHandler.java` merchant 分支、`PlayerShopPacket.java`
+- 延續 D5 `PlayerShopService` / `IHiredMerchantRepository` 與 D6 `V113HiredMerchantPackets`
+
+C→S merchant 子指令：
+
+```
+CREATE:
+writeByte(0x00)
+writeByte(5)                 // createType 5 = HiredMerchant
+writeMapleAsciiString(title)
+writeByte(passwordFlag)      // merchant branch consumes the flag only
+writeShort(cashSlot)
+writeInt(merchantItemId)     // 5030000 series
+
+VISIT:
+writeByte(0x04)
+writeInt(ownerObjectId)      // MapleForge spawn uses ownerId as map object id; storeId accepted internally when matched
+
+CHAT:
+writeByte(0x06)
+writeMapleAsciiString(message)
+
+EXIT:
+writeByte(0x0A)
+
+OPEN / MAINTANCE_OFF:
+writeByte(0x0B)              // OPEN after setup
+writeByte(0x24)              // maintenance off / reopen
+
+ADD_ITEM / PLAYER_SHOP_ADD_ITEM:
+writeByte(0x1E or 0x13)
+writeByte(inventoryType)
+writeShort(slot)
+writeShort(bundles)
+writeShort(quantityPerBundle)
+writeInt(pricePerBundle)
+
+BUY_ITEM_HIREDMERCHANT:
+writeByte(0x21)              // 0x14/0x1F also accepted on same branch
+writeByte(itemIndex)
+writeShort(bundleCount)
+
+REMOVE_ITEM / REMOVE_ITEM_PS:
+writeByte(0x23 or 0x18)
+writeShort(itemIndex)
+
+CLOSE_MERCHANT:
+writeByte(0x26)
+```
+
+語義：
+
+- CREATE createType 5 驗商人房 `910000001..910000022`、Cash 背包 5030000-series permit、無 active/pending package 後建立 Draft merchant，保存 owner current `Position`，送 owner hired-merchant setup UI。
+- ADD_ITEM 扣 owner 背包、上架 listing，回 `MODIFY_INVENTORY_ITEM` 與 `shopItemUpdate`。REMOVE_ITEM 把剩餘 bundle 回 owner 背包並更新 listing。
+- OPEN/MAINTANCE_OFF 將 Draft/Maintenance merchant 轉 Open，清玩家 runtime shop id，對地圖廣播 `SPAWN_HIRED_MERCHANT`。VISIT 非 owner 進店會保存 visitor slot、送 open UI、廣播 visitor add；owner visit 進 maintenance。
+- BUY 呼叫 `PlayerShopService.BuyAsync`，扣 buyer meso、給 item、更新 merchant proceeds/listing；CHAT 送 Java `shopChat` candidate；EXIT 離開目前 merchant runtime view。
+- CLOSE_MERCHANT 將 owner merchant 轉 `PendingClaim`，廣播 destroy，後續由 `MERCH_ITEM_STORE(0x3A)` operation 26 / Fredrick claim。
+- Host startup 掛 `HiredMerchantReloadHostedService`：啟動時先 `ExpireOpenMerchantsAsync` 把過期 open/maintenance merchant 轉 claimable，再掃 channel 對應自由市場商人房 open merchants；實際 map spawn 由進圖/換圖 replay 查 `FindOpenByMapAsync` 發送。
+
+S→C layouts：
+
+- 延續 D6 `PLAYER_INTERACTION(0x146)` hired merchant UI、`SPAWN_HIRED_MERCHANT(0x103)`、`DESTROY_HIRED_MERCHANT(0x104)`、`MERCH_ITEM_STORE(0x143)`。
+- D7 新增/使用 `shopChat`、visitor add/leave、shop item update、merchant close error message；所有 S2C 仍為 Java-source candidate / unverified，未升 golden truth。
+
+證據層級：Java source map + MapleForge Core/Application/Persistence/Adapters tests；新增 LiteDB E2E 覆蓋 create→add→open→restart replay→visit/buy→close→Fredrick claim。真 v113 client HiredMerchant GUI smoke 未跑。
 
 ---
 ## P2 Migration Wave 4 heavy opcode MVP stubs（2026-06-18）

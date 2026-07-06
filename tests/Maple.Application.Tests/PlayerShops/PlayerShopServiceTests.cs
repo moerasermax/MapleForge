@@ -64,6 +64,26 @@ public sealed class PlayerShopServiceTests
     }
 
     [Fact]
+    public async Task TakeListing_ReturnsRemainingItemToOwnerAndExposesReturnedItem()
+    {
+        var repo = new InMemoryHiredMerchantRepository();
+        var service = new PlayerShopService(repo);
+        var merchant = NewOpenMerchant();
+        merchant.TryAddListing(InventoryType.Use, new Item { ItemId = 2000000, Quantity = 6 }, 3, 2, 100);
+        await repo.AddAsync(merchant);
+        var owner = NewPlayer(1, "Owner", 10, meso: 0);
+
+        var result = await service.TakeListingAsync(merchant.StoreId, owner, listingIndex: 0);
+
+        var persisted = await repo.FindByStoreIdAsync(merchant.StoreId);
+        Assert.Equal(PlayerShopServiceStatus.Success, result.Status);
+        Assert.Equal(InventoryType.Use, result.ReturnedInventoryType);
+        Assert.NotNull(result.ReturnedItem);
+        Assert.Equal(6, owner.Inventory.By(InventoryType.Use).CountById(2000000));
+        Assert.Empty(persisted!.Items);
+    }
+
+    [Fact]
     public async Task Claim_ReturnsPendingMerchantItemsAndMesosThenDeletesPackage()
     {
         var repo = new InMemoryHiredMerchantRepository();

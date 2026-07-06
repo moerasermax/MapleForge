@@ -31,7 +31,9 @@ public sealed record PlayerShopListingResult(
     PlayerShopServiceStatus Status,
     HiredMerchant? Merchant = null,
     ShopInventoryMutation? Mutation = null,
-    PlayerShopItemListing? Listing = null);
+    PlayerShopItemListing? Listing = null,
+    InventoryType? ReturnedInventoryType = null,
+    Item? ReturnedItem = null);
 
 public sealed record PlayerShopPurchaseUseCaseResult(
     PlayerShopServiceStatus Status,
@@ -71,6 +73,7 @@ public sealed class PlayerShopService
         byte channel,
         DateTimeOffset now,
         TimeSpan? duration = null,
+        Position position = default,
         CancellationToken cancellationToken = default)
     {
         if (await _hiredMerchants.FindOpenByOwnerAsync(owner.Character.AccountId, owner.Character.Id, cancellationToken)
@@ -90,7 +93,8 @@ public sealed class PlayerShopService
             mapId,
             channel,
             now,
-            duration ?? DefaultHiredMerchantDuration);
+            duration ?? DefaultHiredMerchantDuration,
+            position);
 
         await _hiredMerchants.AddAsync(merchant, cancellationToken).ConfigureAwait(false);
         return new HiredMerchantCreateResult(PlayerShopServiceStatus.Success, merchant);
@@ -283,10 +287,19 @@ public sealed class PlayerShopService
             return new PlayerShopListingResult(MapTakeItemStatus(taken.Status), merchant);
         }
 
-        owner.Inventory.By(taken.InventoryType!.Value).Gain(taken.Item!);
+        var returned = owner.Inventory.By(taken.InventoryType!.Value).Gain(taken.Item!);
+        if (returned is null)
+        {
+            return new PlayerShopListingResult(PlayerShopServiceStatus.InventoryFull, merchant);
+        }
+
         owner.FlushInventory();
         await _hiredMerchants.UpsertAsync(merchant, cancellationToken).ConfigureAwait(false);
-        return new PlayerShopListingResult(PlayerShopServiceStatus.Success, merchant);
+        return new PlayerShopListingResult(
+            PlayerShopServiceStatus.Success,
+            merchant,
+            ReturnedInventoryType: taken.InventoryType,
+            ReturnedItem: returned);
     }
 
     public async Task<PlayerShopSettlementResult> CollectMesosAsync(

@@ -165,7 +165,9 @@ public sealed class V113HiredMerchantHandler
 
         var merchants = await _merchants.FindOpenByMapAsync(channel, mapId, ct).ConfigureAwait(false);
         return merchants
-            .Select(merchant => V113HiredMerchantPackets.SpawnHiredMerchant(merchant, fallbackPosition))
+            .Select(merchant => V113HiredMerchantPackets.SpawnHiredMerchant(
+                merchant,
+                merchant.Position == default ? fallbackPosition : merchant.Position))
             .ToArray();
     }
 
@@ -234,7 +236,15 @@ public sealed class V113HiredMerchantHandler
 
         var title = string.IsNullOrWhiteSpace(request.Title) ? player.Character.Name : request.Title.Trim();
         var create = await _shops
-            .CreateHiredMerchantAsync(player, request.ItemId, title, player.Character.MapId, channel, now, cancellationToken: ct)
+            .CreateHiredMerchantAsync(
+                player,
+                request.ItemId,
+                title,
+                player.Character.MapId,
+                channel,
+                now,
+                position: player.Position,
+                cancellationToken: ct)
             .ConfigureAwait(false);
         if (create.Status != PlayerShopServiceStatus.Success || create.Merchant is null)
         {
@@ -247,7 +257,7 @@ public sealed class V113HiredMerchantHandler
             true,
             false,
             new[] { V113HiredMerchantPackets.OpenHiredMerchant(player, merchant, firstTime: true, now) },
-            new[] { V113HiredMerchantPackets.SpawnHiredMerchant(merchant, player.Position) });
+            new[] { V113HiredMerchantPackets.SpawnHiredMerchant(merchant, merchant.Position) });
     }
 
     private static bool TryParseCreateRequest(byte[] body, out V113HiredMerchantCreateRequest request)

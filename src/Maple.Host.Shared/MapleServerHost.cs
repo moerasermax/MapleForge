@@ -248,6 +248,7 @@ public static class MapleServerHost
             var ip = System.Net.IPAddress.Parse(o.ChannelIp).GetAddressBytes();
             return new V113ChannelOptions(ChannelIndex: 0, ChannelIp: ip, ChannelPort: o.ChannelPort);
         });
+        builder.Services.AddHostedService<HiredMerchantReloadHostedService>();
 
         // v113 Channel 連線處理。
         builder.Services.AddSingleton<IChannelConnectionHandler, V113ChannelConnectionHandler>();

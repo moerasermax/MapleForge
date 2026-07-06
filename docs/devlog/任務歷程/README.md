@@ -40,7 +40,8 @@ YYYY-MM-DD_序號_類型_簡述.md
 
 | 編號 | 類型 | 標題 | 狀態 |
 |---|---|---|---|
-| 2026-07-06_03 | 移植 | HiredMerchant Cut2 Adapters | 🚧 執行中 |
+| 2026-07-07_01 | 移植 | HiredMerchant Cut3 收尾刀 | ✅ 完成 |
+| 2026-07-06_03 | 移植 | HiredMerchant Cut2 Adapters | ✅ 完成 |
 | 2026-07-06_02 | 移植 | HiredMerchant Cut1 Core App Persistence | ✅ 完成 |
 | 2026-06-18_26 | 修補 | P002 三輪稽核最終修補 | ✅ 完成 |
 | 2026-06-18_25 | 驗證 | P002 三輪稽核 | ✅ 完成 |

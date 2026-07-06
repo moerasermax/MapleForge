@@ -1,5 +1,6 @@
 using Maple.Core.Inventory;
 using Maple.Core.PlayerShops;
+using Maple.Core.World;
 
 namespace Maple.Core.Tests.PlayerShops;
 
@@ -109,6 +110,24 @@ public sealed class HiredMerchantTests
         Assert.Single(attempts, result => result.Status == PlayerShopPurchaseStatus.Success);
         Assert.Single(attempts, result => result.Status == PlayerShopPurchaseStatus.SoldOut);
         Assert.Equal((short)0, merchant.Items[0].Bundles);
+    }
+
+    [Fact]
+    public void Create_StoresMerchantPosition()
+    {
+        var merchant = HiredMerchant.Create(
+            ownerId: 1,
+            ownerAccountId: 10,
+            ownerName: "Owner",
+            itemId: 5030000,
+            title: "Position merchant",
+            mapId: 910000001,
+            channel: 1,
+            now: _now,
+            duration: TimeSpan.FromDays(1),
+            position: new Position(12, 34, 1, 56));
+
+        Assert.Equal(new Position(12, 34, 1, 56), merchant.Position);
     }
 
     private HiredMerchant NewMerchant()

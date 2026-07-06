@@ -1,6 +1,7 @@
 using LiteDB;
 using Maple.Core.Inventory;
 using Maple.Core.PlayerShops;
+using Maple.Core.World;
 using Maple.Persistence.PlayerShops;
 
 namespace Maple.Persistence.Tests;
@@ -34,6 +35,7 @@ public sealed class HiredMerchantRepositoryTests : IDisposable
         Assert.Equal("Potion shop", loaded!.Title);
         Assert.Equal(910000001, loaded.MapId);
         Assert.Equal((byte)1, loaded.Channel);
+        Assert.Equal(new Position(123, 456, 2, 7), loaded.Position);
         Assert.Equal(12_345, loaded.Mesos);
         Assert.Contains("Blocked", loaded.Blacklist);
         Assert.Equal(2, loaded.Items.Count);
@@ -66,6 +68,19 @@ public sealed class HiredMerchantRepositoryTests : IDisposable
         Assert.Single(expiredAfter);
         Assert.NotNull(claimable);
         Assert.Equal(PlayerShopStatus.PendingClaim, claimable!.Status);
+    }
+
+    [Fact]
+    public async Task LiteDbRepository_RoundTripsMerchantPosition()
+    {
+        var repo = new LiteDbHiredMerchantRepository(_db);
+        var merchant = NewMerchant();
+
+        var storeId = await repo.AddAsync(merchant);
+        var loaded = await repo.FindByStoreIdAsync(storeId);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(new Position(123, 456, 2, 7), loaded!.Position);
     }
 
     [Fact]
@@ -102,7 +117,8 @@ public sealed class HiredMerchantRepositoryTests : IDisposable
             mapId: 910000001,
             channel: 1,
             now: _now,
-            duration: TimeSpan.FromDays(1));
+            duration: TimeSpan.FromDays(1),
+            position: new Position(123, 456, 2, 7));
         merchant.Open(_now);
         return merchant;
     }

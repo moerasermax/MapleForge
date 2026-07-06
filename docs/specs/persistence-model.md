@@ -10,7 +10,7 @@
 
 ## Hired Merchant
 
-來源任務：P003-D5 HiredMerchant Cut1。Java 對照：`HiredMerchantHandler.java`、`HiredMerchant.java`、`AbstractPlayerStore.saveItems`、`PlayerInteractionHandler` 商店分支。
+來源任務：P003-D5 HiredMerchant Cut1；P003-D7 補 merchant position 持久化。Java 對照：`HiredMerchantHandler.java`、`HiredMerchant.java`、`AbstractPlayerStore.saveItems`、`PlayerInteractionHandler` 商店分支。
 
 Repository contract：`Maple.Core.PlayerShops.IHiredMerchantRepository`。
 
@@ -25,6 +25,7 @@ Repository contract：`Maple.Core.PlayerShops.IHiredMerchantRepository`。
 | `ItemId` | Hired merchant permit/item id used to create the shop. |
 | `Title` | Store title/description. |
 | `MapId`, `Channel` | Runtime placement target for Cut2 spawn/remote control. |
+| `X`, `Y`, `Stance`, `Foothold` | Merchant map position used by startup/map-entry spawn replay. Added in P003-D7 to remove the Cut2 `(0,0)` fallback for newly persisted merchants. |
 | `Mesos` | Accumulated merchant proceeds after Java `EntrustedStoreTax` calculation. |
 | `Status` | `Draft`, `Open`, `Maintenance`, `PendingClaim`, `Closed`, `Expired`. |
 | `OpenedAtUnixMillis`, `ExpireAtUnixMillis` | UTC unix millis; default hired merchant duration is 24 hours. |

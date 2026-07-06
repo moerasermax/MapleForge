@@ -23,6 +23,14 @@ internal sealed class HiredMerchantDocument
 
     public byte Channel { get; set; }
 
+    public short X { get; set; }
+
+    public short Y { get; set; }
+
+    public byte Stance { get; set; }
+
+    public short Foothold { get; set; }
+
     public int Mesos { get; set; }
 
     public PlayerShopStatus Status { get; set; }
@@ -72,6 +80,10 @@ internal static class HiredMerchantDocumentMapper
             Title = merchant.Title,
             MapId = merchant.MapId,
             Channel = merchant.Channel,
+            X = merchant.State.X,
+            Y = merchant.State.Y,
+            Stance = merchant.State.Stance,
+            Foothold = merchant.State.Foothold,
             Mesos = merchant.Mesos,
             Status = merchant.Status,
             OpenedAtUnixMillis = ToUnixMillis(merchant.State.OpenedAt),
@@ -109,6 +121,10 @@ internal static class HiredMerchantDocumentMapper
             Title = document.Title,
             MapId = document.MapId,
             Channel = document.Channel,
+            X = document.X,
+            Y = document.Y,
+            Stance = document.Stance,
+            Foothold = document.Foothold,
             Mesos = document.Mesos,
             Status = document.Status,
             OpenedAt = FromUnixMillis(document.OpenedAtUnixMillis),

@@ -823,7 +823,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.PlayerInteraction:
                         if (player is null) break;
-                        await _playerInteractionRouter.HandleAsync(reader, player, token);
+                        var playerInteractionMutated = await _playerInteractionRouter.HandleAsync(
+                            reader,
+                            player,
+                            (packet, tkn) => s.SendAsync(packet, tkn),
+                            (packet, tkn) => BroadcastPacketToMapAsync(player.Character, s, packet, tkn),
+                            (byte)(_options.ChannelIndex + 1),
+                            DateTimeOffset.UtcNow,
+                            token);
+                        if (playerInteractionMutated)
+                        {
+                            await _charService.UpdateAsync(player.Character, token);
+                        }
                         break;
 
                     case V113ChannelRecvOp.PartyOperation:

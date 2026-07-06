@@ -7,7 +7,7 @@
 更新: 2026-07-06 22:54
 關聯里程碑: P003 W3
 關聯記憶:
-關聯commit: 待填
+關聯commit: 8c22d6a
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）
@@ -41,7 +41,7 @@ s2c 封包沒有真機 ground truth，一律標記 `unverified`。若商人進�
 
 ## ⏯️ 接手點（★崩潰救命行★ — 永遠保持最新一行）
 
-> D6 已達標，下一步只剩 commit+push 後回填 commit hash（若此行仍是待填，請先看 `git status --short` 確認未提交變更）。
+> D6 已達標並 commit/push `8c22d6a`；後續由 D7 `2026-07-07_01_移植_HiredMerchantCut3.md` 接續 0x73 merchant 子指令與 startup reload。
 
 ## ✅ 結果與結論
 
@@ -58,3 +58,4 @@ s2c 封包沒有真機 ground truth，一律標記 `unverified`。若商人進�
 - `docs/devlog/進度日誌.md`
 - `docs/devlog/任務追蹤.md`
 - `docs/devlog/執行計畫/P003_移植清尾與stub補完整.md`
+- commit `8c22d6a`

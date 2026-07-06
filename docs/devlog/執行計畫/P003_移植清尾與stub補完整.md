@@ -30,7 +30,7 @@
 | D4b | Codex | **SkillBook catalog 資料萃取**（P002 遺留）：從 Item.wz 萃取 228x/229x 技能書 → JsonSkillBookCatalog 資料檔（與 D4 不同檔案，可平行） | W2 | D3 |
 | D5 | Codex | **HiredMerchant Cut1（Core/App/Persistence）**：`IPlayerShop`/`PlayerShop`/`HiredMerchant` 領域模型＋持久化（merchants+items 兩實體）＋ `PlayerShopService`（上架/購買/離線收益/過期），**不接 dispatch**；完成即跑禁區 grep | W3 | D4 |
 | D6 | Codex | HiredMerchant Cut2（Adapters）：0x34/0x38/0x3A 接 dispatch＋封包編解碼＋fixture 測試 | W3 | D5 |
-| D7 | Codex | HiredMerchant Cut3：伺服器啟動重載未過期商人＋整合測試 | W3 | D6 |
+| D7 | Codex | HiredMerchant Cut3：`PLAYER_INTERACTION(0x73)` merchant 子指令＋伺服器啟動重載未過期商人＋LiteDB 整合測試 | W3 | D6 |
 | D8 | GPT-5.5 | 全 diff Review＋禁區稽核（Core 無 V113 using）；若額度未恢復→PM 判定改派 agy 或延至額度恢復 | W4 | D0-D7 |
 | D9 | Sonnet | 測試補齊＋三本帳歸檔（任務追蹤/進度日誌/記憶）＋結果回寫本計畫「執行結果」＋地圖終版更新 | W5 | D8 |
 
@@ -67,8 +67,9 @@
 | D3 | 10448 | ✅ | 0 | 9f7a60d | ✅ COUPON_CODE 兌換流程 + GAME_POLL/MAPLETV Java parity + CP_BeansUpdate reset/exit + MONSTER_BOMB 無獎勵擊殺；新增 11 測試；逐專案總測 733+1skip、`dotnet build` 綠 |
 | D4 | 38244→34224→47016→39448（撞限+CLI中斷×2 續跑） | ✅ | 0 | 39f739a | ✅ ItemMaker 完整：Content WZ catalog + Application service + v113 handler；WZ 61+726 配方；新增 13 測試；逐專案總測 747+1skip、`dotnet build` 綠 |
 | D4b | 42164→13560 | ✅ | 0 | bc021dc | ✅ SkillBook catalog Item.wz 萃取 165 筆，已 push |
-| D5 | — | ✅ | 0 | f64bce1 | ✅ HiredMerchant Cut1：Core `IPlayerShop`/`PlayerShop`/`HiredMerchant` + Application `PlayerShopService` + LiteDB/Mongo `hired_merchants`/`hired_merchant_items`；新增 14 測試；逐專案總測 761+1skip、`dotnet build` 綠、禁區 grep clean |
-| D6 | — | ✅ | 0 | 待填 | ✅ HiredMerchant Cut2：0x34/0x38/0x3A dispatch 接 `PlayerShopService`/repository + 未驗證 PlayerShop/Fredrick/spawn S2C 封包；新增 6 測試；逐專案總測 767+1skip、`dotnet build` 綠、禁區 grep clean；0x73 商人子指令留 Cut3/後續 |
+| D5 | 50044(撞限)→45832 | ✅ | 0 | f64bce1 | ✅ HiredMerchant Cut1：Core `IPlayerShop`/`PlayerShop`/`HiredMerchant` + Application `PlayerShopService` + LiteDB/Mongo `hired_merchants`/`hired_merchant_items`；新增 14 測試；逐專案總測 761+1skip、`dotnet build` 綠、禁區 grep clean |
+| D6 | 53288 | ✅ | 0 | 8c22d6a | ✅ HiredMerchant Cut2：0x34/0x38/0x3A dispatch 接 `PlayerShopService`/repository + 未驗證 PlayerShop/Fredrick/spawn S2C 封包；新增 6 測試；逐專案總測 767+1skip、`dotnet build` 綠、禁區 grep clean；0x73 商人子指令留 Cut3/後續 |
+| D7 | 23468(撞限)→本輪續跑 | ✅ | 0 | 待填 | ✅ HiredMerchant Cut3：0x73 merchant create/visit/add/remove/buy/exit/chat/open/close 接線；startup reload service；position 持久化；新增 5 測試；772 passed / 1 skipped，`dotnet build` 綠，禁區 grep clean |
 
 ## 執行結果
 
@@ -84,3 +85,5 @@
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 110 passed；Application 150 passed；Persistence 10 passed；Content 21 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 417 passed / 1 skipped；逐專案測試合計 761 passed / 1 skipped；Core/Application 禁區 `rg -n "Maple.Adapters.V113" src/Maple.Core src/Maple.Application` 無命中。本刀未修改 `src/Maple.Adapters.V113`，Cut2 接 opcode dispatch/packet。
 - **D6 完成（2026-07-06）**：HiredMerchant Cut2 接 `CP_HiredMerchantRemoteControl(0x34)`、`USE_HIRED_MERCHANT(0x38)`、`MERCH_ITEM_STORE(0x3A)`。新增 `V113HiredMerchantHandler` 與 `V113HiredMerchantPackets`：遠端商人管理、商人 permit/title box、Fredrick pending package list/claim、claim 後背包/楓幣更新、進場/換圖 replay open merchant spawn；S2C 對照 Java `PlayerShopPacket`，全部標 unverified。`V113PlayerInteractionRouter` 仍只支援 trade，Java merchant 進店/上架/購買/移除等 0x73 子指令列後續。
 - 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 110 passed；Application 150 passed；Persistence 10 passed；Content 21 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 423 passed / 1 skipped；逐專案測試合計 767 passed / 1 skipped；Core/Application 禁區 `rg -n "Maple.Adapters.V113" src/Maple.Core src/Maple.Application` 無命中。
+- **D7 完成（2026-07-07，待最終 commit 回填）**：HiredMerchant Cut3 對照 Java `PlayerInteractionHandler.java` merchant 分支，將 `PLAYER_INTERACTION(0x73)` 的 createType 5、visit、add/remove item、buy、exit、chat、open/maintenance off、close merchant 接到 `PlayerShopService`；補 Host startup reload service，啟動時過期 open/maintenance merchant 轉 claimable，未過期 open merchant 由 map-entry replay spawn；補 merchant position 持久化，去除新資料 spawn fallback `(0,0)`。
+- 驗證：`dotnet build --nologo -v quiet` 0 warning / 0 error；Core 111 passed；Application 151 passed；Persistence 11 passed；Content 21 passed；Net 2 passed；Tools.PacketDecoder 22 passed；Tools.HeadlessClient 29 passed；Adapters 425 passed / 1 skipped；逐專案測試合計 772 passed / 1 skipped；Core/Application 禁區 `rg -n "Maple.Adapters.V113" src/Maple.Core src/Maple.Application` 無命中。

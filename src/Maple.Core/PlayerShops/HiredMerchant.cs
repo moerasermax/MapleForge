@@ -1,4 +1,5 @@
 using Maple.Core.Inventory;
+using Maple.Core.World;
 
 namespace Maple.Core.PlayerShops;
 
@@ -21,6 +22,7 @@ public sealed class HiredMerchant : IPlayerShop
     public int ItemId => State.ItemId;
     public int MapId => State.MapId;
     public byte Channel => State.Channel;
+    public Position Position => State.Position;
     public int Mesos => State.Mesos;
     public DateTimeOffset ExpireAt => State.ExpireAt;
     public IReadOnlyList<PlayerShopItemListing> Items => State.Items;
@@ -35,7 +37,8 @@ public sealed class HiredMerchant : IPlayerShop
         int mapId,
         byte channel,
         DateTimeOffset now,
-        TimeSpan duration)
+        TimeSpan duration,
+        Position position = default)
         => new()
         {
             State = new PlayerShopState
@@ -48,6 +51,7 @@ public sealed class HiredMerchant : IPlayerShop
                 Title = title,
                 MapId = mapId,
                 Channel = channel,
+                Position = position,
                 OpenedAt = now,
                 ExpireAt = now.Add(duration),
             },
@@ -65,6 +69,7 @@ public sealed class HiredMerchant : IPlayerShop
     public void EnterMaintenance() => State.EnterMaintenance();
     public void CloseForClaim(DateTimeOffset now) => State.CloseForClaim(now);
     public void MarkClosed() => State.MarkClosed();
+    public void SetPosition(Position position) => State.Position = position;
     public void AddToBlacklist(string name) => State.AddToBlacklist(name);
     public void RemoveFromBlacklist(string name) => State.RemoveFromBlacklist(name);
     public PlayerShopVisitResult TryEnter(int characterId, string name, DateTimeOffset now) => State.TryEnter(characterId, name, now);
