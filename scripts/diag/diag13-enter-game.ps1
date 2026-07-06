@@ -35,6 +35,7 @@ $Root=(Resolve-Path "$PSScriptRoot\..\..").Path; $CliDir="D:\WorkSpace\AI_Lab\ча
 $WHost="$Root\tools\windower\bin\windower_host.exe"; $Log="$Root\live-enter-diag.log"; $Shot="$Root\diag-shots"
 $KbdFile="$Root\tools\windower\captures\kbd.txt"
 $env:MAPLEFORGE_WINDOWER_CAPTURE="1"; $env:MAPLEFORGE_WINDOWER_CAPTURE_DIR="$Root\tools\windower\captures"; $env:MAPLEFORGE_CAPTURE="1"
+$env:Persistence__Provider = 'LiteDb'
 $env:MAPLEFORGE_WINDOWER_KBD_INJECT="1"; $env:MAPLEFORGE_WINDOWER_KBD_FILE=$KbdFile; $env:MAPLEFORGE_WINDOWER_KBD_DEBUG="1"
 Set-Content -Path $KbdFile -Value "" -NoNewline -Encoding ASCII
 $origRes=(Get-CimInstance Win32_VideoController|?{$_.CurrentHorizontalResolution}|Select -First 1|%{"$($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)"})
