@@ -30,23 +30,34 @@ internal sealed class HiredMerchantReloadHostedService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-        var expired = await _shops.ExpireOpenMerchantsAsync(now, cancellationToken).ConfigureAwait(false);
-
-        var channel = (byte)(_channelOptions.ChannelIndex + 1);
-        var open = 0;
-        for (var mapId = MerchantRoomFirstMapId; mapId <= MerchantRoomLastMapId; mapId++)
+        try
         {
-            var merchants = await _merchants.FindOpenByMapAsync(channel, mapId, cancellationToken)
-                .ConfigureAwait(false);
-            open += merchants.Count;
-        }
+            var now = DateTimeOffset.UtcNow;
+            var expired = await _shops.ExpireOpenMerchantsAsync(now, cancellationToken).ConfigureAwait(false);
 
-        _log.LogInformation(
-            "[HiredMerchant] startup reload channel={Channel} open={OpenCount} expiredToClaimable={ExpiredCount}",
-            channel,
-            open,
-            expired);
+            var channel = (byte)(_channelOptions.ChannelIndex + 1);
+            var open = 0;
+            for (var mapId = MerchantRoomFirstMapId; mapId <= MerchantRoomLastMapId; mapId++)
+            {
+                var merchants = await _merchants.FindOpenByMapAsync(channel, mapId, cancellationToken)
+                    .ConfigureAwait(false);
+                open += merchants.Count;
+            }
+
+            _log.LogInformation(
+                "[HiredMerchant] startup reload channel={Channel} open={OpenCount} expiredToClaimable={ExpiredCount}",
+                channel,
+                open,
+                expired);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host shutdown/cancel during startup should not be reclassified as a repository failure.
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[HiredMerchant] startup reload failed; host startup continues");
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

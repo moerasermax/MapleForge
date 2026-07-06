@@ -40,20 +40,23 @@ public sealed class V113PlayerInteractionRouter
     private readonly TradeService _trades;
     private readonly PlayerShopService? _shops;
     private readonly IHiredMerchantRepository? _merchants;
+    private readonly IHiredMerchantSessionDispatcher? _merchantSessions;
 
     public V113PlayerInteractionRouter(TradeService trades)
-        : this(trades, null, null)
+        : this(trades, null, null, null)
     {
     }
 
     public V113PlayerInteractionRouter(
         TradeService trades,
         PlayerShopService? shops,
-        IHiredMerchantRepository? merchants)
+        IHiredMerchantRepository? merchants,
+        IHiredMerchantSessionDispatcher? merchantSessions = null)
     {
         _trades = trades;
         _shops = shops;
         _merchants = merchants;
+        _merchantSessions = merchantSessions;
     }
 
     public Task<bool> HandleAsync(PacketReader reader, Player player, CancellationToken ct)
@@ -240,6 +243,7 @@ public sealed class V113PlayerInteractionRouter
         }
 
         player.OpenShop(create.Merchant.StoreId);
+        RegisterMerchantSession(player, create.Merchant.StoreId, sendSelf);
         await SendAsync(sendSelf, V113HiredMerchantPackets.OpenHiredMerchant(player, create.Merchant, firstTime: true, now), ct)
             .ConfigureAwait(false);
         return false;
@@ -271,28 +275,39 @@ public sealed class V113PlayerInteractionRouter
 
         if (merchant.IsOwner(player.Character.Id, player.Character.Name))
         {
-            merchant.EnterMaintenance();
-            await _merchants!.UpsertAsync(merchant, ct).ConfigureAwait(false);
-            player.OpenShop(merchant.StoreId);
-            await SendAsync(sendSelf, V113HiredMerchantPackets.OpenHiredMerchant(player, merchant, firstTime: false, now), ct)
+            var maintenance = await _shops!.EnterMaintenanceAsync(merchant.StoreId, player, ct).ConfigureAwait(false);
+            if (maintenance.Status != PlayerShopServiceStatus.Success || maintenance.Merchant is null)
+            {
+                await SendEnableActionsAsync(sendSelf, ct).ConfigureAwait(false);
+                return false;
+            }
+
+            player.OpenShop(maintenance.Merchant.StoreId);
+            RegisterMerchantSession(player, maintenance.Merchant.StoreId, sendSelf);
+            await SendAsync(sendSelf, V113HiredMerchantPackets.OpenHiredMerchant(player, maintenance.Merchant, firstTime: false, now), ct)
                 .ConfigureAwait(false);
-            await BroadcastAsync(broadcastMap, V113HiredMerchantPackets.DestroyHiredMerchant(merchant.OwnerId), ct)
+            await BroadcastAsync(broadcastMap, V113HiredMerchantPackets.DestroyHiredMerchant(maintenance.Merchant.OwnerId), ct)
                 .ConfigureAwait(false);
             return false;
         }
 
-        var visit = merchant.TryEnter(player.Character.Id, player.Character.Name, now);
-        if (visit.Status != PlayerShopVisitStatus.Success)
+        var visit = await _shops!.EnterMerchantAsync(merchant.StoreId, player, now, ct).ConfigureAwait(false);
+        if (visit.Status != PlayerShopServiceStatus.Success || visit.Merchant is null)
         {
             await SendEnableActionsAsync(sendSelf, ct).ConfigureAwait(false);
             return false;
         }
 
-        await _merchants!.UpsertAsync(merchant, ct).ConfigureAwait(false);
-        player.OpenShop(merchant.StoreId);
-        await SendAsync(sendSelf, V113HiredMerchantPackets.OpenHiredMerchant(player, merchant, firstTime: false, now), ct)
+        player.OpenShop(visit.Merchant.StoreId);
+        RegisterMerchantSession(player, visit.Merchant.StoreId, sendSelf);
+        await SendAsync(sendSelf, V113HiredMerchantPackets.OpenHiredMerchant(player, visit.Merchant, firstTime: false, now), ct)
             .ConfigureAwait(false);
-        await BroadcastAsync(broadcastMap, V113HiredMerchantPackets.ShopVisitorAdd(player.Character, visit.Slot), ct)
+        await SendToMerchantParticipantsAsync(
+                visit.Merchant,
+                V113HiredMerchantPackets.ShopVisitorAdd(player.Character, visit.Slot),
+                sendSelf,
+                ct,
+                exceptCharacterId: player.Character.Id)
             .ConfigureAwait(false);
         return false;
     }
@@ -318,12 +333,12 @@ public sealed class V113PlayerInteractionRouter
             return false;
         }
 
+        RegisterMerchantSession(player, storeId, sendSelf);
         var slot = merchant.IsOwner(player.Character.Id, player.Character.Name)
             ? 0
             : merchant.State.Visitors.FirstOrDefault(v => v.CharacterId == player.Character.Id)?.Slot ?? 0;
         var packet = V113HiredMerchantPackets.ShopChat($"{player.Character.Name} : {message}", slot);
-        await SendAsync(sendSelf, packet, ct).ConfigureAwait(false);
-        await BroadcastAsync(broadcastMap, packet, ct).ConfigureAwait(false);
+        await SendToMerchantParticipantsAsync(merchant, packet, sendSelf, ct).ConfigureAwait(false);
         return false;
     }
 
@@ -347,13 +362,17 @@ public sealed class V113PlayerInteractionRouter
             return false;
         }
 
-        var visitor = merchant.State.Visitors.FirstOrDefault(v => v.CharacterId == player.Character.Id);
-        if (visitor is not null)
+        var leave = await _shops!.LeaveMerchantAsync(storeId, player, ct).ConfigureAwait(false);
+        if (leave.Status == PlayerShopServiceStatus.Success && leave.Merchant is not null && leave.Slot > 0)
         {
-            merchant.Leave(player.Character.Id);
-            await _merchants.UpsertAsync(merchant, ct).ConfigureAwait(false);
-            await BroadcastAsync(broadcastMap, V113HiredMerchantPackets.ShopVisitorLeave(visitor.Slot), ct)
+            await SendToMerchantParticipantsAsync(
+                    leave.Merchant,
+                    V113HiredMerchantPackets.ShopVisitorLeave(leave.Slot),
+                    sendSelf,
+                    ct,
+                    exceptCharacterId: player.Character.Id)
                 .ConfigureAwait(false);
+            _merchantSessions?.Deregister(storeId, player.Character.Id);
         }
 
         player.CloseShop();
@@ -382,6 +401,7 @@ public sealed class V113PlayerInteractionRouter
         }
 
         player.CloseShop();
+        _merchantSessions?.Clear(open.Merchant.StoreId);
         await SendEnableActionsAsync(sendSelf, ct).ConfigureAwait(false);
         await BroadcastAsync(broadcastMap, V113HiredMerchantPackets.SpawnHiredMerchant(open.Merchant, open.Merchant.Position), ct)
             .ConfigureAwait(false);
@@ -432,7 +452,13 @@ public sealed class V113PlayerInteractionRouter
             await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryQuantity(result.Mutation), ct).ConfigureAwait(false);
         }
 
-        await SendAsync(sendSelf, V113HiredMerchantPackets.ShopItemUpdate(result.Merchant), ct).ConfigureAwait(false);
+        RegisterMerchantSession(player, storeId, sendSelf);
+        await SendToMerchantParticipantsAsync(
+                result.Merchant,
+                V113HiredMerchantPackets.ShopItemUpdate(result.Merchant),
+                sendSelf,
+                ct)
+            .ConfigureAwait(false);
         return true;
     }
 
@@ -463,7 +489,12 @@ public sealed class V113PlayerInteractionRouter
             .ConfigureAwait(false);
         await SendAsync(sendSelf, V113ShopPackets.UpdateMeso(player.Character.Meso, itemReaction: true), ct)
             .ConfigureAwait(false);
-        await BroadcastAsync(broadcastMap, V113HiredMerchantPackets.ShopItemUpdate(result.Merchant), ct)
+        RegisterMerchantSession(player, storeId, sendSelf);
+        await SendToMerchantParticipantsAsync(
+                result.Merchant,
+                V113HiredMerchantPackets.ShopItemUpdate(result.Merchant),
+                sendSelf,
+                ct)
             .ConfigureAwait(false);
         return true;
     }
@@ -493,7 +524,13 @@ public sealed class V113PlayerInteractionRouter
 
         await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(result.ReturnedInventoryType.Value, result.ReturnedItem), ct)
             .ConfigureAwait(false);
-        await SendAsync(sendSelf, V113HiredMerchantPackets.ShopItemUpdate(result.Merchant), ct).ConfigureAwait(false);
+        RegisterMerchantSession(player, storeId, sendSelf);
+        await SendToMerchantParticipantsAsync(
+                result.Merchant,
+                V113HiredMerchantPackets.ShopItemUpdate(result.Merchant),
+                sendSelf,
+                ct)
+            .ConfigureAwait(false);
         return true;
     }
 
@@ -518,7 +555,8 @@ public sealed class V113PlayerInteractionRouter
         }
 
         player.CloseShop();
-        await SendAsync(sendSelf, V113HiredMerchantPackets.MerchantBuyError(0x15), ct).ConfigureAwait(false);
+        _merchantSessions?.Clear(result.Merchant.StoreId);
+        await SendAsync(sendSelf, V113HiredMerchantPackets.ShopErrorMessage(0x15, 0), ct).ConfigureAwait(false);
         await SendEnableActionsAsync(sendSelf, ct).ConfigureAwait(false);
         await BroadcastAsync(broadcastMap, V113HiredMerchantPackets.DestroyHiredMerchant(result.Merchant.OwnerId), ct)
             .ConfigureAwait(false);
@@ -561,6 +599,35 @@ public sealed class V113PlayerInteractionRouter
 
     private static bool IsMerchantRoomMap(int mapId)
         => mapId is >= MerchantRoomFirstMapId and <= MerchantRoomLastMapId;
+
+    private void RegisterMerchantSession(
+        Player player,
+        int storeId,
+        Func<byte[], CancellationToken, Task>? sendSelf)
+    {
+        if (sendSelf is not null)
+        {
+            _merchantSessions?.Register(storeId, player.Character.Id, sendSelf);
+        }
+    }
+
+    private async Task SendToMerchantParticipantsAsync(
+        HiredMerchant merchant,
+        byte[] packet,
+        Func<byte[], CancellationToken, Task>? fallbackSelf,
+        CancellationToken ct,
+        int? exceptCharacterId = null)
+    {
+        if (_merchantSessions is not null)
+        {
+            await _merchantSessions
+                .SendToParticipantsAsync(merchant, packet, ct, exceptCharacterId)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await SendAsync(fallbackSelf, packet, ct).ConfigureAwait(false);
+    }
 
     private static Task SendEnableActionsAsync(
         Func<byte[], CancellationToken, Task>? sendSelf,

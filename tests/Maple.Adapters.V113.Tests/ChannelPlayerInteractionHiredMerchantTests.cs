@@ -32,10 +32,14 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
             new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2000000, Slot = 2, Quantity = 10 });
         owner.MoveTo(new Position(111, 222, 0, 7));
         var buyer = PlayerWithItems(2, 20, "Buyer", 910000001, meso: 1_000);
+        var visitor = PlayerWithItems(3, 30, "Visitor", 910000001, meso: 1_000);
         var ownerSelf = new List<byte[]>();
         var ownerMap = new List<byte[]>();
         var buyerSelf = new List<byte[]>();
         var buyerMap = new List<byte[]>();
+        var visitorSelf = new List<byte[]>();
+        var visitorMap = new List<byte[]>();
+        var nonVisitorMap = new List<byte[]>();
 
         await router.HandleAsync(CreateMerchant("Potions"), owner, Capture(ownerSelf), Capture(ownerMap), 1, _now, CancellationToken.None);
         var merchant = await repo.FindOpenByOwnerAsync(owner.Character.AccountId, owner.Character.Id);
@@ -66,6 +70,7 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
         merchant = await repo.FindByStoreIdAsync(merchant.StoreId);
         Assert.Equal(PlayerShopStatus.Open, merchant!.Status);
         Assert.Null(owner.ActiveShopId);
+        // Java-source candidate/unverified: SPAWN_HIRED_MERCHANT layout still needs true v113 client capture.
         var spawn = new PacketReader(ownerMap.Single(p => new PacketReader(p).ReadShort() == V113ChannelSendOp.SpawnHiredMerchant));
         Assert.Equal(V113ChannelSendOp.SpawnHiredMerchant, spawn.ReadShort());
         Assert.Equal(owner.Character.Id, spawn.ReadInt());
@@ -79,9 +84,26 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
         Assert.NotNull(merchant);
         Assert.Equal(merchant!.StoreId, buyer.ActiveShopId);
         Assert.Contains(merchant!.State.Visitors, v => v.CharacterId == buyer.Character.Id && v.Slot == 1);
-        Assert.Contains(buyerMap, p => PacketAction(p) == 0x04);
+        Assert.DoesNotContain(buyerMap, p => PacketAction(p) == 0x04);
 
-        var buyChanged = await router.HandleAsync(Buy(index: 0, bundles: 1), buyer, Capture(buyerSelf), Capture(buyerMap), 1, _now, CancellationToken.None);
+        await router.HandleAsync(Visit(owner.Character.Id), visitor, Capture(visitorSelf), Capture(visitorMap), 1, _now, CancellationToken.None);
+
+        merchant = await repo.FindByStoreIdAsync(merchant.StoreId);
+        Assert.NotNull(merchant);
+        Assert.Equal(merchant!.StoreId, visitor.ActiveShopId);
+        Assert.Contains(merchant.State.Visitors, v => v.CharacterId == visitor.Character.Id && v.Slot == 2);
+        Assert.Contains(buyerSelf, p => PacketAction(p) == 0x04);
+        Assert.DoesNotContain(visitorMap, p => PacketAction(p) == 0x04);
+
+        var visitorPacketsBeforeBuy = visitorSelf.Count;
+        var buyChanged = await router.HandleAsync(
+            Buy(index: 0, bundles: 1),
+            buyer,
+            Capture(buyerSelf),
+            Capture(nonVisitorMap),
+            1,
+            _now,
+            CancellationToken.None);
 
         merchant = await repo.FindByStoreIdAsync(merchant.StoreId);
         Assert.NotNull(merchant);
@@ -90,9 +112,12 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
         Assert.Equal(3, buyer.Inventory.By(InventoryType.Use).CountById(2000000));
         Assert.Equal((short)1, merchant!.Items[0].Bundles);
         Assert.Equal(100, merchant.Mesos);
+        Assert.Contains(visitorSelf.Skip(visitorPacketsBeforeBuy), p => PacketAction(p) == 0x16);
+        Assert.DoesNotContain(nonVisitorMap, p => PacketAction(p) == 0x16);
 
         await router.HandleAsync(Chat("hi"), buyer, Capture(buyerSelf), Capture(buyerMap), 1, _now, CancellationToken.None);
         Assert.Contains(buyerSelf, p => PacketAction(p) == 0x06);
+        Assert.Contains(visitorSelf, p => PacketAction(p) == 0x06);
 
         await router.HandleAsync(Visit(owner.Character.Id), owner, Capture(ownerSelf), Capture(ownerMap), 1, _now, CancellationToken.None);
         await router.HandleAsync(Interaction(0x26), owner, Capture(ownerSelf), Capture(ownerMap), 1, _now, CancellationToken.None);
@@ -100,6 +125,7 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
         merchant = await repo.FindByStoreIdAsync(merchant.StoreId);
         Assert.Equal(PlayerShopStatus.PendingClaim, merchant!.Status);
         Assert.Null(owner.ActiveShopId);
+        Assert.Contains(ownerSelf, IsCloseMerchantShopError);
         Assert.Contains(ownerMap, p => new PacketReader(p).ReadShort() == V113ChannelSendOp.DestroyHiredMerchant);
     }
 
@@ -141,6 +167,7 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
                 var replay = await hired.SpawnOpenMerchantPacketsAsync(1, 910000001, new Position(0, 0, 0, 0));
 
                 Assert.Equal(0, expired);
+                // Java-source candidate/unverified: replay SPAWN_HIRED_MERCHANT fixture uses source-derived layout only.
                 var spawn = new PacketReader(Assert.Single(replay));
                 Assert.Equal(V113ChannelSendOp.SpawnHiredMerchant, spawn.ReadShort());
                 Assert.Equal(owner.Character.Id, spawn.ReadInt());
@@ -180,7 +207,8 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
         => new(
             new TradeService(new InMemoryOnlinePlayerRegistry()),
             new PlayerShopService(repo),
-            repo);
+            repo,
+            new InMemoryHiredMerchantSessionDispatcher());
 
     private static Func<byte[], CancellationToken, Task> Capture(List<byte[]> packets)
         => (packet, _) =>
@@ -237,6 +265,23 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
         }
 
         return reader.ReadByte();
+    }
+
+    private static bool IsCloseMerchantShopError(byte[] packet)
+    {
+        try
+        {
+            var reader = new PacketReader(packet);
+            return reader.ReadShort() == V113ChannelSendOp.PlayerInteraction &&
+                reader.ReadByte() == 0x0A &&
+                reader.ReadByte() == 0 &&
+                reader.ReadByte() == 0x15 &&
+                reader.Remaining == 0;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
     }
 
     private static Player PlayerWithItems(

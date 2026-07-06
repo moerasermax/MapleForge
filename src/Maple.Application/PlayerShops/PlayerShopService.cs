@@ -45,6 +45,11 @@ public sealed record PlayerShopPurchaseUseCaseResult(
     int BuyerMeso = 0,
     int MerchantMesos = 0);
 
+public sealed record PlayerShopVisitUseCaseResult(
+    PlayerShopServiceStatus Status,
+    HiredMerchant? Merchant = null,
+    byte Slot = 0);
+
 public sealed record PlayerShopSettlementResult(
     PlayerShopServiceStatus Status,
     HiredMerchant? Merchant = null,
@@ -106,6 +111,46 @@ public sealed class PlayerShopService
         return new HiredMerchantCreateResult(PlayerShopServiceStatus.Success, merchant);
     }
 
+    public async Task<PlayerShopVisitUseCaseResult> EnterMaintenanceByOwnerAsync(
+        Player owner,
+        CancellationToken cancellationToken = default)
+    {
+        var merchant = await _hiredMerchants
+            .FindOpenByOwnerAsync(owner.Character.AccountId, owner.Character.Id, cancellationToken)
+            .ConfigureAwait(false);
+        return merchant is null
+            ? new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.MerchantNotFound)
+            : await EnterMaintenanceAsync(merchant.StoreId, owner, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlayerShopVisitUseCaseResult> EnterMaintenanceAsync(
+        int storeId,
+        Player owner,
+        CancellationToken cancellationToken = default)
+    {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
+        var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
+        if (merchant is null)
+        {
+            return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.MerchantNotFound);
+        }
+
+        if (!merchant.IsOwner(owner.Character.Id, owner.Character.Name))
+        {
+            return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.OwnerMismatch, merchant);
+        }
+
+        if (merchant.Status != PlayerShopStatus.Open)
+        {
+            return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.InvalidState, merchant);
+        }
+
+        merchant.EnterMaintenance();
+        await _hiredMerchants.UpsertAsync(merchant, cancellationToken).ConfigureAwait(false);
+        return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.Success, merchant);
+    }
+
     public async Task<HiredMerchantCreateResult> OpenMerchantAsync(
         int storeId,
         Player owner,
@@ -128,6 +173,61 @@ public sealed class PlayerShopService
         merchant.Open(now);
         await _hiredMerchants.UpsertAsync(merchant, cancellationToken).ConfigureAwait(false);
         return new HiredMerchantCreateResult(PlayerShopServiceStatus.Success, merchant);
+    }
+
+    public async Task<PlayerShopVisitUseCaseResult> EnterMerchantAsync(
+        int storeId,
+        Player visitor,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
+        var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
+        if (merchant is null)
+        {
+            return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.MerchantNotFound);
+        }
+
+        if (merchant.IsOwner(visitor.Character.Id, visitor.Character.Name))
+        {
+            return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.OwnerMismatch, merchant);
+        }
+
+        var visit = merchant.TryEnter(visitor.Character.Id, visitor.Character.Name, now);
+        if (visit.Status != PlayerShopVisitStatus.Success)
+        {
+            return new PlayerShopVisitUseCaseResult(MapVisitStatus(visit.Status), merchant, visit.Slot);
+        }
+
+        await _hiredMerchants.UpsertAsync(merchant, cancellationToken).ConfigureAwait(false);
+        return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.Success, merchant, visit.Slot);
+    }
+
+    public async Task<PlayerShopVisitUseCaseResult> LeaveMerchantAsync(
+        int storeId,
+        Player visitor,
+        CancellationToken cancellationToken = default)
+    {
+        using var merchantLock = await EnterMerchantLockAsync(storeId, cancellationToken).ConfigureAwait(false);
+
+        var merchant = await _hiredMerchants.FindByStoreIdAsync(storeId, cancellationToken).ConfigureAwait(false);
+        if (merchant is null)
+        {
+            return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.MerchantNotFound);
+        }
+
+        var slot = merchant.State.Visitors
+            .FirstOrDefault(v => v.CharacterId == visitor.Character.Id)
+            ?.Slot ?? 0;
+        if (slot == 0)
+        {
+            return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.InvalidState, merchant);
+        }
+
+        merchant.Leave(visitor.Character.Id);
+        await _hiredMerchants.UpsertAsync(merchant, cancellationToken).ConfigureAwait(false);
+        return new PlayerShopVisitUseCaseResult(PlayerShopServiceStatus.Success, merchant, slot);
     }
 
     public async Task<PlayerShopListingResult> AddListingAsync(
@@ -493,6 +593,17 @@ public sealed class PlayerShopService
             PlayerShopPurchaseStatus.BuyerInventoryFull => PlayerShopServiceStatus.InventoryFull,
             PlayerShopPurchaseStatus.TotalPriceOverflow => PlayerShopServiceStatus.InvalidQuantity,
             PlayerShopPurchaseStatus.StoreMesoOverflow => PlayerShopServiceStatus.StoreMesoOverflow,
+            _ => PlayerShopServiceStatus.InvalidState,
+        };
+
+    private static PlayerShopServiceStatus MapVisitStatus(PlayerShopVisitStatus status)
+        => status switch
+        {
+            PlayerShopVisitStatus.Success => PlayerShopServiceStatus.Success,
+            PlayerShopVisitStatus.Blacklisted => PlayerShopServiceStatus.Blacklisted,
+            PlayerShopVisitStatus.Full => PlayerShopServiceStatus.InvalidState,
+            PlayerShopVisitStatus.NotOpen => PlayerShopServiceStatus.InvalidState,
+            PlayerShopVisitStatus.AlreadyVisiting => PlayerShopServiceStatus.InvalidState,
             _ => PlayerShopServiceStatus.InvalidState,
         };
 

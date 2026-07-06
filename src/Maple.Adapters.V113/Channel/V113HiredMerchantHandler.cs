@@ -67,14 +67,11 @@ public sealed class V113HiredMerchantHandler
             return EnableActionsOnly();
         }
 
-        var merchant = await _merchants
-            .FindOpenByOwnerAsync(player.Character.AccountId, player.Character.Id, ct)
-            .ConfigureAwait(false);
-        if (merchant is not null)
+        var maintenance = await _shops.EnterMaintenanceByOwnerAsync(player, ct).ConfigureAwait(false);
+        if (maintenance.Status == PlayerShopServiceStatus.Success && maintenance.Merchant is not null)
         {
-            merchant.EnterMaintenance();
-            await _merchants.UpsertAsync(merchant, ct).ConfigureAwait(false);
-            return SelfOnly(V113HiredMerchantPackets.OpenHiredMerchant(player, merchant, firstTime: false, now));
+            player.OpenShop(maintenance.Merchant.StoreId);
+            return SelfOnly(V113HiredMerchantPackets.OpenHiredMerchant(player, maintenance.Merchant, firstTime: false, now));
         }
 
         var claimable = await _merchants

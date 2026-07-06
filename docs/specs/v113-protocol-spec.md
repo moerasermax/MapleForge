@@ -1411,6 +1411,26 @@ S→C layouts：
 證據層級：Java source map + MapleForge Core/Application/Persistence/Adapters tests；新增 LiteDB E2E 覆蓋 create→add→open→restart replay→visit/buy→close→Fredrick claim。真 v113 client HiredMerchant GUI smoke 未跑。
 
 ---
+## P003 D8b HiredMerchant review repairs（2026-07-07）
+
+Review 修正：
+
+- Shop 內部 UI 封包範圍對齊 Java `AbstractPlayerStore.broadcastToVisitors`：`shopItemUpdate`、visitor add/leave、`shopChat` 只送店內 owner/visitors session，不送全地圖；只有 `SPAWN_HIRED_MERCHANT` / `DESTROY_HIRED_MERCHANT` 這類地圖外觀封包仍走 map broadcast。
+- `PLAYER_INTERACTION` 的 visit / owner maintenance / visitor exit 與 `CP_HiredMerchantRemoteControl` owner maintenance mutation 移入 `PlayerShopService`，共用 D7b store lock；adapter 不再直接 `merchant.EnterMaintenance()` / `merchant.Leave()` / `UpsertAsync()`。
+- `CLOSE_MERCHANT` owner response 改用 Java `PlayerShopPacket.shopErrorMessage(0x15, 0)`：
+
+```
+writeShort(PLAYER_INTERACTION=0x146)
+writeByte(0x0A)
+writeByte(type)              // 0
+writeByte(error)             // 0x15
+```
+
+- `HiredMerchantReloadHostedService` startup reload 包 try/catch；repository/reload 例外只 log warning，不阻止 Generic Host 啟動。
+
+證據層級：Java source map + MapleForge Adapters E2E fixture；廣播範圍測試覆蓋店內訪客收到 `shopItemUpdate`、同地圖非訪客不收到。S2C 仍為 Java-source candidate / unverified，待真 v113 client capture。
+
+---
 ## P2 Migration Wave 4 heavy opcode MVP stubs（2026-06-18）
 
 來源：

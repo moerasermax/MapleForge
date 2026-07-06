@@ -156,6 +156,17 @@ internal static class V113HiredMerchantPackets
         return w.ToArray();
     }
 
+    /// <summary>Unverified: PlayerShopPacket.shopErrorMessage(error, type).</summary>
+    public static byte[] ShopErrorMessage(byte error, byte type)
+    {
+        var w = new PacketWriter(5);
+        w.WriteShort(V113ChannelSendOp.PlayerInteraction);
+        w.WriteByte(0x0A);
+        w.WriteByte(type);
+        w.WriteByte(error);
+        return w.ToArray();
+    }
+
     /// <summary>Unverified: PlayerShopPacket.ShowMerchItemStore(npc, mapid, ch).</summary>
     public static byte[] ShowMerchItemStore(int npcId, int mapId, int channel)
     {

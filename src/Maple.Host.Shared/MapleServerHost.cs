@@ -164,6 +164,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113GuildOperationHandler>();
         builder.Services.AddSingleton<V113CashShopOperationHandler>();
         builder.Services.AddSingleton<V113ChatHandler>();
+        builder.Services.AddSingleton<IHiredMerchantSessionDispatcher, InMemoryHiredMerchantSessionDispatcher>();
         builder.Services.AddSingleton<V113PlayerInteractionRouter>();
         builder.Services.AddSingleton<V113HiredMerchantHandler>();
         builder.Services.AddSingleton<V113DueyHandler>();
