@@ -1,3 +1,1585 @@
 {
-  "items": []
+  "items": [
+    {
+      "itemId": 2280000,
+      "skillIds": [
+        2121003
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280001,
+      "skillIds": [
+        4221006
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280002,
+      "skillIds": [
+        1121011,
+        1221012,
+        1321010,
+        2121008,
+        2221008,
+        2321009,
+        3121009,
+        3221008,
+        4121009,
+        4221008,
+        5121008,
+        5221010,
+        21121008
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280003,
+      "skillIds": [
+        1121000,
+        1221000,
+        1321000,
+        2121000,
+        2221000,
+        2321000,
+        3121000,
+        3221000,
+        4121000,
+        4221000,
+        5121000,
+        5221000,
+        21121000
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280004,
+      "skillIds": [
+        2121004,
+        2221004,
+        2321004
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280005,
+      "skillIds": [
+        3121003,
+        3221003
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280006,
+      "skillIds": [
+        4121003,
+        4221003
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280007,
+      "skillIds": [
+        1120003
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280008,
+      "skillIds": [
+        1220010
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280009,
+      "skillIds": [
+        2321007
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280010,
+      "skillIds": [
+        4121007
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280011,
+      "skillIds": [
+        2221003
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280012,
+      "skillIds": [
+        1121006,
+        1221007,
+        1321003
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280013,
+      "skillIds": [
+        21120005
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280014,
+      "skillIds": [
+        21120004
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280015,
+      "skillIds": [
+        21120006
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280016,
+      "skillIds": [
+        21120007
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 10
+    },
+    {
+      "itemId": 2280017,
+      "skillIds": [
+        9000
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280018,
+      "skillIds": [
+        9001
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280019,
+      "skillIds": [
+        9002
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280020,
+      "skillIds": [
+        10009002
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280021,
+      "skillIds": [
+        10009002
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280022,
+      "skillIds": [
+        10009002
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280023,
+      "skillIds": [
+        20009002
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280024,
+      "skillIds": [
+        20009002
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2280025,
+      "skillIds": [
+        20009002
+      ],
+      "successRate": 100,
+      "reqSkillLevel": 0,
+      "masterLevel": 1
+    },
+    {
+      "itemId": 2290000,
+      "skillIds": [
+        1121001,
+        1221001,
+        1321001
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290001,
+      "skillIds": [
+        1121001,
+        1221001,
+        1321001
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290002,
+      "skillIds": [
+        1120004,
+        1220005,
+        1320005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290003,
+      "skillIds": [
+        1120004,
+        1220005,
+        1320005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290004,
+      "skillIds": [
+        1121006,
+        1221007,
+        1321003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290005,
+      "skillIds": [
+        1121006,
+        1221007,
+        1321003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290006,
+      "skillIds": [
+        1121002,
+        1221002,
+        1321002
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290007,
+      "skillIds": [
+        1121002,
+        1221002,
+        1321002
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290008,
+      "skillIds": [
+        1120003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290009,
+      "skillIds": [
+        1120003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290010,
+      "skillIds": [
+        1121008
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290011,
+      "skillIds": [
+        1121008
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290012,
+      "skillIds": [
+        1221009
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290013,
+      "skillIds": [
+        1221009
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290014,
+      "skillIds": [
+        1120005,
+        1220006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290015,
+      "skillIds": [
+        1120005,
+        1220006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290016,
+      "skillIds": [
+        1121010
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290017,
+      "skillIds": [
+        1121010
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290018,
+      "skillIds": [
+        1221003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290019,
+      "skillIds": [
+        1221004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290020,
+      "skillIds": [
+        1221011
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290021,
+      "skillIds": [
+        1221011
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290022,
+      "skillIds": [
+        1320006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290023,
+      "skillIds": [
+        1320006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290024,
+      "skillIds": [
+        2121002,
+        2221002,
+        2321002
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290025,
+      "skillIds": [
+        2121002,
+        2221002,
+        2321002
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290026,
+      "skillIds": [
+        2121001,
+        2221001,
+        2321001
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290027,
+      "skillIds": [
+        2121001,
+        2221001,
+        2321001
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290028,
+      "skillIds": [
+        2121004,
+        2221004,
+        2321004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290029,
+      "skillIds": [
+        2121004,
+        2221004,
+        2321004
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290030,
+      "skillIds": [
+        2121006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290031,
+      "skillIds": [
+        2121006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290032,
+      "skillIds": [
+        2221006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290033,
+      "skillIds": [
+        2221006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290034,
+      "skillIds": [
+        2321005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290035,
+      "skillIds": [
+        2321005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290036,
+      "skillIds": [
+        2121003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290037,
+      "skillIds": [
+        2121003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290038,
+      "skillIds": [
+        2121005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290039,
+      "skillIds": [
+        2121005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290040,
+      "skillIds": [
+        2121007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290041,
+      "skillIds": [
+        2121007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290042,
+      "skillIds": [
+        2221003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290043,
+      "skillIds": [
+        2221003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290044,
+      "skillIds": [
+        2221005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290045,
+      "skillIds": [
+        2221005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290046,
+      "skillIds": [
+        2221007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290047,
+      "skillIds": [
+        2221007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290048,
+      "skillIds": [
+        2321008
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290049,
+      "skillIds": [
+        2321008
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290050,
+      "skillIds": [
+        2321007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290051,
+      "skillIds": [
+        2321007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290052,
+      "skillIds": [
+        3121002,
+        3221002
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290053,
+      "skillIds": [
+        3121002,
+        3221002
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290054,
+      "skillIds": [
+        3121003,
+        3221003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290055,
+      "skillIds": [
+        3121003,
+        3221003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290056,
+      "skillIds": [
+        3120005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290057,
+      "skillIds": [
+        3120005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290058,
+      "skillIds": [
+        3121007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290059,
+      "skillIds": [
+        3121007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290060,
+      "skillIds": [
+        3121004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290061,
+      "skillIds": [
+        3121004
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290062,
+      "skillIds": [
+        3121006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290063,
+      "skillIds": [
+        3121006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290064,
+      "skillIds": [
+        3121008
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290065,
+      "skillIds": [
+        3121008
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290066,
+      "skillIds": [
+        3220004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290067,
+      "skillIds": [
+        3220004
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290068,
+      "skillIds": [
+        3221006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290069,
+      "skillIds": [
+        3221006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290070,
+      "skillIds": [
+        3221001
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290071,
+      "skillIds": [
+        3221001
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290072,
+      "skillIds": [
+        3221005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290073,
+      "skillIds": [
+        3221005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290074,
+      "skillIds": [
+        3221007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290075,
+      "skillIds": [
+        3221007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290076,
+      "skillIds": [
+        4120002,
+        4220002
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290077,
+      "skillIds": [
+        4120002,
+        4220002
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290078,
+      "skillIds": [
+        4120005,
+        4220005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290079,
+      "skillIds": [
+        4120005,
+        4220005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290080,
+      "skillIds": [
+        4121003,
+        4221003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290081,
+      "skillIds": [
+        4121003,
+        4221003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290082,
+      "skillIds": [
+        4121004,
+        4221004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290083,
+      "skillIds": [
+        4121004,
+        4221004
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290084,
+      "skillIds": [
+        4121007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290085,
+      "skillIds": [
+        4121007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290086,
+      "skillIds": [
+        4121008
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290087,
+      "skillIds": [
+        4121008
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290088,
+      "skillIds": [
+        4121006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290089,
+      "skillIds": [
+        4121006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290090,
+      "skillIds": [
+        4221007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290091,
+      "skillIds": [
+        4221007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290092,
+      "skillIds": [
+        4221001
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290093,
+      "skillIds": [
+        4221001
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290094,
+      "skillIds": [
+        4221006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290095,
+      "skillIds": [
+        4221006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290096,
+      "skillIds": [
+        1121000,
+        1221000,
+        1321000,
+        2121000,
+        2221000,
+        2321000,
+        3121000,
+        3221000,
+        4121000,
+        4221000,
+        5121000,
+        5221000,
+        21121000
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290097,
+      "skillIds": [
+        5121001
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290098,
+      "skillIds": [
+        5121001
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290099,
+      "skillIds": [
+        5121002
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290100,
+      "skillIds": [
+        5121002
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290101,
+      "skillIds": [
+        5121003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290102,
+      "skillIds": [
+        5121004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290103,
+      "skillIds": [
+        5121004
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290104,
+      "skillIds": [
+        5121005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290105,
+      "skillIds": [
+        5121005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290106,
+      "skillIds": [
+        5121007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290107,
+      "skillIds": [
+        5121007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290108,
+      "skillIds": [
+        5121009
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290110,
+      "skillIds": [
+        5121010
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290111,
+      "skillIds": [
+        5121010
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290112,
+      "skillIds": [
+        5220001
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290113,
+      "skillIds": [
+        5220001
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290114,
+      "skillIds": [
+        5220002
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290115,
+      "skillIds": [
+        5221003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290116,
+      "skillIds": [
+        5221003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290117,
+      "skillIds": [
+        5221004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290118,
+      "skillIds": [
+        5221004
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290119,
+      "skillIds": [
+        5221007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290120,
+      "skillIds": [
+        5221007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290121,
+      "skillIds": [
+        5221008
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290122,
+      "skillIds": [
+        5221008
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290123,
+      "skillIds": [
+        5221009
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290124,
+      "skillIds": [
+        5220011
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290125,
+      "skillIds": [
+        1121000,
+        1221000,
+        1321000,
+        2121000,
+        2221000,
+        2321000,
+        3121000,
+        3221000,
+        4121000,
+        4221000,
+        5121000,
+        5221000,
+        21121000
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290126,
+      "skillIds": [
+        21120002
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290127,
+      "skillIds": [
+        21120002
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290128,
+      "skillIds": [
+        21120001
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290129,
+      "skillIds": [
+        21120001
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290130,
+      "skillIds": [
+        21121003
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290131,
+      "skillIds": [
+        21121003
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290132,
+      "skillIds": [
+        21120005
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290133,
+      "skillIds": [
+        21120005
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290134,
+      "skillIds": [
+        21120004
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290135,
+      "skillIds": [
+        21120004
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290136,
+      "skillIds": [
+        21120006
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290137,
+      "skillIds": [
+        21120006
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    },
+    {
+      "itemId": 2290138,
+      "skillIds": [
+        21120007
+      ],
+      "successRate": 70,
+      "reqSkillLevel": 5,
+      "masterLevel": 20
+    },
+    {
+      "itemId": 2290139,
+      "skillIds": [
+        21120007
+      ],
+      "successRate": 50,
+      "reqSkillLevel": 15,
+      "masterLevel": 30
+    }
+  ]
 }

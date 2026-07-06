@@ -33,6 +33,8 @@ public sealed class JsonSkillBookCatalog : ISkillBookCatalog
     public SkillBookDefinition? GetByItemId(int itemId)
         => _booksByItemId.GetValueOrDefault(itemId);
 
+    public int Count => _booksByItemId.Count;
+
     private static JsonSerializerOptions CreateJsonOptions()
         => new()
         {
