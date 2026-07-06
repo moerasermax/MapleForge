@@ -208,6 +208,7 @@ internal static class V113ChannelSendOp
     public const short CancelForeignBuff = unchecked((short)0xC1);
     public const short RepairWindow = unchecked((short)0xD5);
     public const short AranCombo = unchecked((short)0xDA);
+    public const short GamePollReply = unchecked((short)0xDB);
     public const short NpcTalk = 0x13C;   // NPC 對話框（getNPCTalk，2-byte opcode）
     public const short OpenNpcShop = 0x13D;
     public const short ConfirmShopTransaction = 0x13E;

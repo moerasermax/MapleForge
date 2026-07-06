@@ -119,6 +119,15 @@ public sealed class V113EventMiniGameHandler
         };
     }
 
+    internal V113EventMiniGameHandleResult HandleBeansUpdate(PacketReader reader, Player player)
+    {
+        _ = reader.ReadBytes(reader.Remaining);
+        player.BeansGameSession.Reset();
+        return SelfOnly(
+            V113EventMiniGamePackets.ExitBeans(),
+            V113StatsPackets.EnableActions());
+    }
+
     private V113EventMiniGameHandleResult StartRps(Player player, byte clientMode)
     {
         if (player.RpsSession is { IsActive: true } existing)

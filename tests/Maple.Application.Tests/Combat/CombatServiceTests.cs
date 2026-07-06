@@ -1,4 +1,5 @@
 using Maple.Application.Combat;
+using Maple.Application.Drops;
 using Maple.Application.Maps;
 using Maple.Core.Characters;
 using Maple.Core.Data;
@@ -78,9 +79,28 @@ public sealed class CombatServiceTests
         Assert.Equal(100001, mob.ObjectId);
         Assert.Equal(100100, mob.Definition.MonsterId);
         Assert.Equal(42, mob.Hp);
+        Assert.Equal(3, mob.Stats.SelfDestructAnimation);
         Assert.Equal((short)30, mob.Position.X);
         Assert.Equal((short)40, mob.Position.Y);
         Assert.Same(mob, field.Get(100001));
+    }
+
+    [Fact]
+    public void KillMobWithoutRewards_RemovesMobWithoutCallingDropHook()
+    {
+        var killHook = new CountingKillHandler();
+        var service = new CombatService(new MapService(new EmptyDataProvider()), killHook);
+        var field = new FieldInstance(100000100);
+        var mob = MakeMob(objectId: 100001, hp: 20);
+        field.Add(mob);
+
+        var result = service.KillMobWithoutRewards(field, mob.ObjectId, animation: 3);
+
+        Assert.True(result.Killed);
+        Assert.Equal(100001, result.ObjectId);
+        Assert.Equal(3, result.Animation);
+        Assert.Null(field.Get(mob.ObjectId));
+        Assert.Equal(0, killHook.Calls);
     }
 
     private static Player MakePlayer(short hp = 50)
@@ -150,6 +170,10 @@ public sealed class CombatServiceTests
                     ["maxMP"] = new Node("maxMP", 7),
                     ["level"] = new Node("level", 2),
                     ["exp"] = new Node("exp", 12),
+                    ["selfDestruction"] = new Node("selfDestruction", children: new Dictionary<string, IDataNode>
+                    {
+                        ["action"] = new Node("action", 3),
+                    }),
                 }),
                 ["move"] = new Node("move"),
             });
@@ -183,5 +207,16 @@ public sealed class CombatServiceTests
         public object? Value { get; }
 
         public IDataNode? this[string name] => Children.TryGetValue(name, out var child) ? child : null;
+    }
+
+    private sealed class CountingKillHandler : IMobKillHandler
+    {
+        public int Calls { get; private set; }
+
+        public MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob)
+        {
+            Calls++;
+            return MobKillRewards.Empty;
+        }
     }
 }

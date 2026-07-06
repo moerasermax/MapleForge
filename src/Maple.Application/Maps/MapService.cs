@@ -71,6 +71,10 @@ public sealed class MapService
         var boss = GetInt(info, "boss", 0) > 0 || monsterId is 8810018 or 9410066 || (monsterId >= 8810118 && monsterId <= 8810122);
         var friendly = GetInt(info, "damagedByMob", 0) > 0;
         var mobile = mobImg?["move"] is not null || mobImg?["fly"] is not null;
+        var selfDestructAnimation = (sbyte)Math.Clamp(
+            GetInt(info["selfDestruction"], "action", -1),
+            sbyte.MinValue,
+            sbyte.MaxValue);
 
         return new MobStats(
             MonsterId: monsterId,
@@ -81,7 +85,8 @@ public sealed class MapService
             Boss: boss,
             Mobile: mobile,
             Friendly: friendly,
-            HpDisplayType: GetHpDisplayType(monsterId, boss, friendly));
+            HpDisplayType: GetHpDisplayType(monsterId, boss, friendly),
+            SelfDestructAnimation: selfDestructAnimation);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

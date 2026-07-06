@@ -13,6 +13,8 @@ internal readonly record struct V113CashShopPurchaseRequest(
     CashCurrencyType Currency,
     int SerialNumber);
 
+internal readonly record struct V113CouponCodeRequest(short Unknown, string Code);
+
 public sealed record V113CashShopOperationResult(
     bool Handled,
     bool AccountMutated,
@@ -32,6 +34,7 @@ internal static class V113CashShopPackets
     public const byte ServerShowWishList = 0x4A;
     public const byte ServerBoughtCashItem = 0x4E;
     public const byte ServerBoughtCashItemFailed = 0x4F;
+    public const byte ServerCouponRedeemed = 0x62;
 
     public static V113CashShopPurchaseRequest? ParsePurchase(PacketReader reader)
     {
@@ -44,6 +47,13 @@ internal static class V113CashShopPackets
         var currency = (CashCurrencyType)(reader.ReadByte() + 1);
         var serialNumber = reader.ReadInt();
         return new V113CashShopPurchaseRequest(action, currency, serialNumber);
+    }
+
+    public static V113CouponCodeRequest ParseCouponCode(PacketReader reader)
+    {
+        var unknown = reader.Remaining >= 2 ? reader.ReadShort() : (short)0;
+        var code = reader.Remaining > 0 ? reader.ReadMapleString() : string.Empty;
+        return new V113CouponCodeRequest(unknown, code);
     }
 
     public static IReadOnlyList<byte[]> InitialCashShopPackets(
@@ -114,6 +124,21 @@ internal static class V113CashShopPackets
         w.WriteShort(SendCashShopUpdate);
         w.WriteInt(account.CashPoints);
         w.WriteInt(account.MaplePoints);
+        return w.ToArray();
+    }
+
+    /// <summary>Java-source candidate/unverified: MTSCSPacket.showCouponRedeemedItem(itemid).</summary>
+    public static byte[] ShowCouponRedeemedItem(int itemId)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(SendCashShopOperation);
+        w.WriteShort(ServerCouponRedeemed);
+        w.WriteInt(0);
+        w.WriteInt(1);
+        w.WriteShort(1);
+        w.WriteShort(0x1A);
+        w.WriteInt(itemId);
+        w.WriteInt(0);
         return w.ToArray();
     }
 
@@ -238,5 +263,53 @@ public sealed class V113CashShopOperationHandler
                     account.Id),
                 V113CashShopPackets.ShowCashBalances(account),
             });
+    }
+
+    public async Task<V113CashShopOperationResult> HandleCouponCodeAsync(
+        PacketReader reader,
+        Account account,
+        Player player,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        V113CouponCodeRequest request;
+        try
+        {
+            request = V113CashShopPackets.ParseCouponCode(reader);
+        }
+        catch (InvalidDataException)
+        {
+            return new V113CashShopOperationResult(
+                true,
+                false,
+                false,
+                new[] { V113CashShopPackets.SendCashShopFail(179) });
+        }
+
+        var result = await _cashShop
+            .RedeemCouponAsync(account, player, request.Code, now, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.Status != CashCouponRedeemStatus.Success)
+        {
+            return new V113CashShopOperationResult(
+                true,
+                false,
+                false,
+                new[] { V113CashShopPackets.SendCashShopFail(result.JavaErrorCode) });
+        }
+
+        var packets = new List<byte[]>();
+        if (result.GainedItem is not null)
+        {
+            packets.Add(V113CashShopPackets.ShowCouponRedeemedItem(result.GainedItem.ItemId));
+        }
+
+        packets.Add(V113CashShopPackets.ShowCashBalances(account));
+        return new V113CashShopOperationResult(
+            true,
+            result.AccountMutated,
+            result.CharacterMutated,
+            packets);
     }
 }

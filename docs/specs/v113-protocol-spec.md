@@ -954,12 +954,12 @@ SHOW_EXP_CHAIR(0x24): readInt(chairId); ENABLE_ACTIONS
 CYGNUS_SUMMON(0x91): no C2S payload; job 2000 starts NPC 1202000, job 1000 starts NPC 1101008
 SNOWBALL(0xCD): read byte team + short unknown + byte position + byte stage; ENABLE_ACTIONS
 LEFT_KNOCK_BACK(0xCE): no required C2S payload; snowball maps send LEFT_KNOCK_BACK + ENABLE_ACTIONS
-GAME_POLL(0xA3): ENABLE_ACTIONS stub
-MAPLETV(0x10A): ENABLE_ACTIONS stub; no MapleTV broadcast system yet
-CP_BeansUpdate(0xE1): ENABLE_ACTIONS stub; bean system not implemented yet
+GAME_POLL(0xA3): read int tick + int selection; Java PollEnabled=false in this tree, so ENABLE_ACTIONS parity
+MAPLETV(0x10A): preserve remaining payload; Java has no dispatch case / no MapleTV broadcaster, so ENABLE_ACTIONS parity
+CP_BeansUpdate(0xE1): consume remaining payload; reset BeansGameSession; send LP_BeanGameShoot action 6 + ENABLE_ACTIONS
 ```
 
-備註：本批只把已知 trivial opcode 從未處理狀態降噪/解除 client action lock，不建立新 domain service。2026-07-06 P003-D1 修正 `CLIENT_FEEDBACK`/`CLIENT_ERROR` 對調 bug，並補 Login opcode fixture。`SHOW_EXP_CHAIR` 對照 Java `PlayerHandler.ShowExpChair` 後確認本身就是讀 `chairId` 後 `enableActions`，因此 MapleForge 保持 Java parity no-op。2026-07-06 P003-D2 對照 Java `UserInterfaceHandler.CygnusSummonNPCRequest` 接入 Cygnus NPC script intent；`SNOWBALL` 對照 Java handler 本身只 `enableActions`，真正 hit 在 close-range attack path 的 `MapleSnowballs.hitSnowball`；`LEFT_KNOCK_BACK` 對照 Java 雪地圖 gate 送 `LEFT_KNOCK_BACK(0x11A)` + `EnableActions`。LEFT_KNOCK_BACK S2C fixture 為 Java-source candidate / unverified。證據層級為 Java source + MapleForge targeted tests；真 v113 client smoke 未跑。
+備註：本批只把已知 trivial opcode 從未處理狀態降噪/解除 client action lock，不建立新 domain service。2026-07-06 P003-D1 修正 `CLIENT_FEEDBACK`/`CLIENT_ERROR` 對調 bug，並補 Login opcode fixture。`SHOW_EXP_CHAIR` 對照 Java `PlayerHandler.ShowExpChair` 後確認本身就是讀 `chairId` 後 `enableActions`，因此 MapleForge 保持 Java parity no-op。2026-07-06 P003-D2 對照 Java `UserInterfaceHandler.CygnusSummonNPCRequest` 接入 Cygnus NPC script intent；`SNOWBALL` 對照 Java handler 本身只 `enableActions`，真正 hit 在 close-range attack path 的 `MapleSnowballs.hitSnowball`；`LEFT_KNOCK_BACK` 對照 Java 雪地圖 gate 送 `LEFT_KNOCK_BACK(0x11A)` + `EnableActions`。2026-07-06 P003-D3 對照 Java `UserInterfaceHandler.InGamePoll` 的 `PollEnabled=false` 預設行為，`GAME_POLL` 維持 parser + `EnableActions` parity；`MAPLETV` 在此 Java tree 無 dispatch 且 cash item path 只回「no MapleTVs」，MapleForge 保留 payload 後放行；`CP_BeansUpdate` 對照 `BeanGame.BeansUpdate` 重置 runtime bean state 並送 exit packet。LEFT_KNOCK_BACK / CP_BeansUpdate S2C fixture 為 Java-source candidate / unverified。證據層級為 Java source + MapleForge targeted tests；真 v113 client smoke 未跑。
 
 ---
 ## P2 Batch 1B 簡易 handler opcode 註記（2026-06-18）
@@ -993,7 +993,7 @@ writeInt(mobOid2)
 
 MONSTER_BOMB:
 writeShort(0xBB)
-writeInt(mobOid)    // MVP validates Shadower jobs 421/422, then EnableActions
+writeInt(mobOid)    // job 421/422 + alive + mob selfD != -1; no-reward kill and broadcast KILL_MONSTER with selfD animation
 
 HYPNOTIZE_DMG:
 writeShort(0xBC)
@@ -1014,9 +1014,10 @@ writeShort(0xE5)
 - `PASSIVE_ENERGY(0x28)` 走既有 close-range attack parser/combat path；Java 的 `energy=true` 細節尚未分離建模。
 - `WHEEL_OF_FORTUNE(0x2E)` 走既有 `USE_ITEMEFFECT(0x2D)` handler，保留持有檢查與視覺廣播語義。
 - `ARAN_COMBO(0x92)` P003-D2 已不再是 MVP stub：Core `Player` 保存 runtime combo count + last combo time，Application `SkillService.AddAranCombo` 對齊 Java job gate `2000..2112`、4 秒重置、30000 上限、10/20/.../100 門檻與 `21000000` skill level gate；達門檻時套 `ARAN_COMBO` runtime buff，Adapter 送 Java-source candidate `GIVE_BUFF(0x1E)`，mask 為 `ARAN_COMBO`，value=combo，buffId=21000000，duration=99999ms。`21000000` WZ effect 缺資料時仍用 fallback combo effect 產完整封包；TODO：以 Skill.wz/live client 校準 timing/effect。
-- `FRIENDLY_DAMAGE`、`MONSTER_BOMB`、`HYPNOTIZE_DMG`、`DISPLAY_NODE` 目前是讀取指定欄位後 `EnableActions` 的 MVP，不做 mob kill、node packet。
+- `MONSTER_BOMB(0xBB)` P003-D3 已不再是 MVP stub：對照 Java `MobHandler.handleMonsterBomb`，讀 `mobOid`，要求玩家存活、job 421/422、mob 存在且 `selfD != -1`，走 `CombatService.KillMobWithoutRewards` 移除怪物且不呼叫 kill reward/drop hook，廣播 `KILL_MONSTER(0xE6)` 的 `oid + selfD animation`。`MapService.LoadMobStats` 解析 Mob.wz `info/selfDestruction/action` 到 Core `MobStats.SelfDestructAnimation`，預設 -1。GM hidden runtime state 尚未建模，故 hidden gate 留 TODO。
+- `FRIENDLY_DAMAGE`、`HYPNOTIZE_DMG`、`DISPLAY_NODE` 目前仍是讀取指定欄位後 `EnableActions` 的 MVP，不做 Shammos escort / node packet；D0b 判定延 P004。
 - `CS_UPDATE(0xE5)` 目前送既有 cash balances 與 Cash inventory snapshot；Java 的 gifts/wishlist refresh 尚無 MapleForge model/encoder。
-- 證據層級：Java source + Host.Shared build + Core/Application/Adapters targeted tests；ARAN combo / LEFT_KNOCK_BACK S2C layout 仍為 Java-source candidate / unverified，真 v113 client UI/combat/event smoke 待後續批量驗證。
+- 證據層級：Java source + Host.Shared build + Core/Application/Adapters targeted tests；ARAN combo / LEFT_KNOCK_BACK / MONSTER_BOMB kill animation S2C layout 仍為 Java-source candidate / unverified，真 v113 client UI/combat/event smoke 待後續批量驗證。
 
 ---
 ## P2 Batch 2A Event Systems MVP stubs（2026-06-18） / 三 stub 升級（2026-06-18）
@@ -1189,7 +1190,7 @@ writeMapleAsciiString(code)
 
 - `CP_UserOldAntiMacroQuestionResult(0x63)` Java 會檢查角色 anti-macro state，驗證輸入 code 後觸發 success/reduce；MapleForge Phase A MVP 讀 answer string、寫 log 並送 `EnableActions`，不建立 anti-macro runtime state。
 - `ITEM_UNLOCK(0x95)` 此 Java tree 實際由 `PlayersHandler.UnlockItem` 處理，full handler 讀三個 short（item size/type/slot），移除 `LOCK` 或 `UNTRADEABLE` flag，並消耗解除鑰匙 `2051000`；MapleForge Phase A MVP 支援 compact one-short slot 與 Java three-short shape，找 Equip 背包 slot 的裝備，若有 `LOCK` flag 則清除、flush/persist inventory，送完整 `MODIFY_INVENTORY_ITEM` remove+add update + `EnableActions`。`UNTRADEABLE` unlock 與 `2051000` key consumption deferred。
-- `COUPON_CODE(0xE7)` Java 會查 DB coupon code 並發放 GASH/MaplePoints/item/meso，失敗回 cash-shop fail；MapleForge MVP 只讀 skip short + coupon code string 後 `EnableActions`，完整 coupon DB/table 與 reward flow 待後續 CashShop 任務。
+- `COUPON_CODE(0xE7)` P003-D3 已接序號兌換主路徑：Core 新增 `CashCoupon` / `ICashCouponRepository`，Persistence 提供 LiteDB/Mongo `cash_coupons` repository，Application `CashShopService.RedeemCouponAsync` 支援 Java type 1 Cash/GASH、type 2 MaplePoints、type 3 item、type 4 meso。失敗回 `CS_OPERATION(0x158)` action `0x4F` + Java error `0xB3`；成功刷新 cash balance，item success 另有 Java-source candidate `showCouponRedeemedItem` fixture（unverified）。完整序號 seed/admin tooling、live cash-shop UI smoke 與 coupon 成功視覺封包仍待後續驗證。
 - 證據層級：Java source + Host.Shared build 0 warning/0 error + Adapters.V113 tests 313 passed / 1 skipped + Core 98 passed；真 v113 client cash-shop/anti-macro/item-unlock smoke 未跑。
 
 ---

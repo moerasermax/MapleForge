@@ -593,15 +593,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.MonsterBomb:
-                        if (player is null) break;
-                        if (reader.Remaining < 4) break;
-                        _ = reader.ReadInt();
-                        if (player.Character.Job is not (421 or 422))
-                        {
-                            await s.SendAsync(V113StatsPackets.EnableActions(), token);
-                            break;
-                        }
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        if (player is null || currentField is null) break;
+                        await HandleMonsterBombAsync(reader, player, currentField, s, token);
                         break;
 
                     case V113ChannelRecvOp.HypnotizeDmg:
@@ -948,7 +941,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.GamePoll:
                         if (player is null) break;
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await s.SendAsync(V113UserInterfaceHandler.HandleGamePoll(reader), token);
                         break;
 
                     case V113ChannelRecvOp.UpdateQuest:
@@ -1222,10 +1215,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.CouponCode:
-                        if (player is null) break;
-                        _ = reader.ReadShort();
-                        _ = reader.ReadMapleString();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        if (player is null || account is null) break;
+                        var couponResult = await _cashShopOperationHandler.HandleCouponCodeAsync(
+                            reader,
+                            account,
+                            player,
+                            DateTimeOffset.UtcNow,
+                            token);
+                        foreach (var packet in couponResult.Packets)
+                        {
+                            await s.SendAsync(packet, token);
+                        }
+                        if (couponResult.AccountMutated)
+                        {
+                            await _accounts.UpdateAsync(account, token);
+                        }
+                        if (couponResult.CharacterMutated)
+                        {
+                            await _charService.UpdateAsync(player.Character, token);
+                        }
                         break;
 
                     case V113ChannelRecvOp.TouchingMts:
@@ -1340,10 +1348,22 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.PartySearchStart:
                     case V113ChannelRecvOp.PartySearchStop:
-                    case V113ChannelRecvOp.MapleTV:
-                    case V113ChannelRecvOp.BeansUpdate:
                         if (player is null) break;
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        break;
+
+                    case V113ChannelRecvOp.MapleTV:
+                        if (player is null) break;
+                        await s.SendAsync(V113UserInterfaceHandler.HandleMapleTv(reader), token);
+                        break;
+
+                    case V113ChannelRecvOp.BeansUpdate:
+                        if (player is null) break;
+                        await HandleEventMiniGameResultAsync(
+                            _eventMiniGameHandler.HandleBeansUpdate(reader, player),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.BeansGameAction:
@@ -3169,15 +3189,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 break;
 
             case V113ChannelRecvOp.CouponCode:
-                if (reader.Remaining >= 2)
+                if (account is null) break;
+                var couponResult = await _cashShopOperationHandler.HandleCouponCodeAsync(
+                    reader,
+                    account,
+                    player,
+                    DateTimeOffset.UtcNow,
+                    ct);
+                foreach (var packet in couponResult.Packets)
                 {
-                    _ = reader.ReadShort();
+                    await session.SendAsync(packet, ct);
                 }
-                if (reader.Remaining > 0)
+                if (couponResult.AccountMutated)
                 {
-                    _ = reader.ReadMapleString();
+                    await _accounts.UpdateAsync(account, ct);
                 }
-                await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+                if (couponResult.CharacterMutated)
+                {
+                    await _charService.UpdateAsync(player.Character, ct);
+                }
                 break;
 
             case V113ChannelRecvOp.Pong:
@@ -3572,6 +3602,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     {
         await session.SendAsync(packet, ct);
         await BroadcastPacketToOthersAsync(chr, packet, ct);
+    }
+
+    private async Task HandleMonsterBombAsync(
+        PacketReader reader,
+        Player player,
+        FieldInstance field,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        var result = V113MonsterBombHandler.Handle(reader, player, field, _combatService);
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        foreach (var packet in result.MapPackets)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
+        }
     }
 
     private async Task HandleEventMiniGameResultAsync(

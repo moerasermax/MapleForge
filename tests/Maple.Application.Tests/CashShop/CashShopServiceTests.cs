@@ -79,6 +79,75 @@ public sealed class CashShopServiceTests
         Assert.Empty(player.Character.Items);
     }
 
+    [Fact]
+    public async Task RedeemCoupon_CashPointsMarksCodeUsedAndUpdatesBalance()
+    {
+        var coupons = new InMemoryCouponRepository(new CashCoupon
+        {
+            Code = "D3NX",
+            Type = CashCouponRewardType.CashPoints,
+            Item = 500,
+        });
+        var service = new CashShopService(new FakeCashItemCatalog(DefaultItem), coupons);
+        var account = new Account { CashPoints = 10 };
+        var player = NewPlayer(gender: 0);
+
+        var result = await service.RedeemCouponAsync(account, player, "d3nx", FixedNow);
+
+        Assert.Equal(CashCouponRedeemStatus.Success, result.Status);
+        Assert.True(result.AccountMutated);
+        Assert.False(result.CharacterMutated);
+        Assert.Equal(510, account.CashPoints);
+        Assert.False((await coupons.FindByCodeAsync("D3NX"))!.Valid);
+    }
+
+    [Fact]
+    public async Task RedeemCoupon_ItemRewardAddsInventoryAndFlushesCharacter()
+    {
+        var coupons = new InMemoryCouponRepository(new CashCoupon
+        {
+            Code = "D3ITEM",
+            Type = CashCouponRewardType.Item,
+            Item = 2000000,
+            Size = 3,
+            Time = 7,
+        });
+        var service = new CashShopService(new FakeCashItemCatalog(DefaultItem), coupons);
+        var account = new Account();
+        var player = NewPlayer(gender: 0);
+
+        var result = await service.RedeemCouponAsync(account, player, "D3ITEM", FixedNow);
+
+        Assert.Equal(CashCouponRedeemStatus.Success, result.Status);
+        Assert.False(result.AccountMutated);
+        Assert.True(result.CharacterMutated);
+        Assert.NotNull(result.GainedItem);
+        Assert.Equal(2000000, result.GainedItem!.ItemId);
+        Assert.Equal(3, result.GainedItem.Quantity);
+        Assert.Equal(FixedNow.AddDays(7).ToUnixTimeMilliseconds(), result.GainedItem.Expiration);
+        Assert.Contains(player.Character.Items, i => i.ItemId == 2000000 && i.Quantity == 3);
+    }
+
+    [Fact]
+    public async Task RedeemCoupon_AlreadyUsedFailsWithoutReward()
+    {
+        var coupons = new InMemoryCouponRepository(new CashCoupon
+        {
+            Code = "USED",
+            Valid = false,
+            Type = CashCouponRewardType.MaplePoints,
+            Item = 100,
+        });
+        var service = new CashShopService(new FakeCashItemCatalog(DefaultItem), coupons);
+        var account = new Account();
+        var player = NewPlayer(gender: 0);
+
+        var result = await service.RedeemCouponAsync(account, player, "USED", FixedNow);
+
+        Assert.Equal(CashCouponRedeemStatus.InvalidCode, result.Status);
+        Assert.Equal(0, account.MaplePoints);
+    }
+
     private static readonly CashItemDefinition DefaultItem = new(
         10000001,
         5350000,
@@ -110,5 +179,41 @@ public sealed class CashShopServiceTests
 
         public CashItemDefinition? GetBySerialNumber(int serialNumber)
             => _items.GetValueOrDefault(serialNumber);
+    }
+
+    private sealed class InMemoryCouponRepository : ICashCouponRepository
+    {
+        private readonly Dictionary<string, CashCoupon> _coupons;
+
+        public InMemoryCouponRepository(params CashCoupon[] coupons)
+        {
+            _coupons = coupons.ToDictionary(static c => c.Code, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public Task<CashCoupon?> FindByCodeAsync(string code, CancellationToken cancellationToken = default)
+            => Task.FromResult(_coupons.GetValueOrDefault(code));
+
+        public Task<bool> TryMarkUsedAsync(
+            string code,
+            string usedBy,
+            DateTimeOffset usedAt,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_coupons.TryGetValue(code, out var coupon) || !coupon.Valid)
+            {
+                return Task.FromResult(false);
+            }
+
+            coupon.Valid = false;
+            coupon.UsedBy = usedBy;
+            coupon.UsedAt = usedAt;
+            return Task.FromResult(true);
+        }
+
+        public Task UpsertAsync(CashCoupon coupon, CancellationToken cancellationToken = default)
+        {
+            _coupons[coupon.Code] = coupon;
+            return Task.CompletedTask;
+        }
     }
 }

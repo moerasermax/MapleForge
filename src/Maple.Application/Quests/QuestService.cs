@@ -73,7 +73,7 @@ public sealed record QuestTransactionResult
     public int? NextQuestId { get; init; }
 }
 
-/// <summary>Quest use case; protocol encoding stays in Maple.Adapters.V113.</summary>
+/// <summary>Quest use case; protocol encoding stays in the adapter layer.</summary>
 public sealed class QuestService
 {
     private readonly IQuestCatalog _catalog;

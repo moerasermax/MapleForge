@@ -25,6 +25,8 @@ public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits)
     public bool AnyKilled => Hits.Any(static h => h.Killed);
 }
 
+public sealed record CombatMobKillResult(int ObjectId, int MonsterId, byte Animation, bool Killed);
+
 /// <summary>戰鬥用例：建立場上怪物、套用攻擊傷害、處理怪物死亡生命週期。</summary>
 public sealed class CombatService
 {
@@ -112,5 +114,19 @@ public sealed class CombatService
         }
 
         return new CombatAttackResult(hits);
+    }
+
+    /// <summary>Kill a mob without EXP/drop rewards. Used by Java MonsterBomb self-destruction path.</summary>
+    public CombatMobKillResult KillMobWithoutRewards(FieldInstance field, int mobObjectId, byte animation)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        if (field.Get(mobObjectId) is not Mob mob || !mob.IsAlive)
+        {
+            return new CombatMobKillResult(mobObjectId, 0, animation, Killed: false);
+        }
+
+        field.Remove(mob.ObjectId);
+        return new CombatMobKillResult(mob.ObjectId, mob.Definition.MonsterId, animation, Killed: true);
     }
 }

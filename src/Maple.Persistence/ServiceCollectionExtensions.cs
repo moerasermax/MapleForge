@@ -1,8 +1,10 @@
 using LiteDB;
 using Maple.Core.Accounts;
+using Maple.Core.CashShop;
 using Maple.Core.Characters;
 using Maple.Core.Guilds;
 using Maple.Persistence.Accounts;
+using Maple.Persistence.CashShop;
 using Maple.Persistence.Characters;
 using Maple.Persistence.Guilds;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,9 +53,11 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<LiteDbAccountRepository>();
+        services.AddSingleton<LiteDbCashCouponRepository>();
         services.AddSingleton<LiteDbCharacterRepository>();
         services.AddSingleton<LiteDbGuildRepository>();
         services.AddSingleton<MongoAccountRepository>();
+        services.AddSingleton<MongoCashCouponRepository>();
         services.AddSingleton<MongoCharacterRepository>();
         services.AddSingleton<MongoGuildRepository>();
 
@@ -74,6 +78,16 @@ public static class ServiceCollectionExtensions
             {
                 MapleDatabaseProvider.LiteDb => sp.GetRequiredService<LiteDbCharacterRepository>(),
                 _ => sp.GetRequiredService<MongoCharacterRepository>(),
+            };
+        });
+
+        services.AddSingleton<ICashCouponRepository>(sp =>
+        {
+            var opts = sp.GetRequiredService<MapleDatabaseOptions>();
+            return opts.Provider switch
+            {
+                MapleDatabaseProvider.LiteDb => sp.GetRequiredService<LiteDbCashCouponRepository>(),
+                _ => sp.GetRequiredService<MongoCashCouponRepository>(),
             };
         });
 
