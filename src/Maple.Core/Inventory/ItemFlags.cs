@@ -5,6 +5,7 @@ public static class ItemFlags
 {
     public const short Lock = 0x01;
     public const short KarmaUse = 0x02;
+    public const short Untradeable = 0x08;
     public const short KarmaEquip = 0x10;
 
     public static bool Has(short flags, short flag) => (flags & flag) == flag;

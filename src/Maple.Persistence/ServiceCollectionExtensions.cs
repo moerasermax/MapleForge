@@ -3,10 +3,12 @@ using Maple.Core.Accounts;
 using Maple.Core.CashShop;
 using Maple.Core.Characters;
 using Maple.Core.Guilds;
+using Maple.Core.PlayerShops;
 using Maple.Persistence.Accounts;
 using Maple.Persistence.CashShop;
 using Maple.Persistence.Characters;
 using Maple.Persistence.Guilds;
+using Maple.Persistence.PlayerShops;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
 
@@ -56,10 +58,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<LiteDbCashCouponRepository>();
         services.AddSingleton<LiteDbCharacterRepository>();
         services.AddSingleton<LiteDbGuildRepository>();
+        services.AddSingleton<LiteDbHiredMerchantRepository>();
         services.AddSingleton<MongoAccountRepository>();
         services.AddSingleton<MongoCashCouponRepository>();
         services.AddSingleton<MongoCharacterRepository>();
         services.AddSingleton<MongoGuildRepository>();
+        services.AddSingleton<MongoHiredMerchantRepository>();
 
         services.AddSingleton<IAccountRepository>(sp =>
         {
@@ -98,6 +102,16 @@ public static class ServiceCollectionExtensions
             {
                 MapleDatabaseProvider.LiteDb => sp.GetRequiredService<LiteDbGuildRepository>(),
                 _ => sp.GetRequiredService<MongoGuildRepository>(),
+            };
+        });
+
+        services.AddSingleton<IHiredMerchantRepository>(sp =>
+        {
+            var opts = sp.GetRequiredService<MapleDatabaseOptions>();
+            return opts.Provider switch
+            {
+                MapleDatabaseProvider.LiteDb => sp.GetRequiredService<LiteDbHiredMerchantRepository>(),
+                _ => sp.GetRequiredService<MongoHiredMerchantRepository>(),
             };
         });
 

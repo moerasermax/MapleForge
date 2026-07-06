@@ -9,7 +9,7 @@
 | `Maple.Net` | TCP session、listener、cipher framing |
 | `Maple.Versioning` | Cipher 抽象介面（`IPacketCipher`、`IVersionCipherFactory`） |
 | `Maple.Adapters.V113` | v113 特有實作（crypto、opcodes、packets） |
-| `Maple.Persistence` | LiteDB repository 實作 |
+| `Maple.Persistence` | LiteDB/Mongo repository 實作 |
 | `Maple.Content` | WZ reader、地圖/資料提供者 |
 | `Maple.Scripting` | 腳本引擎整合 |
 | `Maple.Host.Shared` | DI 組裝、`ServerInstanceOptions` |

@@ -1304,7 +1304,7 @@ writeInt(tabOrPage)
 
 - 本輪只把 7 個 heavy subsystem opcode 接成安全 MVP stub：讀取任務指定最小欄位或 no-op 後送 `EnableActions`。
 - `ENTER_CASH_SHOP(0x20)` Java 會保存角色、移除地圖/頻道狀態並回 cash-shop server endpoint；MapleForge MVP 不做跨 server / cash shop mode transition。
-- `CP_HiredMerchantRemoteControl(0x34)`、`USE_HIRED_MERCHANT(0x38)`、`MERCH_ITEM_STORE(0x3A)` 完整語義需要 hired merchant runtime、merchant persistence、owner/visitor UI 與 item store package flow；MapleForge MVP 不建立 merchant subsystem。
+- `CP_HiredMerchantRemoteControl(0x34)`、`USE_HIRED_MERCHANT(0x38)`、`MERCH_ITEM_STORE(0x3A)` 完整語義需要 hired merchant runtime、merchant persistence、owner/visitor UI 與 item store package flow；P003-D5 已建立 Core/Application/Persistence 的 `IPlayerShop` / `HiredMerchant` / `PlayerShopService` / `IHiredMerchantRepository` 與 LiteDB/Mongo `hired_merchants` + `hired_merchant_items`，v113 dispatch 與封包編解碼待 Cut2。
 - `ENTER_MTS(0x99)`、`TOUCHING_MTS(0xFA)`、`MTS_TAB(0xFB)` 完整語義需要 MTS cart/listing/buy/sell/search/page state；MapleForge MVP 不建立 MTS storage 或 auction model。
 - 注意：此 Java tree 的部分 full handler 實際 first-read 與本 migration scope 的 MVP 固定欄位不同（例如 remote merchant control 與 MTS update/tab flow）；完整移植時需回到 Java source + 真 v113 client capture 校準最終 layout。
 - 證據層級：Java source map + MapleForge adapter-only implementation；`Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped。真 v113 client CashShop/HiredMerchant/MTS smoke 未跑。
