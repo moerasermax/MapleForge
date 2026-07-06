@@ -475,7 +475,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.ShowExpChair:
                         if (player is null) break;
-                        _ = reader.ReadInt();
+                        _ = V113RewardItemHandler.ParseShowExpChair(reader);
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
@@ -763,6 +763,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.ThrowGrenade:
                         if (player is null) break;
+                        _ = V113RewardItemHandler.ParseThrowGrenade(reader);
                         await s.SendAsync(V113StatsPackets.EnableActions(), token);
                         break;
 
@@ -773,9 +774,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.RewardItem:
                         if (player is null) break;
-                        _ = reader.ReadShort();
-                        _ = reader.ReadInt();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleRewardItemResultAsync(
+                            V113RewardItemHandler.HandleRewardItem(reader, player),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.ItemMaker:
@@ -786,9 +789,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.UseTreasureChest:
                         if (player is null) break;
-                        _ = reader.ReadShort();
-                        _ = reader.ReadInt();
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        await HandleRewardItemResultAsync(
+                            V113RewardItemHandler.HandleTreasureChest(reader, player),
+                            player,
+                            s,
+                            token);
                         break;
 
                     case V113ChannelRecvOp.PartyChat:
@@ -1940,6 +1945,38 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (result.CharacterMutated)
         {
             await _charService.UpdateAsync(player.Character, ct);
+        }
+    }
+
+    private async Task HandleRewardItemResultAsync(
+        V113RewardItemResult result,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (!result.Handled)
+        {
+            return;
+        }
+
+        foreach (var packet in result.SelfPackets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        foreach (var packet in result.BroadcastPackets)
+        {
+            await BroadcastPacketToOthersAsync(player.Character, packet, ct);
+        }
+
+        if (result.CharacterMutated)
+        {
+            await _charService.UpdateAsync(player.Character, ct);
+            _log.LogInformation(
+                "[Channel] REWARD_ITEM/TREASURE_CHEST charId={CharId} slot={Slot} itemId={ItemId}",
+                player.Character.Id,
+                result.Request.Slot,
+                result.Request.ItemId);
         }
     }
 

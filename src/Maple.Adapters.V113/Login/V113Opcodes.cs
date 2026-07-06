@@ -9,8 +9,8 @@ internal static class V113RecvOp
     public const short CharSelect          = 0x06;
     public const short CheckCharName       = 0x08;
     public const short CreateChar          = 0x0B;
-    public const short ClientError         = 0x0C;
-    public const short ClientFeedback      = 0x0F;
+    public const short ClientFeedback      = 0x0C;
+    public const short ClientError         = 0x0F;
     public const short ServerStatusRequest = 0x18;
     public const short DeleteChar          = 0x0D;
     public const short SetGender           = 0x19;  // c2s：帳號名+第二密碼(PIN)+gender byte

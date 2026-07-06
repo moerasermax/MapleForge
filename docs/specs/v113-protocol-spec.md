@@ -927,18 +927,18 @@ writeMapleAsciiString(mapName)
 
 來源：
 
-- `recv.properties`：`CLIENT_ERROR=0x0C`、`STRANGE_DATA=0x7FFF`、`CLIENT_FEEDBACK=0x0F`、`CLIENT_LOGOUT=0x1A`、`SHOW_EXP_CHAIR=0x24`、`CP_UserCalcDamageStatSetRequest=0x66`、`CYGNUS_SUMMON=0x91`、`GAME_POLL=0xA3`、`SNOWBALL=0xCD`、`LEFT_KNOCK_BACK=0xCE`、`CP_BeansUpdate=0xE1`、`MAPLETV=0x10A`
+- `RecvPacketOpcode.java`：`CLIENT_FEEDBACK=0x0C`、`STRANGE_DATA=0x7FFF`、`CLIENT_ERROR=0x0F`、`CLIENT_LOGOUT=0x1A`、`SHOW_EXP_CHAIR=0x24`、`CP_UserCalcDamageStatSetRequest=0x66`、`CYGNUS_SUMMON=0x91`、`GAME_POLL=0xA3`、`SNOWBALL=0xCD`、`LEFT_KNOCK_BACK=0xCE`、`CP_BeansUpdate=0xE1`、`MAPLETV=0x10A`
 - Java 來源：`MapleServerHandler.java` dispatch；MapleTV cash-item message path also notes no MapleTV broadcast support.
 
 Login C→S:
 
 ```
 CLIENT_ERROR:
-writeShort(0x0C)
+writeShort(0x0F)
 writeBytes(errorData)    // MapleForge logs remaining bytes as warning-level error data.
 
 CLIENT_FEEDBACK:
-writeShort(0x0F)
+writeShort(0x0C)
 writeBytes(data)         // MapleForge logs at information level.
 
 CLIENT_LOGOUT:
@@ -950,7 +950,7 @@ Channel C→S handling:
 ```
 STRANGE_DATA(0x7FFF): no-op
 CP_UserCalcDamageStatSetRequest(0x66): no-op
-SHOW_EXP_CHAIR(0x24): readInt(); ENABLE_ACTIONS
+SHOW_EXP_CHAIR(0x24): readInt(chairId); ENABLE_ACTIONS
 CYGNUS_SUMMON(0x91): ENABLE_ACTIONS stub; NPC script start deferred
 SNOWBALL(0xCD): ENABLE_ACTIONS stub; real hit logic belongs to attack flow/event system
 LEFT_KNOCK_BACK(0xCE): ENABLE_ACTIONS stub
@@ -959,7 +959,7 @@ MAPLETV(0x10A): ENABLE_ACTIONS stub; no MapleTV broadcast system yet
 CP_BeansUpdate(0xE1): ENABLE_ACTIONS stub; bean system not implemented yet
 ```
 
-備註：本批只把已知 trivial opcode 從未處理狀態降噪/解除 client action lock，不建立新 domain service。證據層級為 Java source + `Maple.Host.Shared` build + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped；真 v113 client smoke 未跑。
+備註：本批只把已知 trivial opcode 從未處理狀態降噪/解除 client action lock，不建立新 domain service。2026-07-06 P003-D1 修正 `CLIENT_FEEDBACK`/`CLIENT_ERROR` 對調 bug，並補 Login opcode fixture。`SHOW_EXP_CHAIR` 對照 Java `PlayerHandler.ShowExpChair` 後確認本身就是讀 `chairId` 後 `enableActions`，因此 MapleForge 保持 Java parity no-op。證據層級為 Java source + `Maple.Host.Shared` build + `Maple.Adapters.V113.Tests` 402 passed / 1 skipped；真 v113 client smoke 未跑。
 
 ---
 ## P2 Batch 1B 簡易 handler opcode 註記（2026-06-18）
@@ -1142,6 +1142,7 @@ writeInt(itemId)
 
 CP_UserThrowGrenade:
 writeShort(0x67)
+writeBytes(payload)    // MapleForge preserves payload for parser fixture; Java PlayerHandler.ThrowGrenade is empty.
 ```
 
 語義：
@@ -1150,7 +1151,7 @@ writeShort(0x67)
 - `USE_TELE_ROCK(0x4E)` Java full path 依 rock item/rock type 檢查儲存地圖、同大陸、FieldLimit/EventInstance，並可傳送到玩家；MapleForge Phase A MVP 支援 map mode：讀 `rockType/mode/mapId`，用 `MapService.MapExists` 驗 map，成功送 `MAP_TRANSFER_RESULT` MVP success byte `0` 後走既有 `WarpAsync`，失敗送 failure byte `1` + `EnableActions`。player-name mode、item consumption、field limit 與 stored-rock 權限 deferred。此 use-result S2C shape 為 MapleForge candidate，尚未 live-client verified；Java 僅有 saved-map refresh helper。
 - `QUEST_ITEM(0x10C)` 此 v113 Java enum 註解為 header → questid → open/close，server dispatch 未接；MapleForge MVP no-op。
 - `USE_SCRIPTED_NPC_ITEM(0x48)` Java 實作含 leading tick、slot、itemId，並會依 243xxxx 等道具啟動 NPC script/給道具/warp；MapleForge Phase A MVP 驗 Use 背包 slot/itemId，無 scripted item → NPC mapping 時先消耗 1 個道具、送 `MODIFY_INVENTORY_ITEM` quantity update + `EnableActions`。完整 scripted item binding / NPC script start deferred。
-- `CP_UserThrowGrenade(0x67)` Java handler 明確未處理；MapleForge MVP 送 `EnableActions` 避免 client action lock。
+- `CP_UserThrowGrenade(0x67)` Java `PlayerHandler.ThrowGrenade` 明確未處理；MapleForge P003-D1 只解析保留剩餘 payload 並送 `EnableActions` 避免 client action lock。任務原描述提到座標/技能廣播，但本 Java oracle 沒有對應封包；未以猜測補 S2C 廣播。
 - 證據層級：Java source + `Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 313 passed / 1 skipped + `Maple.Core.Tests` 98 passed；真 v113 client teleport/scripted-item/escort smoke 待後續批量驗證。
 
 ---
@@ -1234,12 +1235,14 @@ writeInt(number)
 
 語義：
 
-- 本輪只把 6 個 complex subsystem opcode 接成安全 MVP stub：讀取任務指定最小欄位後送 `EnableActions`。
+- 2026-06-18 本輪原先只把 6 個 complex subsystem opcode 接成安全 MVP stub：讀取任務指定最小欄位後送 `EnableActions`。
 - `ITEM_MAKER(0x6B)` Java 依 `makerType` 分岔處理寶石/道具製作/分解與成功廣播；MapleForge MVP 只讀 `makerType`，不建立 maker catalog 或 crafting/synthesis service。
-- `REWARD_ITEM(0x6A)` 與 `USE_TREASUER_CHEST(0x6C)` Java 會檢查背包道具、抽 reward、消耗道具/key 並播放 reward animation；MapleForge MVP 只讀 slot/itemId 後放行。
+- `REWARD_ITEM(0x6A)` P003-D1 已不再是純 stub：解析 `short slot + int itemId`，依 `Player.InventoryTypeOf(itemId)` 驗證箱子/獎勵道具，成功時消耗一個來源道具、給 deterministic fallback reward `2000000 x1`、送 `MODIFY_INVENTORY_ITEM`、`SHOW_ITEM_GAIN_INCHAT` reward animation candidate 與 `EnableActions`，並對同圖其他玩家廣播 `SHOW_FOREIGN_EFFECT` reward animation candidate。TODO：以 `Etc.wz` reward 資料或 Java `StructRewardItem` catalog 取代 fallback reward。
+- `USE_TREASUER_CHEST(0x6C)` P003-D1 已不再是純 stub：解析 `short slot + int itemId`，支援 Java 金/銀寶箱 `4280000/4280001`，分別要求 cash key `5490000/5490001`；成功時消耗 ETC 寶箱與 Cash 鑰匙，給 deterministic reward（金箱 `1302059 x1`、銀箱 `1002452 x1`），送背包 mutation、reward gain animation candidate 與 `EnableActions`。TODO：以 Java `RandomRewards` 權重表與完整 rare broadcast 取代 deterministic first-entry reward。
 - `CP_UserAntiMacroItemUseRequest(0x61)` / `CP_UserAntiMacroSkillUseRequest(0x62)` 本輪依 migration wave 範圍讀 `targetCharacterId`/`mode` 或 `targetCharacterId` 後放行，不建立 anti-macro runtime state。注意：目前 Java tree 的 `PlayersHandler.AntiMacro` full handler 讀 target character name string，item 分支再讀 slot/itemId；完整 anti-macro 移植時需重新對齊真 v113 client capture 或最終採用的 Java source map。
 - `MONSTER_CARNIVAL(0xD5)` Java 依 `tab`/`number` 消耗 CP 召喚怪物、debuff 或 guardian；MapleForge MVP 只讀 `tab + number` 後放行，不建立 carnival party/CP/event state machine。
-- 證據層級：Java source map + MapleForge adapter-only implementation；`Maple.Host.Shared` build 0 warning/0 error + `Maple.Adapters.V113.Tests` 299 passed / 1 skipped。真 v113 client crafting/reward/anti-macro/carnival smoke 未跑。
+- reward animation S2C fixture 註記：`SHOW_ITEM_GAIN_INCHAT` / `SHOW_FOREIGN_EFFECT` reward animation layout 目前是 Java-source candidate / unverified，未升 golden truth。
+- 證據層級：Java source map + MapleForge adapter implementation + fixture tests；P003-D1 `dotnet build` 0 warning/0 error，逐專案測試 714 passed / 1 skipped。真 v113 client crafting/reward/anti-macro/carnival smoke 未跑。
 
 ---
 ## P2 Migration Wave 4 heavy opcode MVP stubs（2026-06-18）
