@@ -104,7 +104,8 @@
 
 ### P003 最終總結
 
-- **測試**：起點基線 645 → **775 passed / 1 skipped**（+130），全程 `dotnet build` 0 warning / 0 error，Core/Application 禁區 grep 全程無 V113 命中。
+- **測試**：起點基線 645 → **775 passed / 1 skipped**（+130，此差值基準不一致，見下方稽核修正），全程 `dotnet build` 0 warning / 0 error，Core/Application 禁區 grep 全程無 V113 命中。
+- **稽核修正（2026-07-07 鐵律合規稽核）**：「645」僅為 Core/Content/Application/Adapters 4 個測試專案之和（102+17+134+392），未計入 P003 開工前已存在的 Persistence(6)/Net(2)/Tools.PacketDecoder(22)/Tools.HeadlessClient(29) 共 59 條測試（已用 `f638132` worktree 實跑驗證）。8 專案基準應為 **704**，P003 實際新增測試為 **704→775（+71）**，非 +130。「645」本身在 P002 收尾時即只涵蓋 4 專案（見 `進度日誌.md:139`），P003 沿用時未重新核算基準，才產生跨基準比較的誤差；本節數字保留供歷史對照，正確計算見稽核任務歷程 `2026-07-07_01_驗證_P003鐵律合規稽核.md`。
 - **交付**：13 個小件 stub 補完整（opcode 對調 bug、ARAN_COMBO combo buff、MONSTER_BOMB、COUPON_CODE 兌換全鏈等）、ItemMaker 合成系統完整（WZ 787 配方）、SkillBook catalog 165 筆、HiredMerchant 全套（Core 領域+PlayerShopService+LiteDB/Mongo 持久化+0x34/0x38/0x3A+0x73 子指令+啟動重載+E2E 整合測試）。
 - **審查**：agy 前置審查 4 缺陷（D7b 修）、GPT-5.5 終審 5 缺陷（D8b 修），agy 複核 9 項全 ✅，判定可收案。
 - **過程事實**：3 次 Codex 額度撞限（W2 的 D4+D4b 共用一次、D5 一次、D7 一次，皆兌換 usage limit reset 因應）、多次 CLI 假死中斷續跑（D2、D4×2、D4b×2）。
