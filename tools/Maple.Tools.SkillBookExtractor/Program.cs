@@ -47,7 +47,8 @@ File.WriteAllText(outputPath, JsonSerializer.Serialize(document, JsonOptions()) 
 
 var mastery = items.Count(static i => i.ItemId / 10000 == 228);
 var skill = items.Count(static i => i.ItemId / 10000 == 229);
-Console.WriteLine($"Wrote {items.Length} skill-book entries to {outputPath} (228x={mastery}, 229x={skill}).");
+var cygnus = items.Count(static i => i.ItemId / 10000 == 562);
+Console.WriteLine($"Wrote {items.Length} skill-book entries to {outputPath} (228x={mastery}, 229x={skill}, 562x={cygnus}).");
 return 0;
 
 static JsonSerializerOptions JsonOptions()
@@ -77,7 +78,10 @@ internal sealed class SkillBookExtractor
 
     public IEnumerable<SkillBookDto> Extract()
     {
-        foreach (var itemIdPrefix in new[] { "0228", "0229" })
+        // 對照 Java MapleItemInformationProvider.getSkillStats：228/229/562 共用同一套
+        // skill-book schema（skillid 清單 + masterLevel + reqSkillLevel + success）。
+        // 562x 是 Cygnus 五轉（聖魂劍士/烈焰巫師/破風使者/暗夜行者/閃雷悍將）技能書。
+        foreach (var itemIdPrefix in new[] { "0228", "0229", "0562" })
         {
             foreach (var image in FindImages(itemIdPrefix + ".img"))
             {
@@ -116,7 +120,7 @@ internal sealed class SkillBookExtractor
 
         foreach (var (nodeName, itemProperty) in items.OrderBy(static p => p.Key, StringComparer.Ordinal))
         {
-            if (!nodeName.StartsWith('0') || !int.TryParse(nodeName, out var itemId) || itemId / 10000 is not (228 or 229))
+            if (!nodeName.StartsWith('0') || !int.TryParse(nodeName, out var itemId) || itemId / 10000 is not (228 or 229 or 562))
             {
                 continue;
             }
