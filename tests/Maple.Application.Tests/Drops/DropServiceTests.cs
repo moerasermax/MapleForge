@@ -263,14 +263,62 @@ public sealed class DropServiceTests
         Assert.Same(drop, field.Get(drop.ObjectId));
     }
 
-    private static MapDrop NewItemDrop(int objectId, DateTimeOffset spawnedAt) => MapDrop.ForItem(
+    // ── PromoteFfaDrops（P069，對照 Java World.handleMap 的 item.shouldFFA()）───────────
+
+    [Fact]
+    public void PromoteFfaDrops_PastThreshold_MarksDropTypeTwoAndReturnsIt()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var spawnedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var drop = NewItemDrop(1_000_000, spawnedAt, dropType: 1);
+        field.Add(drop);
+
+        var promoted = service.PromoteFfaDrops(field, spawnedAt + MapDrop.FfaAfter);
+
+        var single = Assert.Single(promoted);
+        Assert.Same(drop, single);
+        Assert.Equal((byte)2, drop.DropType);
+        Assert.Same(drop, field.Get(drop.ObjectId)); // 只是狀態轉換，掉落物依然留在場上。
+    }
+
+    [Fact]
+    public void PromoteFfaDrops_BeforeThreshold_LeavesDropTypeUnchanged()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var spawnedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var drop = NewItemDrop(1_000_000, spawnedAt, dropType: 0);
+        field.Add(drop);
+
+        var promoted = service.PromoteFfaDrops(field, spawnedAt + MapDrop.FfaAfter - TimeSpan.FromSeconds(1));
+
+        Assert.Empty(promoted);
+        Assert.Equal((byte)0, drop.DropType);
+    }
+
+    [Fact]
+    public void PromoteFfaDrops_AlreadyFfa_NotReturnedAgain()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var spawnedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var drop = NewItemDrop(1_000_000, spawnedAt, dropType: 2);
+        field.Add(drop);
+
+        var promoted = service.PromoteFfaDrops(field, spawnedAt + MapDrop.FfaAfter);
+
+        Assert.Empty(promoted);
+    }
+
+    private static MapDrop NewItemDrop(int objectId, DateTimeOffset spawnedAt, byte dropType = 0) => MapDrop.ForItem(
         objectId,
         new Item { ItemId = 4000000, Quantity = 1 },
         new Position(10, 20, 0, 7),
         new Position(10, 20, 0, 7),
         sourceObjectId: 100001,
         ownerId: 1,
-        dropType: 0,
+        dropType: dropType,
         spawnedAt: spawnedAt);
 
     [Fact]

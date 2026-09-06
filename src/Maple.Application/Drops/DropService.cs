@@ -171,6 +171,31 @@ public sealed class DropService : IMobKillHandler
         return expired;
     }
 
+    /// <summary>
+    /// P069：對照 Java <c>World.handleMap</c> 的 <c>item.shouldFFA()</c> 分支——限定主人/隊伍的
+    /// 掉落物滿 <see cref="MapDrop.FfaAfter"/>（30 秒）還沒被撿走，就轉成任何人可撿
+    /// （<c>DropType=2</c>）。Java 這裡不廣播任何封包，純粹是伺服器內部狀態轉換，所以不需要
+    /// 回傳值給呼叫端做廣播——但仍然回傳轉換清單方便測試直接驗證行為。
+    /// </summary>
+    public IReadOnlyList<MapDrop> PromoteFfaDrops(FieldInstance field, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        var promoted = new List<MapDrop>();
+        foreach (var drop in field.Objects.OfType<MapDrop>().ToArray())
+        {
+            if (!drop.ShouldBecomeFfa(now))
+            {
+                continue;
+            }
+
+            drop.MarkFfa();
+            promoted.Add(drop);
+        }
+
+        return promoted;
+    }
+
     public MesoDropResult TryDropMeso(FieldInstance field, Player player, int meso)
     {
         ArgumentNullException.ThrowIfNull(field);

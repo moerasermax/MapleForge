@@ -12,6 +12,12 @@ public sealed class MapDrop : IFieldObject
     /// 套用這個過期時間，Java 的 everlast 特殊地圖例外暫不移植（見 P061 任務歷程）。</summary>
     public static readonly TimeSpan ExpireAfter = TimeSpan.FromMilliseconds(120_000);
 
+    /// <summary>對照 Java <c>MapleMap.spawn*Drop</c>：<c>dropType</c> 0（限定主人）/1（限定隊伍）的
+    /// 掉落物固定 30 秒後開放給任何人撿（<c>mdrop.registerFFA(30000)</c>，<c>dropType&gt;=2</c>
+    /// 本來就已經開放不需要這個轉換）。P069：對照 Java <c>World.handleMap</c> 裡
+    /// <c>item.shouldFFA()</c> 由世界 tick 巡邏觸發，不是玩家操作觸發。</summary>
+    public static readonly TimeSpan FfaAfter = TimeSpan.FromMilliseconds(30_000);
+
     private MapDrop(
         int objectId,
         Position position,
@@ -50,7 +56,7 @@ public sealed class MapDrop : IFieldObject
 
     public int OwnerId { get; }
 
-    public byte DropType { get; }
+    public byte DropType { get; private set; }
 
     public bool PlayerDrop { get; }
 
@@ -116,4 +122,13 @@ public sealed class MapDrop : IFieldObject
 
     /// <summary>對照 Java <c>MapleMapItem.shouldExpire</c>：尚未被撿走且已經過了 <see cref="ExpireAfter"/>。</summary>
     public bool ShouldExpire(DateTimeOffset now) => !_pickedUp && now - SpawnedAt >= ExpireAfter;
+
+    /// <summary>對照 Java <c>MapleMapItem.shouldFFA</c>：尚未被撿走、<c>DropType &lt; 2</c>（還沒開放）
+    /// 且已經過了 <see cref="FfaAfter"/>。</summary>
+    public bool ShouldBecomeFfa(DateTimeOffset now) => !_pickedUp && DropType < 2 && now - SpawnedAt >= FfaAfter;
+
+    /// <summary>對照 Java <c>MapleMapItem.setType(2)</c>（經由 <c>World.handleMap</c> 的
+    /// <c>item.shouldFFA()</c> 觸發）：開放給任何人撿取，不廣播任何封包（Java 這裡本身也沒有送
+    /// 封包，純粹是伺服器內部拾取權限狀態轉換）。</summary>
+    public void MarkFfa() => DropType = 2;
 }

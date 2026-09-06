@@ -7,7 +7,9 @@ namespace Maple.Adapters.V113.Channel;
 /// <summary>
 /// P063（M4-2 世界 tick 第三步）：世界 tick 排程器對單一 field 該做的事——找出過期掉落物並廣播
 /// <c>REMOVE_ITEM_FROM_MAP</c>（animation=0/Expire，對照 Java <c>MapleMapItem.expire</c>）給場上
-/// 所有玩家。排程本身（多久跑一次、跑哪些 field）刻意留給呼叫端（<c>Maple.Host.Shared</c> 的
+/// 所有玩家。P069：同一次 tick 也處理限定拾取權轉開放（<c>MapDrop.PromoteFfaDrops</c>，對照
+/// Java <c>item.shouldFFA()</c>），這個轉換 Java 本身不廣播任何封包，純粹是伺服器內部狀態變更。
+/// 排程本身（多久跑一次、跑哪些 field）刻意留給呼叫端（<c>Maple.Host.Shared</c> 的
 /// <c>BackgroundService</c>），這裡只做「單次 tick 對單一 field 的處理」，維持跟其餘 V113*Handler
 /// （<see cref="V113GuildOperationHandler"/>/<see cref="V113SummonHandler"/>）一致的薄封裝角色。
 /// </summary>
@@ -26,12 +28,13 @@ public sealed class V113DropExpiryHandler
     {
         ArgumentNullException.ThrowIfNull(field);
 
-        // 對照既有戰鬥/拾取 handler 慣例：field 的領域變更（這裡是移除過期掉落物）要在 lock(field)
-        // 內完成，異步廣播留到鎖外——lock 區塊不能橫跨 await，且世界 tick 排程器是背景執行緒，
-        // 更需要跟其他連線 handler 的 lock(field) 互斥，避免併發修改同一個 Dictionary。
+        // 對照既有戰鬥/拾取 handler 慣例：field 的領域變更（限定拾取權轉開放、移除過期掉落物）
+        // 要在 lock(field) 內完成，異步廣播留到鎖外——lock 區塊不能橫跨 await，且世界 tick 排程器
+        // 是背景執行緒，更需要跟其他連線 handler 的 lock(field) 互斥，避免併發修改同一個 Dictionary。
         IReadOnlyList<MapDrop> expired;
         lock (field)
         {
+            _drops.PromoteFfaDrops(field, now);
             expired = _drops.ExpireDrops(field, now);
         }
 

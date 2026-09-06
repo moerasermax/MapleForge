@@ -85,6 +85,39 @@ public sealed class ChannelDropExpiryHandlerTests
         Assert.NotNull(field.Get(1_000_000));
     }
 
+    [Fact]
+    public async Task ExpireDropsAsync_PastFfaThresholdButNotExpired_PromotesDropTypeWithoutBroadcast()
+    {
+        // P069：限定拾取權轉開放（30 秒）跟過期移除（120 秒）是同一次 tick 一起處理，但 FFA
+        // 轉換 Java 本身不廣播任何封包（純粹伺服器內部狀態變更），只有過期移除才會廣播。
+        var drops = new DropService(new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>()));
+        var mapRegistry = new InMemoryMapSessionRegistry();
+        var handler = new V113DropExpiryHandler(drops, mapRegistry);
+        var field = new FieldInstance(100000000);
+        var spawnedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var drop = MapDrop.ForItem(
+            1_000_000,
+            new Item { ItemId = 4000000, Quantity = 1 },
+            new Position(0, 0, 0, 0),
+            new Position(0, 0, 0, 0),
+            sourceObjectId: 1,
+            ownerId: 1,
+            dropType: 1,
+            spawnedAt: spawnedAt);
+        field.Add(drop);
+
+        var received = new List<byte[]>();
+        var alice = NewPlayer(1, "Alice");
+        mapRegistry.Register(field.MapId, alice.Character.Id, alice,
+            (pkt, _) => { received.Add(pkt); return Task.CompletedTask; }, new object());
+
+        await handler.ExpireDropsAsync(field, spawnedAt + MapDrop.FfaAfter, CancellationToken.None);
+
+        Assert.Empty(received);
+        Assert.Equal((byte)2, drop.DropType);
+        Assert.Same(drop, field.Get(drop.ObjectId));
+    }
+
     private static Player NewPlayer(int id, string name) =>
         new(new Core.Characters.Character { Id = id, Name = name }, new Position(0, 0, 0, 0));
 }

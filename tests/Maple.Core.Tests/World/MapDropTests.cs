@@ -37,13 +37,58 @@ public sealed class MapDropTests
         Assert.False(drop.ShouldExpire(SpawnTime + MapDrop.ExpireAfter + TimeSpan.FromMinutes(5)));
     }
 
-    private static MapDrop NewDrop() => MapDrop.ForItem(
+    // ── P069：ShouldBecomeFfa/MarkFfa（對照 Java shouldFFA/setType(2)）───────────────
+
+    [Fact]
+    public void ShouldBecomeFfa_BeforeThreshold_ReturnsFalse()
+    {
+        var drop = NewDrop(dropType: 0);
+
+        Assert.False(drop.ShouldBecomeFfa(SpawnTime + MapDrop.FfaAfter - TimeSpan.FromSeconds(1)));
+    }
+
+    [Fact]
+    public void ShouldBecomeFfa_AtOrAfterThreshold_ReturnsTrue()
+    {
+        var drop = NewDrop(dropType: 1);
+
+        Assert.True(drop.ShouldBecomeFfa(SpawnTime + MapDrop.FfaAfter));
+    }
+
+    [Fact]
+    public void ShouldBecomeFfa_AlreadyFfa_ReturnsFalse()
+    {
+        var drop = NewDrop(dropType: 2);
+
+        Assert.False(drop.ShouldBecomeFfa(SpawnTime + MapDrop.FfaAfter + TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
+    public void ShouldBecomeFfa_AlreadyPickedUp_ReturnsFalse()
+    {
+        var drop = NewDrop(dropType: 0);
+        drop.TryMarkPickedUp();
+
+        Assert.False(drop.ShouldBecomeFfa(SpawnTime + MapDrop.FfaAfter + TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
+    public void MarkFfa_SetsDropTypeToTwo()
+    {
+        var drop = NewDrop(dropType: 1);
+
+        drop.MarkFfa();
+
+        Assert.Equal((byte)2, drop.DropType);
+    }
+
+    private static MapDrop NewDrop(byte dropType = 0) => MapDrop.ForItem(
         1_000_000,
         new Item { ItemId = 4000000, Quantity = 1 },
         new Position(0, 0, 0, 0),
         new Position(0, 0, 0, 0),
         sourceObjectId: 1,
         ownerId: 1,
-        dropType: 0,
+        dropType: dropType,
         spawnedAt: SpawnTime);
 }
