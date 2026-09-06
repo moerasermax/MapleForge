@@ -295,6 +295,7 @@ public sealed class AllianceService
             }
 
             var affectedGuilds = alliance.Snapshot().GuildIds;
+            var guildIdsBeforeRemove = new List<int>(alliance.GuildIds);
             if (!alliance.TryRemoveGuild(guildId, out var removedLeaderGuild))
             {
                 return new AllianceCommandResult(AllianceCommandStatus.InvalidGuild, alliance.Snapshot(), GuildId: guildId);
@@ -302,7 +303,18 @@ public sealed class AllianceService
 
             if (removedLeaderGuild)
             {
-                await _repository.DeleteAsync(alliance.Id, ct).ConfigureAwait(false);
+                // P039 同款修法：DeleteAsync 失敗要把 GuildIds 復原，否則 alliance 物件已經少了
+                // 這個公會，重試會被 TryRemoveGuild 判斷「不在同盟裡」擋下（回錯誤的 InvalidGuild）。
+                try
+                {
+                    await _repository.DeleteAsync(alliance.Id, ct).ConfigureAwait(false);
+                }
+                catch
+                {
+                    alliance.GuildIds = guildIdsBeforeRemove;
+                    throw;
+                }
+
                 UntrackAllianceLocked(alliance.Id);
                 foreach (var affectedGuildId in affectedGuilds)
                 {
@@ -317,7 +329,16 @@ public sealed class AllianceService
                     AffectedGuildIds: affectedGuilds);
             }
 
-            await _repository.SaveAsync(alliance, ct).ConfigureAwait(false);
+            try
+            {
+                await _repository.SaveAsync(alliance, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                alliance.GuildIds = guildIdsBeforeRemove;
+                throw;
+            }
+
             TrackAllianceLocked(alliance);
             await SyncGuildAllianceIdAsync(guildId, allianceId: 0, ct).ConfigureAwait(false);
             return new AllianceCommandResult(
@@ -494,12 +515,26 @@ public sealed class AllianceService
             return new AllianceCommandResult(AllianceCommandStatus.AlreadyInAlliance, alliance.Snapshot(), GuildId: guildId);
         }
 
+        // P039 同款修法：SaveAsync 失敗要把 GuildIds 復原，否則 alliance 物件已經記著這個公會，
+        // 重試會被 TryAddGuild 判斷「已經在同盟裡」擋下（回錯誤的 AllianceFull/AlreadyInAlliance）。
+        // 快照必須在 TryAddGuild 造成物件欄位異動「之前」拍下，否則復原等於把列表恢復成它自己。
+        var guildIdsBeforeAdd = new List<int>(alliance.GuildIds);
+
         if (!alliance.TryAddGuild(guildId))
         {
             return new AllianceCommandResult(AllianceCommandStatus.AllianceFull, alliance.Snapshot(), GuildId: guildId);
         }
 
-        await _repository.SaveAsync(alliance, ct).ConfigureAwait(false);
+        try
+        {
+            await _repository.SaveAsync(alliance, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            alliance.GuildIds = guildIdsBeforeAdd;
+            throw;
+        }
+
         TrackAllianceLocked(alliance);
         await SyncGuildAllianceIdAsync(guildId, alliance.Id, ct).ConfigureAwait(false);
         return new AllianceCommandResult(
