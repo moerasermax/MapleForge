@@ -112,9 +112,9 @@ public sealed class V113EventMiniGameHandler
                 V113StatsPackets.EnableActions()),
             BeansOpenPrizeHole or 0x03 => SelfOnly(V113StatsPackets.EnableActions()),
             BeansLight => LightBeans(player),
-            BeansMarqueeReward or 0x05 => SelfOnly(V113StatsPackets.EnableActions()),
+            BeansMarqueeReward or 0x05 => MarqueeRewardBeans(player),
             BeansShoot => ShootBeans(reader, player),
-            BeansTiming or 0x07 => SelfOnly(V113StatsPackets.EnableActions()),
+            BeansTiming or 0x07 => TimingBeans(reader, player),
             _ => SelfOnly(V113StatsPackets.EnableActions()),
         };
     }
@@ -305,6 +305,59 @@ public sealed class V113EventMiniGameHandler
         => SelfOnly(
             V113EventMiniGamePackets.SetBeanLightLevel(player.BeansGameSession.AddLight()),
             V113StatsPackets.EnableActions());
+
+    /// <summary>上跑馬燈+固定 2000 顆獎勵（對照 Java BeanGame type=5：廣播全圖跑馬燈訊息+自己收獎勵封包）。</summary>
+    private static V113EventMiniGameHandleResult MarqueeRewardBeans(Player player)
+    {
+        var result = player.BeansGameSession.TryGainMarqueeReward(player.Character.Beans);
+        if (result.Status != BeansGameActionStatus.Success)
+        {
+            return SelfOnly(V113StatsPackets.EnableActions());
+        }
+
+        player.Character.Beans = result.BeansAfter;
+        return new V113EventMiniGameHandleResult(
+            true,
+            [
+                V113EventMiniGamePackets.RewardBeans(result.BeansDelta),
+                V113EventMiniGamePackets.UpdateBeans(player.Character.Id, player.Character.Beans),
+                V113StatsPackets.EnableActions(),
+            ],
+            [V113EventMiniGamePackets.BeansMarquee(player.Character.Name)],
+            CharacterMutated: true);
+    }
+
+    /// <summary>計時分級獎勵（對照 Java BeanGame type=7）。封包載荷：[int 未使用][int 客戶端時間戳]。</summary>
+    private static V113EventMiniGameHandleResult TimingBeans(PacketReader reader, Player player)
+    {
+        int clientTime;
+        try
+        {
+            _ = reader.ReadInt();
+            clientTime = reader.ReadInt();
+        }
+        catch (InvalidDataException)
+        {
+            return SelfOnly(V113StatsPackets.EnableActions());
+        }
+
+        var reward = player.BeansGameSession.EvaluateTiming(clientTime, player.Character.Beans);
+        if (reward is not { } r)
+        {
+            return SelfOnly(V113StatsPackets.EnableActions());
+        }
+
+        var packets = new List<byte[]> { V113EventMiniGamePackets.RewardBeans(r.Amount, r.Stage) };
+        if (r.Amount > 0)
+        {
+            player.Character.Beans = r.BeansAfter;
+            packets.Add(V113EventMiniGamePackets.UpdateBeans(player.Character.Id, player.Character.Beans));
+        }
+
+        packets.Add(V113StatsPackets.EnableActions());
+
+        return new V113EventMiniGameHandleResult(true, packets, Array.Empty<byte[]>(), CharacterMutated: r.Amount > 0);
+    }
 
     private static V113EventMiniGameHandleResult SelfOnly(params byte[][] packets)
         => new(true, packets, Array.Empty<byte[]>(), CharacterMutated: false);
