@@ -1,10 +1,12 @@
 using Maple.Application.Combat;
 using Maple.Application.Drops;
 using Maple.Application.Maps;
+using Maple.Application.Parties;
 using Maple.Core.Characters;
 using Maple.Core.Data;
 using Maple.Core.Inventory;
 using Maple.Core.Maps;
+using Maple.Core.Parties;
 using Maple.Core.World;
 
 namespace Maple.Application.Tests.Drops;
@@ -209,6 +211,122 @@ public sealed class DropServiceTests
         Assert.Empty(player.Inventory.By(InventoryType.Etc).Items);
     }
 
+    // ── P070：擊殺者有隊伍時掉落物 dropType=1（隊伍限定），對照 Java dropFromMonster ────────
+
+    [Fact]
+    public void OnMobKilled_KillerInParty_SpawnsDropTypeOneDrops()
+    {
+        var parties = new InMemoryPartyRegistry();
+        var leader = MakePlayer(id: 1);
+        parties.CreateParty(PartyMember.FromCharacter(leader.Character, channelIndex: 1));
+        var service = MakeDropService(timeProvider: null, parties, new MonsterDropEntry(4000000, 999_999, 3, 3));
+        var field = new FieldInstance(100000100);
+        var mob = MakeMob(level: 1, exp: 7);
+        field.Add(leader);
+        field.Add(mob);
+
+        var rewards = service.OnMobKilled(field, leader, mob);
+
+        Assert.All(rewards.SpawnedDrops, d => Assert.Equal((byte)1, d.DropType));
+    }
+
+    [Fact]
+    public void OnMobKilled_KillerSolo_StillSpawnsDropTypeZeroDrops()
+    {
+        var parties = new InMemoryPartyRegistry();
+        var service = MakeDropService(timeProvider: null, parties, new MonsterDropEntry(4000000, 999_999, 3, 3));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = MakeMob(level: 1, exp: 7);
+        field.Add(player);
+        field.Add(mob);
+
+        var rewards = service.OnMobKilled(field, player, mob);
+
+        Assert.All(rewards.SpawnedDrops, d => Assert.Equal((byte)0, d.DropType));
+    }
+
+    [Fact]
+    public void TryPickup_PartyMemberOnDropTypeOne_Succeeds()
+    {
+        var parties = new InMemoryPartyRegistry();
+        var owner = MakePlayer(id: 1);
+        var created = parties.CreateParty(PartyMember.FromCharacter(owner.Character, channelIndex: 1));
+        var picker = MakePlayer(id: 2);
+        parties.JoinParty(created.Party!.Id, PartyMember.FromCharacter(picker.Character, channelIndex: 1));
+        var service = MakeDropService(timeProvider: null, parties);
+        var field = new FieldInstance(100000100);
+        var drop = MapDrop.ForItem(
+            1_000_000,
+            new Item { ItemId = 4000000, Quantity = 1 },
+            new Position(10, 20, 0, 7),
+            new Position(10, 20, 0, 7),
+            100001,
+            ownerId: owner.Character.Id,
+            dropType: 1,
+            spawnedAt: DateTimeOffset.UtcNow);
+        field.Add(picker);
+        field.Add(drop);
+
+        var result = service.TryPickup(field, picker, drop.ObjectId);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public void TryPickup_NonPartyMemberOnDropTypeOne_Rejected()
+    {
+        var parties = new InMemoryPartyRegistry();
+        var owner = MakePlayer(id: 1);
+        parties.CreateParty(PartyMember.FromCharacter(owner.Character, channelIndex: 1));
+        var stranger = MakePlayer(id: 2); // 沒有加入任何隊伍。
+        var service = MakeDropService(timeProvider: null, parties);
+        var field = new FieldInstance(100000100);
+        var drop = MapDrop.ForItem(
+            1_000_000,
+            new Item { ItemId = 4000000, Quantity = 1 },
+            new Position(10, 20, 0, 7),
+            new Position(10, 20, 0, 7),
+            100001,
+            ownerId: owner.Character.Id,
+            dropType: 1,
+            spawnedAt: DateTimeOffset.UtcNow);
+        field.Add(stranger);
+        field.Add(drop);
+
+        var result = service.TryPickup(field, stranger, drop.ObjectId);
+
+        Assert.Equal(DropPickupStatus.NotAllowed, result.Status);
+    }
+
+    [Fact]
+    public void TryPickup_PartyMemberOnDropTypeZero_StillRejected()
+    {
+        // 對照 Java：dropType==0 沒有隊伍例外，限定主人才能撿，隊友也不行。
+        var parties = new InMemoryPartyRegistry();
+        var owner = MakePlayer(id: 1);
+        var created = parties.CreateParty(PartyMember.FromCharacter(owner.Character, channelIndex: 1));
+        var member = MakePlayer(id: 2);
+        parties.JoinParty(created.Party!.Id, PartyMember.FromCharacter(member.Character, channelIndex: 1));
+        var service = MakeDropService(timeProvider: null, parties);
+        var field = new FieldInstance(100000100);
+        var drop = MapDrop.ForItem(
+            1_000_000,
+            new Item { ItemId = 4000000, Quantity = 1 },
+            new Position(10, 20, 0, 7),
+            new Position(10, 20, 0, 7),
+            100001,
+            ownerId: owner.Character.Id,
+            dropType: 0,
+            spawnedAt: DateTimeOffset.UtcNow);
+        field.Add(member);
+        field.Add(drop);
+
+        var result = service.TryPickup(field, member, drop.ObjectId);
+
+        Assert.Equal(DropPickupStatus.NotAllowed, result.Status);
+    }
+
     // ── ExpireDrops（P062，M4-2 世界 tick 第二步）───────────────────────────────
 
     [Fact]
@@ -349,12 +467,15 @@ public sealed class DropServiceTests
         => MakeDropService(timeProvider: null, entries);
 
     private static DropService MakeDropService(TimeProvider? timeProvider, params MonsterDropEntry[] entries)
+        => MakeDropService(timeProvider, parties: null, entries);
+
+    private static DropService MakeDropService(TimeProvider? timeProvider, IPartyRegistry? parties, params MonsterDropEntry[] entries)
     {
         var catalog = new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>
         {
             [100100] = entries,
         });
-        return new DropService(catalog, timeProvider: timeProvider);
+        return new DropService(catalog, timeProvider: timeProvider, parties: parties);
     }
 
     private sealed class FakeTimeProvider : TimeProvider

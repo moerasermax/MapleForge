@@ -1,3 +1,4 @@
+using Maple.Application.Parties;
 using Maple.Core.Inventory;
 using Maple.Core.World;
 
@@ -62,12 +63,18 @@ public sealed class DropService : IMobKillHandler
     private readonly IMonsterDropCatalog _catalog;
     private readonly DropServiceOptions _options;
     private readonly TimeProvider _timeProvider;
+    private readonly IPartyRegistry? _parties;
 
-    public DropService(IMonsterDropCatalog catalog, DropServiceOptions? options = null, TimeProvider? timeProvider = null)
+    public DropService(
+        IMonsterDropCatalog catalog,
+        DropServiceOptions? options = null,
+        TimeProvider? timeProvider = null,
+        IPartyRegistry? parties = null)
     {
         _catalog = catalog;
         _options = options ?? new DropServiceOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _parties = parties;
     }
 
     public MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob)
@@ -236,7 +243,10 @@ public sealed class DropService : IMobKillHandler
     {
         var spawned = new List<MapDrop>();
         var ownerId = killer.Character.Id;
-        var dropType = (byte)0; // Java: solo non-FFA monster drop.
+        // P070：對照 Java dropFromMonster 的 droptype 公式（isExplosiveReward/isFfaLoot 兩個
+        // 特殊怪物模板旗標 MapleForge 尚未有對應資料，暫不移植，屬另一個獨立範圍的缺口）：
+        // 有隊伍 → 1（隊伍限定，P069 的 FFA 排程器 30 秒後會自動開放）；否則 → 0（限定擊殺者）。
+        var dropType = _parties?.IsCharacterInParty(ownerId) == true ? (byte)1 : (byte)0;
         var sequence = 1;
 
         foreach (var entry in _catalog.RetrieveDrop(mob.Definition.MonsterId))
@@ -301,14 +311,28 @@ public sealed class DropService : IMobKillHandler
         return next;
     }
 
-    private static bool CanPickUp(Player player, MapDrop drop)
+    private bool CanPickUp(Player player, MapDrop drop)
     {
         if (drop.DropType >= 2)
         {
             return true;
         }
 
-        return drop.OwnerId == player.Character.Id;
+        if (drop.OwnerId == player.Character.Id)
+        {
+            return true;
+        }
+
+        // P070：對照 Java PlayerHandler.PlayerPickup 的 dropType==1 分支——隊伍限定掉落物，
+        // 擊殺者所在隊伍的其他成員也能撿（跟擊殺者本人的 OwnerId 判斷分開，兩者都要放行）。
+        // dropType==0 沒有這個例外，忠實對照 Java（限定主人才能撿，隊友也不行）。
+        if (drop.DropType != 1 || _parties is null)
+        {
+            return false;
+        }
+
+        var ownerParty = _parties.GetPartyForCharacter(drop.OwnerId);
+        return ownerParty is not null && ownerParty.GetMember(player.Character.Id) is not null;
     }
 
     private static Item CreateItem(MonsterDropEntry entry)
