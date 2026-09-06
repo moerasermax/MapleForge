@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"[MapleForge] 這個專案有「P-phase 工作模式」（見 docs/specs/session-invariants.md §11）：做增量清理/修補時，挑一個範圍明確的殘留待辦或發現的 bug → 對照舊 Java server 原始碼核對實際行為（往下追到底層實作，不能只看方法名稱猜） → 放進正確的 Maple.Core/Maple.Application/Maple.Adapters.V113 分層 → 補/更新單元測試 → dotnet build 0 warning/0 error → 跑全 8 個測試專案確認無退化 → 同步三本帳（docs/devlog/任務歷程/ 新檔 + 進度日誌.md 新條目 + 任務追蹤.md 新增 P00N 段落）→ commit 訊息結尾加「（鐵律歸檔）」→ 若過程發現更深層的相關問題，不要在同一個 P 裡擴大範圍，記下來開下一個 P00N+1。開始任何 P-phase 前請先讀 session-invariants.md §11 全文。\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}
