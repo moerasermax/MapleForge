@@ -3142,6 +3142,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MapleSession session,
         CancellationToken ct)
     {
+        // 對照 Java PlayerHandler.closeRangeAttack：死亡玩家的攻擊在解析封包前就整段擋下
+        // （registerOffense(ATTACKING_WHILE_DEAD) + return），不像現在這樣仍會把攻擊動作廣播
+        // 給同圖其他玩家看見（ApplyAttack 內部雖然已經擋傷害，但廣播發生在呼叫它之前）。
+        if (!player.IsAlive)
+        {
+            _log.LogWarning("[Channel] 玩家 {Name} 死亡狀態下嘗試近戰攻擊", player.Character.Name);
+            return;
+        }
+
         V113CloseRangeAttack attack;
         try
         {
@@ -3171,6 +3180,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MapleSession session,
         CancellationToken ct)
     {
+        // 對照 Java PlayerHandler.rangedAttack：死亡玩家整段擋下（見 HandleCloseRangeAttackAsync
+        // 註解）；RangedMagicCombatService.ApplyRangedAttack 內部已有同等保護（AttackerDead 狀態），
+        // 這裡提前擋是為了避免不必要的封包解析與跟另外兩種攻擊路徑保持一致的判斷順序。
+        if (!player.IsAlive)
+        {
+            _log.LogWarning("[Channel] 玩家 {Name} 死亡狀態下嘗試遠程攻擊", player.Character.Name);
+            return;
+        }
+
         V113RangedAttack attack;
         try
         {
@@ -3221,8 +3239,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MapleSession session,
         CancellationToken ct)
     {
+        // 對照 Java PlayerHandler.MagicDamage：死亡玩家整段擋下（見 HandleCloseRangeAttackAsync 註解）。
         if (!player.IsAlive)
         {
+            _log.LogWarning("[Channel] 玩家 {Name} 死亡狀態下嘗試魔法攻擊", player.Character.Name);
             return;
         }
 

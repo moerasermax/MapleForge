@@ -97,6 +97,27 @@ public sealed class CombatServiceTests
     }
 
     [Fact]
+    public void ApplyAttack_DeadAttacker_ReturnsNoHits_MobUntouched()
+    {
+        // 對照 Java PlayerHandler.closeRangeAttack/rangedAttack/MagicDamage：
+        // !chr.isAlive() 整段擋下攻擊，怪物血量不受影響。
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer(hp: 0);
+        var mob = MakeMob(objectId: 100001, hp: 50);
+        field.Add(player);
+        field.Add(mob);
+
+        var result = service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [50]),
+        ]));
+
+        Assert.Empty(result.Hits);
+        Assert.Equal(50, mob.Hp);
+        Assert.Same(mob, field.Get(mob.ObjectId));
+    }
+
+    [Fact]
     public void PlayerTakeDamage_ClampsAtZero()
     {
         var player = MakePlayer(hp: 30);
