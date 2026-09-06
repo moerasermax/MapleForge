@@ -14,6 +14,11 @@ public sealed class FieldInstance
 
     public FieldInstance(int mapId) => MapId = mapId;
 
+    /// <summary>P065（M4-2 世界 tick，怪物重生）：這個 field 的怪物重生點清單，對照 Java
+    /// <c>MapleMap.monsterSpawn</c>。由 <c>CombatService.SpawnMapMonsters</c> 在 field 建立時
+    /// 一併填入（跟場上物件一樣，領域變更要由呼叫端 <c>lock(field)</c> 序列化）。</summary>
+    public List<MobSpawnPoint> SpawnPoints { get; } = new();
+
     /// <summary>加入/取代一個場上物件（以 ObjectId 為鍵）。</summary>
     public void Add(IFieldObject obj) => _objects[obj.ObjectId] = obj;
 

@@ -148,6 +148,76 @@ public sealed class CombatServiceTests
     }
 
     [Fact]
+    public void SpawnMapMonsters_AlsoRegistersMatchingSpawnPoint()
+    {
+        // P065（M4-2 世界 tick，怪物重生第二步）：初始生怪同時要建立對應的重生點，供
+        // RespawnMonsters 後續使用。
+        var service = new CombatService(new MapService(new MonsterDataProvider()));
+        var field = new FieldInstance(100000100);
+
+        service.SpawnMapMonsters(field, 100000100);
+
+        var point = Assert.Single(field.SpawnPoints);
+        Assert.Equal(100100, point.Definition.MonsterId);
+        Assert.True(point.Mobile); // fixture 的怪物模板有 "move" 節點
+    }
+
+    [Fact]
+    public void RespawnMonsters_MobileZeroMobTimePoint_AllowsSecondConcurrentSpawn()
+    {
+        // fixture 的怪物 mobTime=0 且會走動（有 "move" 節點）→ 對照 Java：單點最多同時 2 隻，
+        // 初始生怪後（已佔用 1 隻額度）RespawnMonsters 應該還能再生 1 隻。
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var service = new CombatService(new MapService(new MonsterDataProvider()), timeProvider: new FakeTimeProvider(now));
+        var field = new FieldInstance(100000100);
+        var initial = service.SpawnMapMonsters(field, 100000100);
+
+        var respawned = service.RespawnMonsters(field, now);
+
+        var mob = Assert.Single(respawned);
+        Assert.Equal(100100, mob.Definition.MonsterId);
+        Assert.Same(mob, field.Get(mob.ObjectId));
+        Assert.NotEqual(initial[0].ObjectId, mob.ObjectId); // 新配發的 objectId，不跟原本那隻重複
+
+        // 現在單點已經佔滿 2 隻額度，再呼叫一次不該繼續生。
+        Assert.Empty(service.RespawnMonsters(field, now));
+    }
+
+    [Fact]
+    public void RespawnMonsters_MapAtCapacity_SpawnsNothing()
+    {
+        // fixture 只有 1 個重生點 → 地圖上限 = 1*3 = 3 隻。場上先塞滿 3 隻同種怪物，不該再生。
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var service = new CombatService(new MapService(new MonsterDataProvider()), timeProvider: new FakeTimeProvider(now));
+        var field = new FieldInstance(100000100);
+        service.SpawnMapMonsters(field, 100000100);
+        field.Add(MakeMob(objectId: 900001, hp: 1));
+        field.Add(MakeMob(objectId: 900002, hp: 1));
+
+        var respawned = service.RespawnMonsters(field, now);
+
+        Assert.Empty(respawned);
+    }
+
+    [Fact]
+    public void RespawnMonsters_NoSpawnPoints_ReturnsEmpty()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(100000100);
+
+        Assert.Empty(service.RespawnMonsters(field, DateTimeOffset.UtcNow));
+    }
+
+    private sealed class FakeTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _now;
+
+        public FakeTimeProvider(DateTimeOffset now) => _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+    }
+
+    [Fact]
     public void KillMobWithoutRewards_RemovesMobWithoutCallingDropHook()
     {
         var killHook = new CountingKillHandler();
