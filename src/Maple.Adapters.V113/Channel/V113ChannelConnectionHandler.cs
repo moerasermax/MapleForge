@@ -24,6 +24,7 @@ using Maple.Application.Trades;
 using Maple.Core.Accounts;
 using Maple.Core.Characters;
 using Maple.Core.IO;
+using Maple.Core.Quests;
 using Maple.Core.Skills;
 using Maple.Core.World;
 using Maple.Net;
@@ -413,6 +414,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             }
 
                             await SendNormalChannelEntryPacketsAsync(chr, s, token);
+                            await SendStartedQuestMobKillsAsync(chr, (pkt, tkn) => s.SendAsync(pkt, tkn), token);
 
                             var channel = _options.ChannelIndex + 1;
                             _onlinePlayers.Register(
@@ -3251,6 +3253,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
         await session.SendAsync(V113KeymapPackets.Keymap(chr), ct);
         _log.LogInformation("[Channel] 角色 {Name} SET_FIELD 送出 → 地圖 {Map}", chr.Name, chr.MapId);
+    }
+
+    /// <summary>
+    /// 對照 Java InterServerHandler 登入流程：
+    /// <c>for (MapleQuestStatus status : player.getStartedQuests()) { if (status.hasMobKills())
+    /// { c.sendPacket(MaplePacketCreator.updateQuestMobKills(status)); } }</c>——SET_FIELD 內嵌的任務
+    /// 段只有 questId/customData，怪物擊殺進度要另外逐一補送，否則客戶端任務清單的擊殺計數在登入當下
+    /// 是空的，要等玩家自己再殺一隻怪才會更新。<see cref="V113QuestPackets.UpdateQuestMobKills"/>
+    /// 這個封包建構式先前已存在但零呼叫者。
+    /// </summary>
+    internal static async Task SendStartedQuestMobKillsAsync(
+        Character chr,
+        Func<byte[], CancellationToken, Task> sendSelf,
+        CancellationToken ct)
+    {
+        foreach (var quest in chr.Quests)
+        {
+            if (quest.Status == (byte)QuestStatus.Started && quest.MobKills.Count > 0)
+            {
+                await sendSelf(V113QuestPackets.UpdateQuestMobKills(quest), ct);
+            }
+        }
     }
 
     private static async Task SendCashShopInitialPacketsAsync(Player player, Account? account, MapleSession session, CancellationToken ct)

@@ -80,6 +80,78 @@ public sealed class ChannelQuestPacketTests
     }
 
     [Fact]
+    public void UpdateQuestMobKills_WritesConcatenatedThreeDigitCountsAndZeroPad()
+    {
+        var quest = new QuestRecord
+        {
+            QuestId = 2000,
+            Status = (byte)QuestStatus.Started,
+            MobKills =
+            [
+                new QuestMobKillRecord { MobId = 100100, Count = 5 },
+                new QuestMobKillRecord { MobId = 100200, Count = 12 },
+            ],
+        };
+
+        var r = new PacketReader(V113QuestPackets.UpdateQuestMobKills(quest));
+
+        Assert.Equal(V113QuestPackets.SendShowStatusInfo, r.ReadShort());
+        Assert.Equal(1, r.ReadByte());
+        Assert.Equal(2000, r.ReadShort());
+        Assert.Equal((byte)QuestStatus.Started, r.ReadByte());
+        Assert.Equal("005012", r.ReadMapleString());
+    }
+
+    [Fact]
+    public async Task SendStartedQuestMobKillsAsync_OnlyStartedQuestsWithMobKills_SendsUpdatePerQuest()
+    {
+        // 對照 Java InterServerHandler 登入流程：for (started quests) if (hasMobKills) 逐一補送
+        // updateQuestMobKills——SET_FIELD 內嵌的任務段沒有擊殺進度，這段負責補齊。
+        var character = new Character
+        {
+            Id = 1,
+            Name = "QuestChar",
+            Quests =
+            [
+                new QuestRecord
+                {
+                    QuestId = 3000,
+                    Status = (byte)QuestStatus.Started,
+                    MobKills = [new QuestMobKillRecord { MobId = 100100, Count = 3 }],
+                },
+                new QuestRecord
+                {
+                    QuestId = 3001,
+                    Status = (byte)QuestStatus.Started,
+                    // 無擊殺目標的一般任務：Java hasMobKills() 為 false，不該送這個封包。
+                },
+                new QuestRecord
+                {
+                    QuestId = 3002,
+                    Status = (byte)QuestStatus.Completed,
+                    MobKills = [new QuestMobKillRecord { MobId = 100200, Count = 10 }],
+                },
+            ],
+        };
+        var sent = new List<byte[]>();
+
+        await V113ChannelConnectionHandler.SendStartedQuestMobKillsAsync(
+            character,
+            (packet, _) =>
+            {
+                sent.Add(packet);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        var packet = Assert.Single(sent);
+        var reader = new PacketReader(packet);
+        reader.ReadShort();
+        reader.ReadByte();
+        Assert.Equal(3000, reader.ReadShort());
+    }
+
+    [Fact]
     public void SetField_WritesBuddySkillQuestAndQuestInfoPacketInJavaCharacterInfoOrder()
     {
         var character = new Character
