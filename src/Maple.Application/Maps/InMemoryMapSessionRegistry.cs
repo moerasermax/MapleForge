@@ -1,4 +1,4 @@
-using Maple.Core.Characters;
+using Maple.Core.World;
 using System.Collections.Concurrent;
 
 namespace Maple.Application.Maps;
@@ -11,12 +11,12 @@ public sealed class InMemoryMapSessionRegistry : IMapSessionRegistry
 {
     private readonly ConcurrentDictionary<int, ConcurrentDictionary<int, MapPlayerEntry>> _maps = new();
 
-    public void Register(int mapId, int charId, Character character, Func<byte[], CancellationToken, Task> sendPacket, object token)
+    public void Register(int mapId, int charId, Player player, Func<byte[], CancellationToken, Task> sendPacket, object token)
     {
         ArgumentNullException.ThrowIfNull(token);
 
         var map = _maps.GetOrAdd(mapId, _ => new ConcurrentDictionary<int, MapPlayerEntry>());
-        map[charId] = new MapPlayerEntry(charId, character, sendPacket, token);
+        map[charId] = new MapPlayerEntry(charId, player, sendPacket, token);
     }
 
     public bool Deregister(int mapId, int charId, object token)

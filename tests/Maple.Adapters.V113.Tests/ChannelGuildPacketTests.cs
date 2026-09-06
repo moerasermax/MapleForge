@@ -114,7 +114,8 @@ public sealed class ChannelGuildPacketTests
             Logo: 9,
             LogoColor: 4);
 
-        var reader = new PacketReader(V113MapPackets.SpawnPlayer(character, 10, 20, 0, 30, guild));
+        var player = new Player(character, new Position(0, 0, 0, 0));
+        var reader = new PacketReader(V113MapPackets.SpawnPlayer(player, 10, 20, 0, 30, guild));
 
         Assert.Equal(unchecked((short)0x99), reader.ReadShort());
         Assert.Equal(9, reader.ReadInt());

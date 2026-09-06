@@ -60,7 +60,8 @@ public sealed class ChannelPartySearchTests
 
         var candidateSent = new List<byte[]>();
         var candidateCharacter = new Character { Id = 2, Name = "Candidate", Level = 20, Job = 300, MapId = 100000000 };
-        mapRegistry.Register(100000000, 2, candidateCharacter, (pkt, ct) => { candidateSent.Add(pkt); return Task.CompletedTask; }, new object());
+        var candidatePlayer = new Player(candidateCharacter, new Position(0, 0, 0, 0));
+        mapRegistry.Register(100000000, 2, candidatePlayer, (pkt, ct) => { candidateSent.Add(pkt); return Task.CompletedTask; }, new object());
 
         var reader = StartPacket(10, 40, 4, 0x1 /* AllJobs */);
         await handler.HandleStartAsync(reader, leader, (_, _) => Task.CompletedTask, CancellationToken.None);

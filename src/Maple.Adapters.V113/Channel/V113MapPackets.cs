@@ -28,11 +28,12 @@ internal static class V113MapPackets
     private const short MovePlayerOp = unchecked((short)0xB1);
 
     /// <summary>
-    /// SPAWN_PLAYER 封包（最小版本，無 buff/mount/ring）。
+    /// SPAWN_PLAYER 封包（最小版本，無 buff/mount；P047 接上戒指外觀）。
     /// DoD：客戶端能在地圖上看到其他玩家的角色外觀與位置。
     /// </summary>
-    public static byte[] SpawnPlayer(Character chr, short x, short y, byte stance, short foothold, V113SpawnGuildInfo? guild = null)
+    public static byte[] SpawnPlayer(Player player, short x, short y, byte stance, short foothold, V113SpawnGuildInfo? guild = null)
     {
+        var chr = player.Character;
         var w = new PacketWriter(512);
         w.WriteShort(SpawnPlayerOp);
         w.WriteInt(chr.Id);
@@ -91,8 +92,15 @@ internal static class V113MapPackets
         w.WriteByte(0);   // chalkboard = none
         // rings × 2
         w.WriteShort(0); w.WriteShort(0);
-        // marriage ring look
-        w.WriteByte(0);
+        // marriage ring look（對照 Java addMarriageRingLook；P047 接上，先前硬編碼恆為 0）
+        w.WriteByte(player.HasVisibleMarriageRing ? 1 : 0);
+        if (player.HasVisibleMarriageRing)
+        {
+            w.WriteInt(chr.Id);
+            w.WriteInt(player.MarriagePartnerCharacterId);
+            w.WriteInt((int)player.MarriageRingId);
+        }
+
         w.WriteShort(0);
 
         return w.ToArray();

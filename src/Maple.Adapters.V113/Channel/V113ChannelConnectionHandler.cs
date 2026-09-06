@@ -466,7 +466,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             var pos = player.Position;
                             currentField = EnterField(chr.MapId, player);
 
-                            _mapRegistry.Register(chr.MapId, chr.Id, chr, (pkt, tkn) => s.SendAsync(pkt, tkn), sessionToken);
+                            _mapRegistry.Register(chr.MapId, chr.Id, player, (pkt, tkn) => s.SendAsync(pkt, tkn), sessionToken);
                             await _partySearchHandler.NotifyMapEntryAsync(player, (pkt, tkn) => s.SendAsync(pkt, tkn), token);
                             await _partyOperationHandler.NotifyMapEntryAsync(player, _options.ChannelIndex, (pkt, tkn) => s.SendAsync(pkt, tkn), token);
 
@@ -474,10 +474,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             var others = _mapRegistry.GetOthers(chr.MapId, chr.Id);
                             foreach (var other in others)
                             {
-                                var spawnForOther = await BuildSpawnPlayerPacketAsync(chr, pos.X, pos.Y, pos.Stance, pos.Foothold, token);
+                                var spawnForOther = await BuildSpawnPlayerPacketAsync(player, pos.X, pos.Y, pos.Stance, pos.Foothold, token);
                                 await other.SendPacket(spawnForOther, token);
 
-                                var spawnForNew = await BuildSpawnPlayerPacketAsync(other.Character, 0, 0, 0, 0, token);
+                                var spawnForNew = await BuildSpawnPlayerPacketAsync(other.Player, 0, 0, 0, 0, token);
                                 await s.SendAsync(spawnForNew, token);
                             }
 
@@ -1781,13 +1781,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     }
 
     private async Task<byte[]> BuildSpawnPlayerPacketAsync(
-        Character chr,
+        Player player,
         short x,
         short y,
         byte stance,
         short foothold,
         CancellationToken ct)
     {
+        var chr = player.Character;
         V113SpawnGuildInfo? guildInfo = null;
         if (chr.GuildId > 0)
         {
@@ -1803,7 +1804,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
-        return V113MapPackets.SpawnPlayer(chr, x, y, stance, foothold, guildInfo);
+        return V113MapPackets.SpawnPlayer(player, x, y, stance, foothold, guildInfo);
     }
 
     private async Task SendFieldMonstersAsync(FieldInstance field, MapleSession session, CancellationToken ct)
@@ -2138,7 +2139,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await session.SendAsync(setField, ct);
 
         var field = EnterField(mapId, player);
-        _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn), sessionToken);
+        _mapRegistry.Register(mapId, chr.Id, player, (pkt, tkn) => session.SendAsync(pkt, tkn), sessionToken);
         await _partySearchHandler.NotifyMapEntryAsync(player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
         await _partyOperationHandler.NotifyMapEntryAsync(player, _options.ChannelIndex, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
