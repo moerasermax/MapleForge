@@ -10,6 +10,7 @@ namespace Maple.Application.Tests.Npcs;
 /// cm.getBuddyCapacity / cm.updateBuddyCapacity（P021）。
 /// 對照 Java NPCConversationManager.updateBuddyCapacity → MapleCharacter.setBuddyCapacity
 /// → client.sendPacket(MaplePacketCreator.updateBuddyCapacity)：即時委派 + 送包，非僅記錄待送。
+/// cm.getPlayerStat（P022）：對照 Java AbstractPlayerInteraction.getPlayerStat 逐 key 核對。
 /// </summary>
 public sealed class NpcContextTests
 {
@@ -109,9 +110,58 @@ public sealed class NpcContextTests
         Assert.Equal([25], sent);
     }
 
+    [Theory]
+    [InlineData("LVL", 30)]
+    [InlineData("STR", 12)]
+    [InlineData("DEX", 5)]
+    [InlineData("INT", 4)]
+    [InlineData("LUK", 4)]
+    [InlineData("HP", 50)]
+    [InlineData("MP", 5)]
+    [InlineData("MAXHP", 50)]
+    [InlineData("MAXMP", 5)]
+    [InlineData("GID", 0)]
+    [InlineData("GRANK", 5)]
+    [InlineData("ARANK", 5)]
+    [InlineData("GM", 0)]
+    [InlineData("ADMIN", 0)]
+    [InlineData("GENDER", 0)]
+    [InlineData("UNKNOWN_KEY", -1)]
+    public void GetPlayerStat_MatchesJavaAbstractPlayerInteractionMapping(string type, int expected)
+    {
+        var player = NewPlayer();
+        var ctx = new NpcContext(1002003, player, NewQuestService());
+
+        Assert.Equal(expected, ctx.GetPlayerStat(type));
+    }
+
+    [Fact]
+    public void GetPlayerStat_RemainingApSp_ReadsCharacterFields()
+    {
+        var player = NewPlayer();
+        player.Character.RemainingAp = 7;
+        player.Character.RemainingSp = 3;
+        var ctx = new NpcContext(1002003, player, NewQuestService());
+
+        Assert.Equal(7, ctx.GetPlayerStat("RAP"));
+        Assert.Equal(3, ctx.GetPlayerStat("RSP"));
+    }
+
+    [Fact]
+    public void GetPlayerStat_Gid_ReflectsCharacterGuildMembership()
+    {
+        var player = NewPlayer();
+        player.Character.GuildId = 42;
+        player.Character.GuildRank = 1;
+        var ctx = new NpcContext(1002003, player, NewQuestService());
+
+        Assert.Equal(42, ctx.GetPlayerStat("GID"));
+        Assert.Equal(1, ctx.GetPlayerStat("GRANK"));
+    }
+
     private static Player NewPlayer()
         => new(
-            new Character { Id = 1, Name = "NpcApp" },
+            new Character { Id = 1, Name = "NpcApp", Level = 30 },
             new Position(0, 0, 0, 0));
 
     private static QuestService NewQuestService() => new(new EmptyQuestCatalog());

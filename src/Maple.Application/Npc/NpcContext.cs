@@ -143,5 +143,32 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingBuddyCapacityUpdate = capacity;
     }
 
+    public int GetPlayerStat(string type)
+    {
+        var character = _player.Character;
+        return type switch
+        {
+            "LVL" => character.Level,
+            "STR" => character.Stats.Str,
+            "DEX" => character.Stats.Dex,
+            "INT" => character.Stats.Int,
+            "LUK" => character.Stats.Luk,
+            "HP" => character.Stats.Hp,
+            "MP" => character.Stats.Mp,
+            "MAXHP" => character.Stats.MaxHp,
+            "MAXMP" => character.Stats.MaxMp,
+            "RAP" => character.RemainingAp,
+            "RSP" => character.RemainingSp,
+            "GID" => character.GuildId,
+            "GRANK" => character.GuildRank,
+            "ARANK" => character.AllianceRank,
+            "GM" or "ADMIN" => 0, // MapleForge 尚無 GM 系統，無人具 GM 身分
+            "GENDER" => character.Gender,
+            "FACE" => character.Face,
+            "HAIR" => character.Hair,
+            _ => -1,
+        };
+    }
+
     private void EnqueueQuestResult(QuestTransactionResult result) => _pendingQuestResults.Add(result);
 }

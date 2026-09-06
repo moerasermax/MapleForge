@@ -58,4 +58,11 @@ public interface INpcScriptContext
 
     /// <summary>擴充好友名單容量並即時通知客戶端（cm.updateBuddyCapacity）。</summary>
     void UpdateBuddyCapacity(int capacity);
+
+    /// <summary>
+    /// 通用角色數值查詢（cm.getPlayerStat，對照 Java AbstractPlayerInteraction.getPlayerStat）。
+    /// 支援 LVL/STR/DEX/INT/LUK/HP/MP/MAXHP/MAXMP/RAP/RSP/GID/GRANK/ARANK/GM/ADMIN/GENDER/FACE/HAIR，
+    /// 未知 type 回傳 -1（同 Java）。GM/ADMIN：MapleForge 尚無 GM 系統，固定回 0（無人具 GM 身分，非造假）。
+    /// </summary>
+    int GetPlayerStat(string type);
 }
