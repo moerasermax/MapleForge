@@ -1,6 +1,12 @@
 # MapleForge
 
-Modern .NET 10 reimplementation of a MapleStory TMS v113 server — Clean/Hexagonal Architecture with full protocol verification via packet fixtures, headless client testing, and real capture replay.
+A .NET 10 study in reconstructing a legacy real-time game server protocol under Clean/Hexagonal Architecture — with packet fixtures, headless client testing, and capture replay forming a closed evidence chain from wire bytes to named operations.
+
+> **Scope.** Independent, non-commercial protocol research. Original C# only: no game
+> client, no game assets, no WZ data, no publisher binaries. Not operated as a playable
+> service, not affiliated with or endorsed by any publisher, and published for
+> engineering study rather than for running a server. All rights reserved — see
+> [NOTICE.md](NOTICE.md).
 
 ## Highlights
 
