@@ -56,6 +56,47 @@ public sealed class CombatServiceTests
     }
 
     [Fact]
+    public void ApplyAttack_KillsMobWithController_CapturesControllerIdBeforeRemoval()
+    {
+        // 對照 Java MapleMonster 死亡流程：controll.getClient().sendPacket(stopControllingMonster(...))
+        // 只在怪物「有控制者」時才送；死亡後 mob 從 field 移除，ControllerId 要在移除前捕捉。
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = MakeMob(objectId: 100001, hp: 20);
+        mob.ControllerId = 99;
+        field.Add(player);
+        field.Add(mob);
+
+        var result = service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [20]),
+        ]));
+
+        var hit = Assert.Single(result.Hits);
+        Assert.True(hit.Killed);
+        Assert.Equal(99, hit.ControllerId);
+    }
+
+    [Fact]
+    public void ApplyAttack_KillsMobWithoutController_ControllerIdIsZero()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = MakeMob(objectId: 100001, hp: 20);
+        field.Add(player);
+        field.Add(mob);
+
+        var result = service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [20]),
+        ]));
+
+        var hit = Assert.Single(result.Hits);
+        Assert.True(hit.Killed);
+        Assert.Equal(0, hit.ControllerId);
+    }
+
+    [Fact]
     public void PlayerTakeDamage_ClampsAtZero()
     {
         var player = MakePlayer(hp: 30);

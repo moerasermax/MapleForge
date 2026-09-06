@@ -3310,12 +3310,55 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             if (hit.Killed)
             {
                 await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(hit.ObjectId), ct);
+                await NotifyControllerStoppedAsync(hit.ControllerId, hit.ObjectId, player, session, ct);
 
                 if (hit.Rewards is { } rewards)
                 {
                     await SendMobKillRewardsAsync(player, session, rewards, ct);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// 怪物死亡時通知控制者釋放控制權（對照 Java <c>MapleMonster</c> 死亡流程：
+    /// <c>controll.getClient().sendPacket(MobPacket.stopControllingMonster(...))</c>）。
+    /// 一般情況控制者就是擊殺者本人（自己走 session 直送）；Java 註解特別標註「這只有隱身 GM
+    /// 攻擊怪物時才會跟擊殺者不同」，此時透過 <see cref="IOnlinePlayerRegistry"/> 找控制者送包，
+    /// 找不到（已離線）則略過——沒有控制者（<paramref name="controllerId"/> 為 0）時不送任何包。
+    /// </summary>
+    private async Task NotifyControllerStoppedAsync(
+        int controllerId,
+        int mobObjectId,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (controllerId == 0)
+        {
+            return;
+        }
+
+        var packet = V113CombatPackets.StopControllingMonster(mobObjectId);
+        if (controllerId == player.Character.Id)
+        {
+            await session.SendAsync(packet, ct);
+            return;
+        }
+
+        var controller = _onlinePlayers.FindById(controllerId);
+        if (controller is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await controller.SendPacket(packet, ct);
+        }
+        catch
+        {
+            // best-effort；controller session 可能剛好斷線。
         }
     }
 

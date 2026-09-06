@@ -47,6 +47,19 @@ public sealed class ChannelCombatPacketTests
     }
 
     [Fact]
+    public void StopControllingMonster_WritesJavaLayout()
+    {
+        // 對照 Java MobPacket.stopControllingMonster：SPAWN_MONSTER_CONTROL + byte 0 + int objectId。
+        var pkt = V113CombatPackets.StopControllingMonster(100001);
+        var r = new PacketReader(pkt);
+
+        Assert.Equal(V113CombatPackets.SpawnMonsterControlOp, r.ReadShort());
+        Assert.Equal(0, r.ReadByte());
+        Assert.Equal(100001, r.ReadInt());
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
     public void DamageMonster_AndKillMonster_UsePropertiesOpcodes()
     {
         Assert.Equal(

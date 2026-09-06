@@ -18,7 +18,10 @@ public sealed record CombatMobHit(
     long AppliedDamage,
     long RemainingHp,
     bool Killed,
-    MobKillRewards? Rewards = null);
+    MobKillRewards? Rewards = null,
+    // 死亡當下的怪物控制者（死亡前捕捉，field.Remove 後就查不到了）。0=無控制者。
+    // 對照 Java MapleMonster 死亡流程對控制者送 stopControllingMonster。
+    int ControllerId = 0);
 
 public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits)
 {
@@ -105,7 +108,8 @@ public sealed class CombatService
                 result.AppliedDamage,
                 result.RemainingHp,
                 result.Killed,
-                rewards));
+                rewards,
+                mob.ControllerId));
 
             if (result.Killed)
             {
