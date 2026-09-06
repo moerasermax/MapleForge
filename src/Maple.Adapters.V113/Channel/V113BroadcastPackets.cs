@@ -31,6 +31,23 @@ internal static class V113BroadcastPackets
     public static byte[] SkullMegaphone(string message, int channel, bool ear)
         => BroadcastMessage(type: 12, channel, [message], ear, item: null);
 
+    /// <summary>
+    /// 對照 Java <c>MaplePacketCreator.getGachaponMega</c>（<c>broadcastMessage</c> type=13）：
+    /// 寶箱抽到稀有道具時的全服廣播。版型與 type=8（<see cref="ItemMegaphone"/>）不同：channel 是
+    /// 4-byte int（非 1-byte）、沒有 ear 欄位、item 一定寫（無 null 判斷），故不走共用的
+    /// <see cref="BroadcastMessage"/> 私有方法，獨立建包。
+    /// </summary>
+    public static byte[] GachaponMega(string message, int channel, Item item)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(SendServerMessage);
+        w.WriteByte(13);
+        w.WriteMapleString(message);
+        w.WriteInt(channel - 1);
+        AddItemInfo(w, item);
+        return w.ToArray();
+    }
+
     private static byte[] BroadcastMessage(byte type, int channel, IReadOnlyList<string>? messages, bool ear, Item? item)
     {
         var w = new PacketWriter();

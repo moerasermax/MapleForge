@@ -138,6 +138,22 @@ public sealed class RandomRewardsCatalog
         _compiledSilver = Compile(SilverRewards);
     }
 
+    /// <summary>
+    /// 對照 Java <c>GameConstants.gachaponRareItem</c>：抽到這些道具時要全服廣播恭喜訊息。
+    /// 回傳稀有度等級（0＝不稀有，不廣播；1~3＝稀有，數值本身在 Java 未被用來決定廣播內容，
+    /// 只當作「是否 &gt; 0」的旗標，故這裡忠實保留等級數值但呼叫端目前只判斷是否為 0）。
+    /// </summary>
+    public static byte GetGachaponRareness(int itemId) => itemId switch
+    {
+        2022217 or 2022221 or 2022222 or 2022223 => 1,
+        2370000 or 2370001 or 2370002 or 2370003 or 2370004 or 2370005 or 2370006 or 2370007
+            or 3010054 or 2022483 or 2210029 => 2,
+        2049100 or 1372039 or 1372040 or 1372041 or 1372042 or 1092049 or 1382037
+            or 1102084 or 1102041 or 1102086 or 1102042 or 1082149 or 1082179 or 1402044
+            or 3010065 or 3010064 or 3010068 or 3012001 or 3012002 or 3010020 or 3010041 => 3,
+        _ => 0,
+    };
+
     /// <summary>對照 Java <c>RandomRewards.getGoldBoxReward</c>。</summary>
     public int GetGoldBoxReward() => _compiledGold[_rng.Next(_compiledGold.Length)];
 

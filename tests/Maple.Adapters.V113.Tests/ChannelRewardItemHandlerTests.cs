@@ -114,7 +114,8 @@ public sealed class ChannelRewardItemHandlerTests
         var result = V113RewardItemHandler.HandleTreasureChest(
             Reader(w => w.WriteShort(2).WriteInt(4280000)),
             player,
-            new RandomRewardsCatalog(new FixedIndexRandom(0)));
+            new RandomRewardsCatalog(new FixedIndexRandom(0)),
+            channel: 1);
 
         Assert.True(result.CharacterMutated);
         Assert.Equal(5, result.SelfPackets.Count);
@@ -124,6 +125,7 @@ public sealed class ChannelRewardItemHandlerTests
         Assert.Equal(new byte[] { 0xC7, 0x00, 0x0B, 0x2B, 0xDE, 0x13, 0x00, 0 }, result.SelfPackets[3]);
         Assert.Equal(V113StatsPackets.EnableActions(), result.SelfPackets[4]);
         Assert.Equal(1, player.Inventory.By(InventoryType.Equip).CountById(1302059));
+        Assert.Empty(result.ChannelBroadcastPackets); // 1302059 不在 GameConstants.gachaponRareItem 表內
     }
 
     [Fact]
@@ -138,10 +140,38 @@ public sealed class ChannelRewardItemHandlerTests
         var result = V113RewardItemHandler.HandleTreasureChest(
             Reader(w => w.WriteShort(2).WriteInt(4280000)),
             player,
-            new RandomRewardsCatalog(new FixedIndexRandom(89)));
+            new RandomRewardsCatalog(new FixedIndexRandom(89)),
+            channel: 1);
 
         Assert.True(result.CharacterMutated);
         Assert.Equal(100, player.Inventory.By(InventoryType.Use).CountById(2000005));
+        Assert.Empty(result.ChannelBroadcastPackets); // 藥水不在稀有度表內
+    }
+
+    [Fact]
+    public void TreasureChest_RareItemReward_BroadcastsGachaponMegaToWholeChannel()
+    {
+        var player = PlayerWithItems(
+            new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4280000, Slot = 2, Quantity = 1 },
+            new ItemRecord { Type = (byte)InventoryType.Cash, ItemId = 5490000, Slot = 1, Quantity = 1 });
+
+        // Index 4 of the compiled gold table lands on itemId 1092049 (致命劍盾), which IS in
+        // GameConstants.gachaponRareItem (rareness level 3).
+        var result = V113RewardItemHandler.HandleTreasureChest(
+            Reader(w => w.WriteShort(2).WriteInt(4280000)),
+            player,
+            new RandomRewardsCatalog(new FixedIndexRandom(4)),
+            channel: 3);
+
+        Assert.True(result.CharacterMutated);
+        var packet = Assert.Single(result.ChannelBroadcastPackets);
+        var reader = new PacketReader(packet);
+        Assert.Equal(V113ChannelSendOp.ServerMessage, reader.ReadShort());
+        Assert.Equal(13, reader.ReadByte());
+        Assert.Equal("\t恭喜 RewardUser : 從金寶箱抽到！", reader.ReadMapleString());
+        Assert.Equal(2, reader.ReadInt()); // channel-1
+        Assert.Equal(1, reader.ReadByte()); // isEquip
+        Assert.Equal(1092049, reader.ReadInt());
     }
 
     [Fact]
@@ -158,7 +188,8 @@ public sealed class ChannelRewardItemHandlerTests
         var result = V113RewardItemHandler.HandleTreasureChest(
             Reader(w => w.WriteShort(2).WriteInt(4280000)),
             player,
-            new RandomRewardsCatalog(new FixedIndexRandom(0)));
+            new RandomRewardsCatalog(new FixedIndexRandom(0)),
+            channel: 1);
 
         Assert.False(result.CharacterMutated);
         Assert.Equal((short)1, player.Inventory.By(InventoryType.Etc).Get(2)!.Quantity);

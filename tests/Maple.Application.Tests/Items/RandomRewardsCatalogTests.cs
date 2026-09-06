@@ -101,6 +101,20 @@ public sealed class RandomRewardsCatalogTests
         Assert.Throws<IndexOutOfRangeException>(() => catalog.GetSilverBoxReward());
     }
 
+    [Theory]
+    [InlineData(2022217, 1)] // 殘暴炎魔的御守
+    [InlineData(2022223, 1)] // 企鵝王的御守
+    [InlineData(2370000, 2)] // 兵法書(孫子)
+    [InlineData(2210029, 2)] // 黃金豬 變身道具
+    [InlineData(1092049, 3)] // 致命劍盾
+    [InlineData(3010041, 3)] // 骷髏寶座
+    [InlineData(1302059, 0)] // 龍泉劍：在金寶箱表內，但不在 gachaponRareItem 稀有度表
+    [InlineData(0, 0)]
+    public void GetGachaponRareness_MatchesJavaGameConstantsTable(int itemId, byte expectedRareness)
+    {
+        Assert.Equal(expectedRareness, RandomRewardsCatalog.GetGachaponRareness(itemId));
+    }
+
     private sealed class FixedIndexRandom(int index) : Random
     {
         public override int Next(int maxValue) => index;

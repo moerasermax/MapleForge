@@ -814,7 +814,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.UseTreasureChest:
                         if (player is null) break;
                         await HandleRewardItemResultAsync(
-                            V113RewardItemHandler.HandleTreasureChest(reader, player, _randomRewardsCatalog),
+                            V113RewardItemHandler.HandleTreasureChest(reader, player, _randomRewardsCatalog, _options.ChannelIndex + 1),
                             player,
                             s,
                             token);
@@ -2170,6 +2170,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var packet in result.BroadcastPackets)
         {
             await BroadcastPacketToOthersAsync(player.Character, packet, ct);
+        }
+
+        foreach (var packet in result.ChannelBroadcastPackets)
+        {
+            await BroadcastPacketToAllOnlineAsync(packet, ct);
         }
 
         if (result.CharacterMutated)

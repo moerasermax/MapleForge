@@ -16,7 +16,14 @@ internal sealed record V113RewardItemResult(
     bool CharacterMutated,
     V113RewardItemRequest Request,
     IReadOnlyList<byte[]> SelfPackets,
-    IReadOnlyList<byte[]> BroadcastPackets);
+    IReadOnlyList<byte[]> BroadcastPackets)
+{
+    /// <summary>
+    /// 對照 Java <c>World.Broadcast.broadcastMessage(getGachaponMega(...))</c>：寶箱抽到稀有道具時
+    /// 的全服公告，不限地圖（見 <see cref="V113BroadcastPackets.GachaponMega"/>）。
+    /// </summary>
+    public IReadOnlyList<byte[]> ChannelBroadcastPackets { get; init; } = Array.Empty<byte[]>();
+}
 
 internal static class V113RewardItemHandler
 {
@@ -63,7 +70,7 @@ internal static class V113RewardItemHandler
     private const short SpecialPotionQuantity = 200;
     private const short SuperPotionQuantity = 100;
 
-    public static V113RewardItemResult HandleTreasureChest(PacketReader reader, Player player, RandomRewardsCatalog randomRewards)
+    public static V113RewardItemResult HandleTreasureChest(PacketReader reader, Player player, RandomRewardsCatalog randomRewards, int channel)
     {
         V113RewardItemRequest request;
         try
@@ -77,11 +84,11 @@ internal static class V113RewardItemHandler
 
         // 對照 Java InventoryHandler.UseTreasureChest：金/銀寶箱各自查 RandomRewards 加權表抽獎；
         // 特殊/超級藥水額外給固定數量（200/100），其餘一律 1 個。
-        var (keyItemId, rewardItemId) = request.ItemId switch
+        var (keyItemId, rewardItemId, boxName) = request.ItemId switch
         {
-            4280000 => (5490000, randomRewards.GetGoldBoxReward()),
-            4280001 => (5490001, randomRewards.GetSilverBoxReward()),
-            _ => (0, 0),
+            4280000 => (5490000, randomRewards.GetGoldBoxReward(), "金寶箱"),
+            4280001 => (5490001, randomRewards.GetSilverBoxReward(), "銀寶箱"),
+            _ => (0, 0, string.Empty),
         };
 
         if (keyItemId == 0)
@@ -115,12 +122,16 @@ internal static class V113RewardItemHandler
             rewardItemId,
             quantity,
             effect: string.Empty,
-            extraMutations: [V113ItemUsePackets.ModifyInventoryQuantity(keyMutation)]);
+            extraMutations: [V113ItemUsePackets.ModifyInventoryQuantity(keyMutation)],
+            gachapon: new GachaponContext(channel, boxName));
 
         return result.CharacterMutated
             ? result
             : EnableActionsOnly(request);
     }
+
+    /// <summary>對照 Java <c>InventoryHandler.UseTreasureChest</c> 稀有度全服廣播所需的上下文。</summary>
+    private readonly record struct GachaponContext(int Channel, string BoxName);
 
     private static V113RewardItemResult ConsumeContainerAndGrantReward(
         Player player,
@@ -129,7 +140,8 @@ internal static class V113RewardItemHandler
         int rewardItemId,
         short rewardQuantity,
         string effect,
-        IReadOnlyList<byte[]>? extraMutations = null)
+        IReadOnlyList<byte[]>? extraMutations = null,
+        GachaponContext? gachapon = null)
     {
         if (request.Slot <= 0 ||
             !player.CanGainItem(Player.InventoryTypeOf(rewardItemId)) ||
@@ -162,12 +174,22 @@ internal static class V113RewardItemHandler
         selfPackets.Add(ShowRewardItemAnimation(rewardItemId, effect));
         selfPackets.Add(V113StatsPackets.EnableActions());
 
+        var channelBroadcasts = Array.Empty<byte[]>();
+        if (gachapon is { } ctx && RandomRewardsCatalog.GetGachaponRareness(rewardItemId) > 0)
+        {
+            var message = $"\t恭喜 {player.Character.Name} : 從{ctx.BoxName}抽到！";
+            channelBroadcasts = [V113BroadcastPackets.GachaponMega(message, ctx.Channel, rewardItem)];
+        }
+
         return new V113RewardItemResult(
             Handled: true,
             CharacterMutated: true,
             request,
             SelfPackets: selfPackets,
-            BroadcastPackets: [ShowRewardItemAnimation(rewardItemId, effect, player.Character.Id)]);
+            BroadcastPackets: [ShowRewardItemAnimation(rewardItemId, effect, player.Character.Id)])
+        {
+            ChannelBroadcastPackets = channelBroadcasts,
+        };
     }
 
     private static bool TryConsumeFirst(
