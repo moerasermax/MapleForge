@@ -13,6 +13,8 @@ namespace Maple.Application.Tests.Npcs;
 /// cm.getPlayerStat（P022）：對照 Java AbstractPlayerInteraction.getPlayerStat 逐 key 核對。
 /// cm.increaseGuildCapacity（P023）：驗證 meso/gid 兩道守門 + pending 委派時機，實際公會擴充
 /// 邏輯由 GuildServiceTests 覆蓋。
+/// cm.disbandGuild（P024）：驗證會長/公會兩道守門 + pending 委派時機，實際解散邏輯由
+/// GuildServiceTests 覆蓋。
 /// </summary>
 public sealed class NpcContextTests
 {
@@ -251,6 +253,60 @@ public sealed class NpcContextTests
 
         Assert.False(increaseCalled);
         Assert.False(popupCalled);
+    }
+
+    [Fact]
+    public async Task NpcConversation_DisbandGuild_Leader_InvokesDelegate()
+    {
+        var player = NewPlayer();
+        player.Character.GuildId = 7;
+        player.Character.GuildRank = 1;
+        var ctx = new NpcContext(2010007, player, NewQuestService());
+        var disbandCalled = false;
+
+        var convo = new NpcConversation(
+            2010007,
+            new ActionScript(() => ctx.DisbandGuild()),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            disbandGuild: _ =>
+            {
+                disbandCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.True(disbandCalled);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(7, 2)]
+    public async Task NpcConversation_DisbandGuild_NotLeaderOrNoGuild_SendsNothing_MatchingJavaSilentReturn(int guildId, byte guildRank)
+    {
+        var player = NewPlayer();
+        player.Character.GuildId = guildId;
+        player.Character.GuildRank = guildRank;
+        var ctx = new NpcContext(2010007, player, NewQuestService());
+        var disbandCalled = false;
+
+        var convo = new NpcConversation(
+            2010007,
+            new ActionScript(() => ctx.DisbandGuild()),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            disbandGuild: _ =>
+            {
+                disbandCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.False(disbandCalled);
     }
 
     private static Player NewPlayer()

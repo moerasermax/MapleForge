@@ -1,3 +1,4 @@
+using Maple.Core.Guilds;
 using Maple.Core.Inventory;
 using Maple.Core.Quests;
 using Maple.Core.World;
@@ -34,6 +35,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     internal int? PendingStorageNpcId { get; private set; }
     internal int? PendingBuddyCapacityUpdate { get; private set; }
     internal bool PendingGuildCapacityIncrease { get; private set; }
+    internal bool PendingGuildDisband { get; private set; }
     internal string? PendingPopupMessage { get; private set; }
     internal IReadOnlyList<QuestTransactionResult> PendingQuestResults => _pendingQuestResults;
     internal IReadOnlyList<(int QuestId, string Data)> PendingInfoQuestUpdates => _pendingInfoQuestUpdates;
@@ -47,6 +49,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingStorageNpcId = null;
         PendingBuddyCapacityUpdate = null;
         PendingGuildCapacityIncrease = false;
+        PendingGuildDisband = false;
         PendingPopupMessage = null;
         _pendingQuestResults.Clear();
         _pendingInfoQuestUpdates.Clear();
@@ -189,6 +192,16 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         }
 
         PendingGuildCapacityIncrease = true;
+    }
+
+    public void DisbandGuild()
+    {
+        if (_player.Character.GuildId <= 0 || _player.Character.GuildRank != Guild.LeaderRank)
+        {
+            return; // 對照 Java：非會長或無公會靜默返回，不送任何封包
+        }
+
+        PendingGuildDisband = true;
     }
 
     private void EnqueueQuestResult(QuestTransactionResult result) => _pendingQuestResults.Add(result);

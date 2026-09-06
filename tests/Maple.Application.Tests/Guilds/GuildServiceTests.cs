@@ -174,6 +174,66 @@ public sealed class GuildServiceTests
         Assert.Equal(GuildService.IncreaseCapacityCost, loner.Character.Meso);
     }
 
+    [Fact]
+    public async Task DisbandGuildAsync_Leader_RemovesGuildAndResetsAllMembers()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 60), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var member = Player(2, "Member");
+        characters.Put(leader.Character);
+        characters.Put(member.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await InviteAndJoinAsync(service, leader, member, created.Guild!.Id);
+
+        var result = await service.DisbandGuildAsync(leader);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(GuildUpdateKind.Disbanded, result.UpdateKind);
+        Assert.Equal(new[] { 1, 2 }, result.Recipients);
+        Assert.Equal(2, result.Guild!.Members.Count);
+        Assert.Null(await service.GetGuildAsync(created.Guild.Id));
+        Assert.Equal(0, characters.Find(leader.Character.Id)!.GuildId);
+        Assert.Equal(Guild.DefaultMemberRank, characters.Find(leader.Character.Id)!.GuildRank);
+        Assert.Equal(0, characters.Find(member.Character.Id)!.GuildId);
+        Assert.Equal(Guild.DefaultMemberRank, characters.Find(member.Character.Id)!.GuildRank);
+    }
+
+    [Fact]
+    public async Task DisbandGuildAsync_NonLeader_ReturnsNotLeader_WithoutMutatingGuild()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 70), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var member = Player(2, "Member");
+        characters.Put(leader.Character);
+        characters.Put(member.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await InviteAndJoinAsync(service, leader, member, created.Guild!.Id);
+
+        var result = await service.DisbandGuildAsync(member);
+
+        Assert.Equal(GuildCommandStatus.NotLeader, result.Status);
+        Assert.NotNull(await service.GetGuildAsync(created.Guild.Id));
+        Assert.Equal(created.Guild.Id, characters.Find(member.Character.Id)!.GuildId);
+    }
+
+    [Fact]
+    public async Task DisbandGuildAsync_NoGuild_ReturnsNotLeader()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 80), characters);
+        var loner = Player(1, "Loner");
+        characters.Put(loner.Character);
+
+        var result = await service.DisbandGuildAsync(loner);
+
+        Assert.Equal(GuildCommandStatus.NotLeader, result.Status);
+    }
+
     private static async Task InviteAndJoinAsync(GuildService service, Player leader, Player target, int guildId)
     {
         var invite = await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(target.Character, channel: 1));

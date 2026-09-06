@@ -28,6 +28,20 @@ public sealed class ChannelGuildPacketTests
     }
 
     [Fact]
+    public void GuildDisband_WritesJavaLayout()
+    {
+        // 對照 Java MaplePacketCreator.guildDisband：GUILD_OPERATION + 0x32 + int guildId + byte 1。
+        var packet = V113GuildPackets.GuildDisband(25);
+        var r = new PacketReader(packet);
+
+        Assert.Equal(V113GuildPackets.SendGuildOperationOpcode, r.ReadShort());
+        Assert.Equal(V113GuildPackets.GuildDisbandCode, r.ReadByte());
+        Assert.Equal(25, r.ReadInt());
+        Assert.Equal(1, r.ReadByte());
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
     public void ShowGuildInfo_WritesJavaGuildInfoLayout()
     {
         var leader = Member(1, "Leader", rank: Guild.LeaderRank);

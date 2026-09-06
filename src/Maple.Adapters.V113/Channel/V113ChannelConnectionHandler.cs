@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Maple.Adapters.V113.Crypto;
+using Maple.Application.Alliances;
 using Maple.Application.Buddies;
 using Maple.Application.Characters;
 using Maple.Application.Combat;
@@ -23,6 +24,8 @@ using Maple.Application.Storage;
 using Maple.Application.Trades;
 using Maple.Core.Accounts;
 using Maple.Core.Characters;
+using Maple.Core.Guilds;
+using Maple.Core.Guilds.Bbs;
 using Maple.Core.IO;
 using Maple.Core.Quests;
 using Maple.Core.Skills;
@@ -65,6 +68,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly DropService _dropService;
     private readonly FameService _fameService;
     private readonly GuildService _guildService;
+    private readonly AllianceService _allianceService;
+    private readonly IGuildBbsRepository _guildBbs;
     private readonly RangedMagicCombatService _rangedMagicCombatService;
     private readonly ReactorService _reactorService;
     private readonly TradeService _tradeService;
@@ -117,6 +122,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         DropService dropService,
         FameService fameService,
         GuildService guildService,
+        AllianceService allianceService,
+        IGuildBbsRepository guildBbs,
         RangedMagicCombatService rangedMagicCombatService,
         ReactorService reactorService,
         TradeService tradeService,
@@ -168,6 +175,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _dropService = dropService;
         _fameService = fameService;
         _guildService = guildService;
+        _allianceService = allianceService;
+        _guildBbs = guildBbs;
         _rangedMagicCombatService = rangedMagicCombatService;
         _reactorService = reactorService;
         _tradeService = tradeService;
@@ -1876,7 +1885,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
             sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
-            sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c));
+            sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
+            disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -1910,7 +1920,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
             sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
-            sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c));
+            sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
+            disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -1949,6 +1960,67 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             try
             {
                 await target.SendPacket(packet, ct);
+            }
+            catch
+            {
+                // Guild 廣播 best-effort；session 可能剛好斷線。
+            }
+        }
+    }
+
+    /// <summary>
+    /// cm.disbandGuild 的實際解散協調。<see cref="GuildService.DisbandGuildAsync(Player, CancellationToken)"/>
+    /// 只做「登記表移除＋所有成員持久化欄位重置」；BBS 清理、同盟移除、在線成員記憶體同步與廣播
+    /// 是跨服務協調，比照既有 <c>V113GuildOperationHandler</c> 同時持有 GuildService+AllianceService
+    /// 協調同盟廣播的模式，在這裡（同時持有 GuildService/AllianceService/IGuildBbsRepository/
+    /// IOnlinePlayerRegistry 的 handler）完成。對照 Java <c>MapleGuild.disbandGuild</c>：
+    /// 刪 BBS 討論串/回覆 → （已在 DisbandGuildAsync 內完成的）刪公會列 → 同盟中則移除 →
+    /// 廣播 guildDisband；另外 Java 對在線成員會直接同步記憶體中的 guildId/guildRank/allianceRank
+    /// （<c>World.Guild.setGuildAndRank</c>），這裡對照做同一件事。
+    /// </summary>
+    private async Task DisbandGuildAndCleanupAsync(Player player, MapleSession session, CancellationToken ct)
+    {
+        var result = await _guildService.DisbandGuildAsync(player, ct);
+        if (!result.Succeeded || result.Guild is null)
+        {
+            return;
+        }
+
+        var guild = result.Guild;
+
+        var threads = await _guildBbs.GetThreadsAsync(guild.Id, ct);
+        foreach (var thread in threads)
+        {
+            await _guildBbs.DeleteThreadAsync(guild.Id, thread.ThreadId, ct);
+        }
+
+        if (guild.AllianceId > 0)
+        {
+            await _allianceService.RemoveGuildAsync(guild.AllianceId, guild.Id, expelled: false, ct);
+        }
+
+        var packet = V113GuildPackets.GuildDisband(guild.Id);
+        foreach (var member in guild.Members)
+        {
+            var online = _onlinePlayers.FindById(member.CharacterId);
+            if (online is null)
+            {
+                continue;
+            }
+
+            online.Character.GuildId = 0;
+            online.Character.GuildRank = Guild.DefaultMemberRank;
+            online.Character.AllianceRank = Guild.DefaultAllianceRank;
+
+            if (member.CharacterId == player.Character.Id)
+            {
+                await session.SendAsync(packet, ct);
+                continue;
+            }
+
+            try
+            {
+                await online.SendPacket(packet, ct);
             }
             catch
             {

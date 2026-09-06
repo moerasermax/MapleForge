@@ -72,4 +72,10 @@ public interface INpcScriptContext
     /// 有公會才會真的送出擴充請求（送出後楓幣無條件扣，即使已達上限也扣，見 <c>GuildService</c> 註解）。
     /// </summary>
     void IncreaseGuildCapacity();
+
+    /// <summary>
+    /// 解散公會（cm.disbandGuild）。對照 Java <c>NPCConversationManager.disbandGuild</c>：
+    /// 非會長或無公會靜默返回，不送任何封包。
+    /// </summary>
+    void DisbandGuild();
 }

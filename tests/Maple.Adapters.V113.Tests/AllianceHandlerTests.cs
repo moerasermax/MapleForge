@@ -227,6 +227,7 @@ public sealed class AllianceHandlerTests
         public Task<GuildCommandResult> ChangeRankAsync(int initiatorId, int targetId, byte newRank, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<GuildCommandResult> ChangeRankTitlesAsync(int initiatorId, IReadOnlyList<string> titles, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<GuildCommandResult> IncreaseCapacityAsync(int guildId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> DisbandGuildAsync(int guildId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<GuildCommandResult> ChangeEmblemAsync(int initiatorId, GuildEmblem emblem, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<GuildCommandResult> ChangeNoticeAsync(int initiatorId, string notice, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<GuildCommandResult> SetMemberOnlineAsync(GuildMember member, bool online, int channel, CancellationToken ct = default) => throw new NotSupportedException();

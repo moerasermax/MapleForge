@@ -17,6 +17,7 @@ public enum GuildUpdateKind
     MemberOnline,
     MemberOffline,
     CapacityChanged,
+    Disbanded,
 }
 
 public enum GuildCommandStatus
@@ -81,6 +82,12 @@ public interface IGuildRegistry
     /// <summary>擴充公會人數上限（cm.increaseGuildCapacity 用）。對照 Java <c>MapleGuild.increaseCapacity</c>：
     /// +5、上限 100，找不到公會或已達上限回非 Success（不拋例外）。</summary>
     Task<GuildCommandResult> IncreaseCapacityAsync(int guildId, CancellationToken ct = default);
+
+    /// <summary>解散公會（cm.disbandGuild 用）。對照 Java <c>MapleGuild.disbandGuild</c>：從登記表移除、
+    /// 刪除持久化紀錄；回傳的 <see cref="GuildCommandResult.Guild"/> 是刪除前的快照（含完整成員名單，
+    /// 供呼叫端做成員狀態重置/同盟移除/廣播），<see cref="GuildCommandResult.RecipientCharacterIds"/>
+    /// 是刪除前的在線成員清單。找不到公會回 <see cref="GuildCommandStatus.GuildNotFound"/>。</summary>
+    Task<GuildCommandResult> DisbandGuildAsync(int guildId, CancellationToken ct = default);
 
     Task<GuildCommandResult> ChangeEmblemAsync(int initiatorId, GuildEmblem emblem, CancellationToken ct = default);
 
@@ -437,6 +444,40 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
                 guild.Snapshot(),
                 UpdateKind: GuildUpdateKind.CapacityChanged,
                 RecipientCharacterIds: OnlineRecipientIds(guild));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<GuildCommandResult> DisbandGuildAsync(int guildId, CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!_guilds.TryGetValue(guildId, out var guild))
+            {
+                return new GuildCommandResult(GuildCommandStatus.GuildNotFound);
+            }
+
+            var snapshot = guild.Snapshot();
+            var recipients = OnlineRecipientIds(guild);
+
+            foreach (var member in guild.Members)
+            {
+                _guildByCharacter.Remove(member.CharacterId);
+            }
+
+            _guilds.Remove(guildId);
+            await _repository.DeleteAsync(guildId, ct).ConfigureAwait(false);
+
+            return new GuildCommandResult(
+                GuildCommandStatus.Success,
+                snapshot,
+                UpdateKind: GuildUpdateKind.Disbanded,
+                RecipientCharacterIds: recipients);
         }
         finally
         {
@@ -905,6 +946,38 @@ public sealed class GuildService
 
         player.GainMeso(-IncreaseCapacityCost);
         await _characters.UpdateAsync(player.Character, ct).ConfigureAwait(false);
+
+        return result;
+    }
+
+    /// <summary>
+    /// 對照 Java <c>NPCConversationManager.disbandGuild</c>：非會長或無公會靜默返回
+    /// （<see cref="GuildCommandStatus.NotLeader"/>，呼叫端不應對此送任何封包）。成功後對照
+    /// <c>MapleGuild.disbandGuild</c>/<c>writeToDB(true)</c> 重置**所有**成員（不分上下線）的持久化
+    /// 公會欄位（guildId=0/guildRank=<see cref="Guild.DefaultMemberRank"/>/allianceRank=
+    /// <see cref="Guild.DefaultAllianceRank"/>）。BBS 清理、同盟移除、在線玩家記憶體同步與廣播
+    /// 屬於跨服務協調（BBS repository + AllianceService + IOnlinePlayerRegistry），留給呼叫端
+    /// （Adapter 層，已同時持有這幾個依賴）用回傳的 <see cref="GuildCommandResult.Guild"/> 快照完成。
+    /// </summary>
+    public async Task<GuildCommandResult> DisbandGuildAsync(Player player, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (player.Character.GuildId <= 0 || player.Character.GuildRank != Guild.LeaderRank)
+        {
+            return new GuildCommandResult(GuildCommandStatus.NotLeader);
+        }
+
+        var result = await _registry.DisbandGuildAsync(player.Character.GuildId, ct).ConfigureAwait(false);
+        if (!result.Succeeded || result.Guild is null)
+        {
+            return result;
+        }
+
+        foreach (var member in result.Guild.Members)
+        {
+            await ClearCharacterGuildStatusAsync(member.CharacterId, ct).ConfigureAwait(false);
+        }
 
         return result;
     }
