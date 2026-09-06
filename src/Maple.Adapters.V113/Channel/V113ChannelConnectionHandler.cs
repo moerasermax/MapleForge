@@ -3744,8 +3744,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        // 對照 Java PlayerHandler.InnerPortal：跟宣稱使用的傳送門距離過遠只記錄警訊，不擋動作
+        // 本身（Java 的 registerOffense 只是累積違規次數供後續判斷，不是即時封鎖）。
+        if (IsFarFromPortal(portal, player.Position))
+        {
+            _log.LogWarning(
+                "[Channel] 玩家 {Name} 使用內部傳送門距離過遠 charPos=({Cx},{Cy}) portal={Portal}({Px},{Py})",
+                player.Character.Name, player.Position.X, player.Position.Y, request.PortalName, portal.X, portal.Y);
+        }
+
         player.MoveTo(new Position(request.X, request.Y, player.Position.Stance, player.Position.Foothold));
         await session.SendAsync(V113InnerPortalPackets.CurrentMapWarp((byte)portal.Id), ct);
+    }
+
+    /// <summary>對照 Java <c>portal.getPosition().distanceSq(chr.getPosition()) &gt; 22500</c>（150 格）。</summary>
+    internal static bool IsFarFromPortal(MapPortal portal, Position position)
+    {
+        var dx = portal.X - position.X;
+        var dy = portal.Y - position.Y;
+        return ((long)dx * dx) + ((long)dy * dy) > 22500;
     }
 
     /// <summary>
