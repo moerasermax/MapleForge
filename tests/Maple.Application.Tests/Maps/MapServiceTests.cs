@@ -5,7 +5,7 @@ namespace Maple.Application.Tests.Maps;
 
 public sealed class MapServiceTests : IDisposable
 {
-    private const string WzDir = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
+    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
     private readonly WzDataProvider _provider = new(WzDir);
     private readonly MapService _svc;
 

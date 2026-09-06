@@ -5,8 +5,8 @@ namespace Maple.Content.Tests;
 
 public sealed class WzFileTests
 {
-    private const string StringWzPath = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client\String.wz";
-    private const string ListWzPath = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client\List.wz";
+    private const string StringWzPath = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client\String.wz";
+    private const string ListWzPath = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client\List.wz";
 
     [Fact]
     public void String_Wz_Opens_And_Has_Top_Level_Directories()
@@ -53,7 +53,7 @@ public sealed class WzFileTests
 
 public sealed class WzDataProviderTests : IDisposable
 {
-    private const string WzDir = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
+    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
     private readonly WzDataProvider _provider = new(WzDir);
 
     public void Dispose() => _provider.Dispose();

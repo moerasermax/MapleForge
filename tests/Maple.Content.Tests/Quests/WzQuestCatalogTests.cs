@@ -7,7 +7,7 @@ namespace Maple.Content.Tests.Quests;
 
 public sealed class WzQuestCatalogTests
 {
-    private const string WzDir = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
+    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
 
     [Fact]
     public void GetQuest_ParsesQuestInfoCheckAndActNodes()

@@ -5,7 +5,7 @@ namespace Maple.Application.Tests.Maps;
 /// <summary>暫時 debug 測試 - 確認 Map WZ 路徑與屬性解析。</summary>
 public sealed class MapWzDebugTests : IDisposable
 {
-    private const string WzDir = @"D:\WorkSpace\AI_Lab\研究中\MapleStory\V113\v113_Client";
+    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
     private readonly WzDataProvider _provider = new(WzDir);
 
     public void Dispose() => _provider.Dispose();
