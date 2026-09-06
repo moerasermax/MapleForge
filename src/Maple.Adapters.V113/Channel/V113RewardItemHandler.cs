@@ -1,3 +1,4 @@
+using Maple.Application.Items;
 using Maple.Core.Inventory;
 using Maple.Core.IO;
 using Maple.Core.World;
@@ -20,7 +21,7 @@ internal sealed record V113RewardItemResult(
 internal static class V113RewardItemHandler
 {
     private const int DeterministicRewardItemId = 2000000;
-    private const short DeterministicRewardQuantity = 1;
+    private const short DefaultRewardQuantity = 1;
 
     public static V113ShowExpChairRequest ParseShowExpChair(PacketReader reader)
         => new(reader.ReadInt());
@@ -53,11 +54,16 @@ internal static class V113RewardItemHandler
             request,
             Player.InventoryTypeOf(request.ItemId),
             DeterministicRewardItemId,
-            DeterministicRewardQuantity,
+            DefaultRewardQuantity,
             effect: string.Empty);
     }
 
-    public static V113RewardItemResult HandleTreasureChest(PacketReader reader, Player player)
+    private const int SpecialPotionItemId = 2000004;
+    private const int SuperPotionItemId = 2000005;
+    private const short SpecialPotionQuantity = 200;
+    private const short SuperPotionQuantity = 100;
+
+    public static V113RewardItemResult HandleTreasureChest(PacketReader reader, Player player, RandomRewardsCatalog randomRewards)
     {
         V113RewardItemRequest request;
         try
@@ -69,17 +75,26 @@ internal static class V113RewardItemHandler
             return EnableActionsOnly(default);
         }
 
-        var (keyItemId, rewardItemId, quantity) = request.ItemId switch
+        // 對照 Java InventoryHandler.UseTreasureChest：金/銀寶箱各自查 RandomRewards 加權表抽獎；
+        // 特殊/超級藥水額外給固定數量（200/100），其餘一律 1 個。
+        var (keyItemId, rewardItemId) = request.ItemId switch
         {
-            4280000 => (5490000, 1302059, (short)1), // Java gold box reward table first item.
-            4280001 => (5490001, 1002452, (short)1), // Java silver box reward table first item.
-            _ => (0, 0, (short)0),
+            4280000 => (5490000, randomRewards.GetGoldBoxReward()),
+            4280001 => (5490001, randomRewards.GetSilverBoxReward()),
+            _ => (0, 0),
         };
 
         if (keyItemId == 0)
         {
             return EnableActionsOnly(request);
         }
+
+        var quantity = rewardItemId switch
+        {
+            SpecialPotionItemId => SpecialPotionQuantity,
+            SuperPotionItemId => SuperPotionQuantity,
+            _ => DefaultRewardQuantity,
+        };
 
         if (!HasMatchingSource(player, InventoryType.Etc, request) ||
             !HasAny(player, InventoryType.Cash, keyItemId) ||

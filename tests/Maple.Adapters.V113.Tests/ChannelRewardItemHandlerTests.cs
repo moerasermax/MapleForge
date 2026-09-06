@@ -1,4 +1,5 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Items;
 using Maple.Core.Characters;
 using Maple.Core.Inventory;
 using Maple.Core.IO;
@@ -90,7 +91,7 @@ public sealed class ChannelRewardItemHandlerTests
     }
 
     [Fact]
-    public void TreasureChest_GoldConsumesChestAndKeyAndGrantsDeterministicReward()
+    public void TreasureChest_GoldConsumesChestAndKeyAndGrantsWeightedReward()
     {
         var player = PlayerWithItems(
             new ItemRecord
@@ -108,9 +109,12 @@ public sealed class ChannelRewardItemHandlerTests
                 Quantity = 1,
             });
 
+        // index 0 of the compiled gold table always lands on the first entry (1302059, 龍泉劍),
+        // matching Java GameConstants.goldrewards[0] — see RandomRewardsCatalogTests for full-table coverage.
         var result = V113RewardItemHandler.HandleTreasureChest(
             Reader(w => w.WriteShort(2).WriteInt(4280000)),
-            player);
+            player,
+            new RandomRewardsCatalog(new FixedIndexRandom(0)));
 
         Assert.True(result.CharacterMutated);
         Assert.Equal(5, result.SelfPackets.Count);
@@ -120,6 +124,24 @@ public sealed class ChannelRewardItemHandlerTests
         Assert.Equal(new byte[] { 0xC7, 0x00, 0x0B, 0x2B, 0xDE, 0x13, 0x00, 0 }, result.SelfPackets[3]);
         Assert.Equal(V113StatsPackets.EnableActions(), result.SelfPackets[4]);
         Assert.Equal(1, player.Inventory.By(InventoryType.Equip).CountById(1302059));
+    }
+
+    [Fact]
+    public void TreasureChest_SuperPotionReward_GrantsJavaSpecialQuantity()
+    {
+        var player = PlayerWithItems(
+            new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4280000, Slot = 2, Quantity = 1 },
+            new ItemRecord { Type = (byte)InventoryType.Cash, ItemId = 5490000, Slot = 1, Quantity = 1 });
+
+        // Index 89 of the compiled gold table lands on itemId 2000005 (超級藥水) — see
+        // RandomRewardsCatalogTests.GoldTable_IndexNinetyNine_IsSuperPotion for the derivation.
+        var result = V113RewardItemHandler.HandleTreasureChest(
+            Reader(w => w.WriteShort(2).WriteInt(4280000)),
+            player,
+            new RandomRewardsCatalog(new FixedIndexRandom(89)));
+
+        Assert.True(result.CharacterMutated);
+        Assert.Equal(100, player.Inventory.By(InventoryType.Use).CountById(2000005));
     }
 
     [Fact]
@@ -135,12 +157,19 @@ public sealed class ChannelRewardItemHandlerTests
 
         var result = V113RewardItemHandler.HandleTreasureChest(
             Reader(w => w.WriteShort(2).WriteInt(4280000)),
-            player);
+            player,
+            new RandomRewardsCatalog(new FixedIndexRandom(0)));
 
         Assert.False(result.CharacterMutated);
         Assert.Equal((short)1, player.Inventory.By(InventoryType.Etc).Get(2)!.Quantity);
         Assert.Single(result.SelfPackets);
         Assert.Equal(V113StatsPackets.EnableActions(), result.SelfPackets[0]);
+    }
+
+    /// <summary>Test double：<see cref="Random.Next(int)"/> 永遠回傳固定索引，讓加權抽獎在測試中可預期。</summary>
+    private sealed class FixedIndexRandom(int index) : Random
+    {
+        public override int Next(int maxValue) => index;
     }
 
     [Fact]

@@ -88,6 +88,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly PetService _petService;
     private readonly ItemUseService _itemUseService;
     private readonly ItemMakerService _itemMakerService;
+    private readonly RandomRewardsCatalog _randomRewardsCatalog;
     private readonly QuestService _questService;
     private readonly StatsService _statsService;
     private readonly V113AllianceHandler _allianceHandler;
@@ -139,6 +140,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         PetService petService,
         ItemUseService itemUseService,
         ItemMakerService itemMakerService,
+        RandomRewardsCatalog randomRewardsCatalog,
         QuestService questService,
         StatsService statsService,
         V113AllianceHandler allianceHandler,
@@ -189,6 +191,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _petService = petService;
         _itemUseService = itemUseService;
         _itemMakerService = itemMakerService;
+        _randomRewardsCatalog = randomRewardsCatalog;
         _questService = questService;
         _statsService = statsService;
         _allianceHandler = allianceHandler;
@@ -804,7 +807,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.UseTreasureChest:
                         if (player is null) break;
                         await HandleRewardItemResultAsync(
-                            V113RewardItemHandler.HandleTreasureChest(reader, player),
+                            V113RewardItemHandler.HandleTreasureChest(reader, player, _randomRewardsCatalog),
                             player,
                             s,
                             token);

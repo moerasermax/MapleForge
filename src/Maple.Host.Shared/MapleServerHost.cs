@@ -184,6 +184,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IItemMakeCatalog, WzItemMakeCatalog>();
         builder.Services.AddSingleton<IItemMakerRandomSource, ItemMakerRandomSource>();
         builder.Services.AddSingleton<ItemMakerService>();
+        builder.Services.AddSingleton<RandomRewardsCatalog>();
         builder.Services.AddSingleton<IV113ItemUseRandomSource, V113ItemUseRandomSource>();
         builder.Services.AddSingleton<V113ItemUseHandler>();
         builder.Services.AddSingleton<IScrollCatalog, HardcodedScrollCatalog>();
