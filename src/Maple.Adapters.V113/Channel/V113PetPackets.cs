@@ -1,4 +1,3 @@
-using System.Text;
 using Maple.Core.IO;
 using Maple.Core.Pets;
 using Maple.Core.World;
@@ -73,7 +72,7 @@ internal static class V113PetPackets
         var petId = (int)ReadLong(reader);
         var command = reader.ReadShort();
         var textLength = reader.ReadShort();
-        var text = Encoding.ASCII.GetString(reader.ReadBytes(textLength));
+        var text = MapleTextEncoding.Value.GetString(reader.ReadBytes(textLength));
         return new V113PetChatRequest(petId, command, text);
     }
 

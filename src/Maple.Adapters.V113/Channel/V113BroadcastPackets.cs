@@ -9,6 +9,10 @@ internal static class V113BroadcastPackets
     public const short SendServerMessage = V113ChannelSendOp.ServerMessage;
     public const short SendAvatarMega = V113ChannelSendOp.AvatarMega;
 
+    /// <summary>對照 Java <c>MapleCharacter.dropMessage(1, msg)</c> / <c>getPopupMsg</c>：粉紅字彈出通知。</summary>
+    public static byte[] PopupMessage(string message)
+        => BroadcastMessage(type: 1, channel: 0, [message], ear: false, item: null);
+
     public static byte[] Megaphone(string message)
         => BroadcastMessage(type: 2, channel: 0, [message], ear: false, item: null);
 

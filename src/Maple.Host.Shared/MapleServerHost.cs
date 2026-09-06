@@ -139,6 +139,9 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IPartyRegistry, InMemoryPartyRegistry>();
         builder.Services.AddSingleton<PartyService>();
         builder.Services.AddSingleton<IV113PartySessionHook, CentralPartySessionHook>();
+        builder.Services.AddSingleton<IPartySearchRegistry, InMemoryPartySearchRegistry>();
+        builder.Services.AddSingleton<PartySearchService>();
+        builder.Services.AddSingleton<V113PartySearchHandler>();
         builder.Services.AddSingleton<IGuildRegistry, InMemoryGuildRegistry>();
         builder.Services.AddSingleton<GuildService>();
         builder.Services.AddSingleton<GuildBbsService>();

@@ -64,23 +64,24 @@ public sealed class PacketWriter
         return this;
     }
 
-    /// <summary>MapleAsciiString：[short 長度][ASCII bytes]。</summary>
+    /// <summary>MapleAsciiString：[short 長度（編碼後 byte 數）][<see cref="MapleTextEncoding"/> bytes]。</summary>
     public PacketWriter WriteMapleString(string s)
     {
-        WriteShort(s.Length);
-        Ensure(s.Length);
-        for (int i = 0; i < s.Length; i++)
-            _buf[_len++] = (byte)s[i];
+        var bytes = MapleTextEncoding.Value.GetBytes(s);
+        WriteShort(bytes.Length);
+        WriteBytes(bytes);
         return this;
     }
 
-    /// <summary>固定長度 ASCII 字串：寫入 len bytes，不足補 0（對照舊 writeAsciiString(name, 15)）。</summary>
+    /// <summary>固定長度字串：寫入 len bytes，不足補 0（對照舊 writeAsciiString(name, 15)）。</summary>
     public PacketWriter WriteFixedAsciiString(string s, int len)
     {
+        var bytes = MapleTextEncoding.Value.GetBytes(s);
         Ensure(len);
+        var count = Math.Min(bytes.Length, len);
         int i = 0;
-        for (; i < s.Length && i < len; i++)
-            _buf[_len++] = (byte)s[i];
+        for (; i < count; i++)
+            _buf[_len++] = bytes[i];
         for (; i < len; i++)
             _buf[_len++] = 0;
         return this;

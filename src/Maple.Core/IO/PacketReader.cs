@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace Maple.Core.IO;
 
 /// <summary>
@@ -44,13 +42,13 @@ public sealed class PacketReader
         return v;
     }
 
-    /// <summary>MapleAsciiString：[short 長度][ASCII bytes]。</summary>
+    /// <summary>MapleAsciiString：[short 長度（byte 數）][<see cref="MapleTextEncoding"/> bytes]。</summary>
     public string ReadMapleString()
     {
         int len = ReadShort();
         if (len < 0 || len > Remaining)
             throw new InvalidDataException($"封包字串長度不合理：{len}");
-        var s = Encoding.ASCII.GetString(_buf, _pos, len);
+        var s = MapleTextEncoding.Value.GetString(_buf, _pos, len);
         _pos += len;
         return s;
     }

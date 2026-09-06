@@ -14,4 +14,13 @@
                       SetTargetFramework="TargetFramework=netstandard2.0" />
   </ItemGroup>
 
+  <!--
+    封包字串編碼需要 code page 950（Big5，對照 Java ServerConstants.MapleType.台灣="BIG5-HKSCS"）。
+    NU1510：套件只透過 CodePagesEncodingProvider 執行期註冊使用，NuGet 靜態分析看不到直接型別參照
+    因而誤判為可裁剪，實際上是必要相依，故抑制此警告。
+  -->
+  <ItemGroup>
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" NoWarn="NU1510" />
+  </ItemGroup>
+
 </Project>

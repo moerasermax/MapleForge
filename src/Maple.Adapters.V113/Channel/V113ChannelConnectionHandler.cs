@@ -70,6 +70,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly FollowService _followService;
     private readonly V113BuddyHandler _buddyHandler;
     private readonly V113PartyOperationHandler _partyOperationHandler;
+    private readonly V113PartySearchHandler _partySearchHandler;
     private readonly V113GuildOperationHandler _guildOperationHandler;
     private readonly V113CashShopOperationHandler _cashShopOperationHandler;
     private readonly V113ChatHandler _chatHandler;
@@ -120,6 +121,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         FollowService followService,
         V113BuddyHandler buddyHandler,
         V113PartyOperationHandler partyOperationHandler,
+        V113PartySearchHandler partySearchHandler,
         V113GuildOperationHandler guildOperationHandler,
         V113CashShopOperationHandler cashShopOperationHandler,
         V113ChatHandler chatHandler,
@@ -169,6 +171,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _followService = followService;
         _buddyHandler = buddyHandler;
         _partyOperationHandler = partyOperationHandler;
+        _partySearchHandler = partySearchHandler;
         _guildOperationHandler = guildOperationHandler;
         _cashShopOperationHandler = cashShopOperationHandler;
         _chatHandler = chatHandler;
@@ -436,6 +439,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             currentField = EnterField(chr.MapId, player);
 
                             _mapRegistry.Register(chr.MapId, chr.Id, chr, (pkt, tkn) => s.SendAsync(pkt, tkn), sessionToken);
+                            await _partySearchHandler.NotifyMapEntryAsync(player, (pkt, tkn) => s.SendAsync(pkt, tkn), token);
 
                             // Notify existing players of new arrival（並讓新玩家看到現有玩家）
                             var others = _mapRegistry.GetOthers(chr.MapId, chr.Id);
@@ -1386,9 +1390,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.PartySearchStart:
+                        if (player is null) break;
+                        await _partySearchHandler.HandleStartAsync(
+                            reader,
+                            player,
+                            (pkt, tkn) => s.SendAsync(pkt, tkn),
+                            token);
+                        break;
+
                     case V113ChannelRecvOp.PartySearchStop:
                         if (player is null) break;
-                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        _partySearchHandler.HandleStop(player);
                         break;
 
                     case V113ChannelRecvOp.MapleTV:
@@ -1635,6 +1647,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             // Cleanup: remove from map, notify others
             if (chr is not null)
             {
+                _partySearchHandler.NotifyMapLeave(player!);
                 var removedFromMap = _mapRegistry.Deregister(chr.MapId, chr.Id, sessionToken);
                 if (removedFromMap)
                 {
@@ -1922,6 +1935,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var chr = player.Character;
         var oldMapId = chr.MapId;
         var removedFromOldMap = _mapRegistry.Deregister(oldMapId, chr.Id, sessionToken);
+        _partySearchHandler.NotifyMapLeave(player);
 
         if (currentField is not null)
         {
@@ -1949,6 +1963,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         var field = EnterField(mapId, player);
         _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn), sessionToken);
+        await _partySearchHandler.NotifyMapEntryAsync(player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
         await SendFieldHiredMerchantsAsync(mapId, session, ct);
         await SendFieldMonstersAsync(field, session, ct);
@@ -3339,6 +3354,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 currentField.Remove(player.ObjectId);
             }
         }
+
+        _partySearchHandler.NotifyMapLeave(player);
 
         var mapId = player.Character.MapId;
         if (!_mapRegistry.Deregister(mapId, player.Character.Id, sessionToken))
