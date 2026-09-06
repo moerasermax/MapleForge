@@ -1,4 +1,6 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Stats;
+using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Core.World;
 
@@ -6,6 +8,32 @@ namespace Maple.Adapters.V113.Tests;
 
 public sealed class ChannelStatsPacketTests
 {
+    // ── P068：HEAL_OVER_TIME（自然回血）+ REGEN_HIGH_HP 反作弊檢查 ─────────────────
+
+    [Fact]
+    public void HandleHealOverTime_AppliesHealAndReturnsRequestedHp()
+    {
+        var player = new Player(
+            new Character { Id = 1, Name = "Hero", Stats = new CharacterStats { Hp = 10, MaxHp = 100, Mp = 10, MaxMp = 100 } },
+            new Position(0, 0, 0, 0));
+        var body = new PacketWriter().WriteInt(1234).WriteShort(20).WriteShort(5).ToArray();
+
+        var result = V113StatsHandlers.HandleHealOverTime(new PacketReader(body), player, new StatsService());
+
+        Assert.Equal(20, result.RequestedHp);
+        Assert.Equal(30, player.Character.Stats.Hp);
+        Assert.Equal(15, player.Character.Stats.Mp);
+    }
+
+    [Theory]
+    [InlineData(50, 0, false)]   // check = 10，門檻 50，剛好不算異常
+    [InlineData(51, 0, true)]    // 超過門檻
+    [InlineData(51, 1500001, false)] // 坐椅：check = 160，門檻 800，遠低於門檻
+    public void IsRegenHighHp_MatchesJavaThresholdWithChairBonus(int requestedHp, int chairItemId, bool expected)
+    {
+        Assert.Equal(expected, V113ChannelConnectionHandler.IsRegenHighHp(requestedHp, chairItemId));
+    }
+
     [Fact]
     public void ParseDistributeAp_ReadsTickAndStatMask()
     {

@@ -767,11 +767,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.HealOverTime:
                         if (player is null) break;
-                        await HandleStatsMutationAsync(
-                            V113StatsHandlers.HandleHealOverTime(reader, player, _statsService),
-                            s,
-                            sendSkill: false,
-                            token);
+                        var healResult = V113StatsHandlers.HandleHealOverTime(reader, player, _statsService);
+                        // 對照 Java PlayerHandler.Heal 的 REGEN_HIGH_HP：只記錄不阻擋，回血已經在
+                        // HandleHealOverTime 內套用完成，這裡的檢查結果不影響已經發生的回血。
+                        if (IsRegenHighHp(healResult.RequestedHp, player.ChairItemId))
+                        {
+                            _log.LogWarning(
+                                "[Channel] 玩家 {Name} 回血量異常 requested={Hp}", player.Character.Name, healResult.RequestedHp);
+                        }
+
+                        await HandleStatsMutationAsync(healResult.Mutation, s, sendSkill: false, token);
                         break;
 
                     case V113ChannelRecvOp.DistributeSp:
@@ -3894,6 +3899,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// <summary>對照 Java <c>MobHandler.CheckMobVac_x</c>：非飛行怪物 <c>abs(startX - endX) &gt; 500</c>。</summary>
     internal static bool IsMobVacXAnomaly(bool fly, int endX, int startX)
         => !fly && Math.Abs(endX - startX) > 500;
+
+    /// <summary>對照 Java <c>PlayerHandler.Heal</c> 的 REGEN_HIGH_HP：<c>healHP &gt;
+    /// shouldHealHP() * 5</c>。刻意簡化：Java 的 <c>shouldHealHP()</c> 還會疊加特定技能（HP
+    /// 增幅類技能等）的加成，MapleForge 目前沒有對應的技能效果查詢管線，這裡先只算基礎值
+    /// （10）+ 坐椅加成（150，對照 <c>chr.getChair() != 0</c>）。持有那些技能的玩家可能偶爾
+    /// 觸發誤判 log，但不影響實際回血（Java 這個檢查本身也只記錄不阻擋，回血照樣套用）。
+    /// Java 的 REGEN_HIGH_MP 檢查在原始碼裡是註解掉的死碼，這裡比照不移植。</summary>
+    internal static bool IsRegenHighHp(int requestedHp, int chairItemId)
+    {
+        var shouldHealHp = 10 + (chairItemId != 0 ? 150 : 0);
+        return requestedHp > shouldHealHp * 5;
+    }
 
     // ── P058：ATTACK_TYPE_ERROR（反作弊 3 件第 3 件另一子項，拆解自 registerOffense 籠統標籤）──
     // 對照 Java constants.SkillConstants：三個攻擊封包（近戰/遠程/魔法）宣稱使用的技能 id
