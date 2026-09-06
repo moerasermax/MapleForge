@@ -32,6 +32,20 @@ public sealed class V113FamilyHandler
         _sessions = sessions;
     }
 
+    /// <summary>
+    /// 對照 Java <c>InterServerHandler</c> 登入流程 <c>World.Family.setFamilyMemberOnline(chrf, true, channel)</c>：
+    /// 家族線上狀態要在登入當下同步，不能等到玩家自己觸發某個家族 opcode（既有 <c>_families.Register</c>
+    /// 只散落在各家族操作 handler 內，登入完全沒呼叫，其他成員在此之前查族譜看不到剛上線的人）。
+    /// </summary>
+    public void NotifyLogin(Player player, int channel) => _families.Register(player, channel);
+
+    /// <summary>
+    /// 對照 Java <c>MapleClient.disconnect()</c> 的 <c>World.Family.setFamilyMemberOnline(chrf, false, -1)</c>：
+    /// 斷線要清除線上狀態，否則玩家登出後在其他成員的族譜視圖裡會永遠顯示線上（<c>_families.Unregister</c>
+    /// 過去在整個專案零呼叫者）。
+    /// </summary>
+    public void NotifyDisconnect(Player player) => _families.Unregister(player.Character.Id);
+
     public async Task<V113FamilyHandleResult> HandleRequestFamilyAsync(PacketReader reader, Player player, CancellationToken ct)
     {
         string name;

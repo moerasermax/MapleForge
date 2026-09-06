@@ -133,6 +133,49 @@ public sealed class FamilyHandlerTests
         Assert.Equal("notice", info.Notice);
     }
 
+    [Fact]
+    public async Task NotifyLogin_MarksMemberOnlineInOtherMembersPedigreeView()
+    {
+        var harness = NewHarness();
+        var senior = Player(1, "Senior", level: 30);
+        var junior = Player(2, "Junior", level: 20);
+        await JoinAsync(harness, senior, junior);
+        // JoinAsync 已透過 HandleFamilyOperationAsync/HandleAcceptFamilyAsync 呼叫過 _families.Register，
+        // 這裡先 Unregister 模擬「junior 剛登入前，帳號從未觸發過任何家族 opcode」的真實情境。
+        harness.Service.Unregister(junior.Character.Id);
+
+        var beforeLogin = harness.Service.GetFamilyPedigree(senior.Character.Id);
+        Assert.Contains(beforeLogin.Members, m => m.CharacterId == junior.Character.Id && !m.IsOnline);
+
+        // 對照 Java InterServerHandler 登入流程 World.Family.setFamilyMemberOnline(chrf, true, channel)：
+        // 登入當下就要同步線上狀態，不能等玩家自己觸發家族 opcode。
+        harness.Handler.NotifyLogin(junior, channel: 3);
+
+        var afterLogin = harness.Service.GetFamilyPedigree(senior.Character.Id);
+        var juniorEntry = Assert.Single(afterLogin.Members, m => m.CharacterId == junior.Character.Id);
+        Assert.True(juniorEntry.IsOnline);
+        Assert.Equal(3, juniorEntry.Channel);
+    }
+
+    [Fact]
+    public async Task NotifyDisconnect_ClearsOnlineStatusInOtherMembersPedigreeView()
+    {
+        var harness = NewHarness();
+        var senior = Player(1, "Senior", level: 30);
+        var junior = Player(2, "Junior", level: 20);
+        await JoinAsync(harness, senior, junior);
+        harness.Handler.NotifyLogin(junior, channel: 3);
+
+        // 對照 Java MapleClient.disconnect() 的 World.Family.setFamilyMemberOnline(chrf, false, -1)：
+        // 斷線要清除線上狀態，否則其他成員的族譜視圖會永遠顯示線上。
+        harness.Handler.NotifyDisconnect(junior);
+
+        var afterDisconnect = harness.Service.GetFamilyPedigree(senior.Character.Id);
+        var juniorEntry = Assert.Single(afterDisconnect.Members, m => m.CharacterId == junior.Character.Id);
+        Assert.False(juniorEntry.IsOnline);
+        Assert.Equal(-1, juniorEntry.Channel);
+    }
+
     private static async Task JoinAsync(Harness harness, Player senior, Player junior)
     {
         harness.Hook.Put(senior);

@@ -438,6 +438,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 (pkt, tkn) => s.SendAsync(pkt, tkn),
                                 token);
 
+                            _familyHandler.NotifyLogin(player, channel);
+
                             await _partyOperationHandler.NotifyLoginAsync(
                                 player,
                                 _options.ChannelIndex,
@@ -1621,6 +1623,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
                         await _messengerHandler.NotifyDisconnectAsync(player, CancellationToken.None);
                         await _playerInteractionRouter.NotifyDisconnectAsync(player, CancellationToken.None);
+                        _familyHandler.NotifyDisconnect(player);
                     }
                     catch (Exception ex)
                     {
