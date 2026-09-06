@@ -727,6 +727,30 @@ public sealed class ChannelUseCashItemTests
         Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
     }
 
+    [Theory]
+    [InlineData(1010003, 100000000)] // 玩家目前在楓之島
+    [InlineData(910000000, 1010003)] // 目標地圖是楓之島
+    public void TeleportRock_MapMode_MapleLandInvolved_ReturnsEnableActionsAndDoesNotConsume(
+        int currentMapId,
+        int targetMapId)
+    {
+        var player = CreatePlayerWithCashItem(currentMapId, 5040000, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(0)
+            .WriteInt(targetMapId)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
     [Fact]
     public void TeleportRock_PlayerMode_IsDeferredAndDoesNotConsume()
     {
@@ -774,6 +798,26 @@ public sealed class ChannelUseCashItemTests
         var player = CreatePlayerWithCashItem(910000000, 5560000, 1);
         var maps = new MapService(new FakeMapFieldLimitProvider(new Dictionary<int, long> { [200000001] = 0x40 }));
         var handler = CreateHandler(maps: maps);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5560000)
+            .WriteByte(0)
+            .WriteInt(200000001)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void AnyDoor_MapMode_PlayerInMapleLand_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(1010003, 5560000, 1);
+        var handler = CreateHandler();
         var body = new PacketWriter()
             .WriteShort(1)
             .WriteInt(5560000)

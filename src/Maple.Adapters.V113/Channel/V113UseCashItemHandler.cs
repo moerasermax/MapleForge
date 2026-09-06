@@ -67,6 +67,9 @@ public sealed class V113UseCashItemHandler
         => FieldLimitType.VipRock.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit) ||
            FieldLimitType.VipRock.Check(_mapService.LoadMap(targetMapId).FieldLimit);
 
+    /// <summary>對照 Java <c>MapConstants.isMapleLand</c>：楓之島（新手教學島）地圖 ID 一律小於此值。</summary>
+    private static bool IsMapleLand(int mapId) => mapId < 1010004;
+
     internal V113UseCashItemResult Handle(PacketReader reader, Player player, int channel = 1)
         => HandleAsync(reader, player, channel, CancellationToken.None).GetAwaiter().GetResult();
 
@@ -327,9 +330,9 @@ public sealed class V113UseCashItemHandler
             }
 
             var mapId = reader.ReadInt();
-            // TODO: Apply MapleLand, saved-rock, and continent checks once MapleForge has full
-            // rock-map persistence semantics for this flow (見 P041：VipRock 場地限制已接線)。
-            if (IsVipRockWarpBlocked(player, mapId))
+            // TODO: Apply saved-rock and continent checks once MapleForge has full rock-map
+            // persistence semantics for this flow（見 P041：VipRock；P042：MapleLand 已接線）。
+            if (IsMapleLand(player.Character.MapId) || IsMapleLand(mapId) || IsVipRockWarpBlocked(player, mapId))
             {
                 return EnableActionsOnly();
             }
@@ -376,9 +379,9 @@ public sealed class V113UseCashItemHandler
             return EnableActionsOnly();
         }
 
-        // TODO: Apply MapleLand and event-instance checks once those subsystems exist in
-        // MapleForge（見 P041：VipRock 場地限制已接線）。
-        if (IsVipRockWarpBlocked(player, mapId))
+        // TODO: Apply event-instance check once that subsystem exists in MapleForge
+        // （見 P041：VipRock；P042：MapleLand 已接線）。
+        if (IsMapleLand(player.Character.MapId) || IsVipRockWarpBlocked(player, mapId))
         {
             return EnableActionsOnly();
         }
