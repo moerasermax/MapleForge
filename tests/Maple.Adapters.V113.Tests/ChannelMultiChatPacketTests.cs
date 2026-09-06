@@ -1,4 +1,5 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Alliances;
 using Maple.Application.Chats;
 using Maple.Application.Guilds;
 using Maple.Application.OnlinePlayers;
@@ -185,7 +186,7 @@ public sealed class ChannelMultiChatPacketTests
         var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry();
         var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 60);
-        var chatService = new ChatService(online, partyRegistry, guildRegistry);
+        var chatService = new ChatService(online, partyRegistry, guildRegistry, new AllianceService(new InMemoryAllianceRepository()));
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
         var sender = Player(1, "Alice");
         var target = Player(2, "Bob");
@@ -214,11 +215,85 @@ public sealed class ChannelMultiChatPacketTests
         AssertMultiChat(Assert.Single(targetPackets), GroupChatKind.Guild, "Alice", "guild hi");
     }
 
+    [Fact]
+    public async Task AllianceChat_BroadcastsToOnlineMembersOfEveryAllianceGuildExceptSender()
+    {
+        // 對照 Java World.Alliance.allianceChat：同盟裡每個公會的每個在線成員都要收到，不限自己那個公會。
+        var online = new InMemoryOnlinePlayerRegistry();
+        var partyRegistry = new InMemoryPartyRegistry();
+        var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 70);
+        var alliances = new AllianceService(new InMemoryAllianceRepository());
+        var chatService = new ChatService(online, partyRegistry, guildRegistry, alliances);
+        var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
+        var sender = Player(1, "Alice");
+        var otherGuildMember = Player(2, "Bob");
+        var sameGuildMember = Player(3, "Carol");
+
+        var guildA = (await guildRegistry.CreateGuildAsync(
+            GuildMember.FromCharacter(sender.Character, channel: 1, rank: Guild.LeaderRank),
+            "GuildA",
+            signature: 1,
+            CancellationToken.None)).Guild!;
+        sender.Character.GuildId = guildA.Id;
+        sameGuildMember.Character.GuildId = guildA.Id;
+        await guildRegistry.AddMemberAsync(
+            guildA.Id,
+            GuildMember.FromCharacter(sameGuildMember.Character, channel: 1, rank: Guild.DefaultMemberRank, guildId: guildA.Id),
+            CancellationToken.None);
+
+        var guildB = (await guildRegistry.CreateGuildAsync(
+            GuildMember.FromCharacter(otherGuildMember.Character, channel: 1, rank: Guild.LeaderRank),
+            "GuildB",
+            signature: 2,
+            CancellationToken.None)).Guild!;
+        otherGuildMember.Character.GuildId = guildB.Id;
+
+        var allianceResult = await alliances.CreateAllianceAsync("United", sender.Character.Id, guildA.Id, guildB.Id, ct: CancellationToken.None);
+        Assert.True(allianceResult.Succeeded);
+
+        var otherGuildPackets = new List<byte[]>();
+        var sameGuildPackets = new List<byte[]>();
+        Register(online, sender, channel: 1, new List<byte[]>());
+        Register(online, otherGuildMember, channel: 1, otherGuildPackets);
+        Register(online, sameGuildMember, channel: 1, sameGuildPackets);
+
+        // ReadGroupChat 要求 recipient count > 0 才會進一步解析（v113 client 對所有 kind 都會帶至少
+        // 一個 id，即使 Guild/Alliance/Party 的伺服器端解析根本不用這個清單），故仍帶一個 id 佔位。
+        var request = GroupChatRequest(GroupChatKind.Alliance, [otherGuildMember.Character.Id], "alliance hi");
+
+        await handler.HandleGroupChatAsync(new PacketReader(request), sender, CancellationToken.None);
+
+        AssertMultiChat(Assert.Single(otherGuildPackets), GroupChatKind.Alliance, "Alice", "alliance hi");
+        AssertMultiChat(Assert.Single(sameGuildPackets), GroupChatKind.Alliance, "Alice", "alliance hi");
+    }
+
+    [Fact]
+    public async Task AllianceChat_SenderNotInAlliance_NoRecipients()
+    {
+        var online = new InMemoryOnlinePlayerRegistry();
+        var partyRegistry = new InMemoryPartyRegistry();
+        var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 80);
+        var chatService = new ChatService(online, partyRegistry, guildRegistry, new AllianceService(new InMemoryAllianceRepository()));
+        var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
+        var sender = Player(1, "Alice");
+        var bystanderPackets = new List<byte[]>();
+        var bystander = Player(2, "Bob");
+        Register(online, sender, channel: 1, new List<byte[]>());
+        Register(online, bystander, channel: 1, bystanderPackets);
+
+        var request = GroupChatRequest(GroupChatKind.Alliance, [bystander.Character.Id], "alliance hi");
+
+        // Sender has no guild/alliance — should not throw, and nobody (not even the unrelated bystander) should receive anything.
+        await handler.HandleGroupChatAsync(new PacketReader(request), sender, CancellationToken.None);
+
+        Assert.Empty(bystanderPackets);
+    }
+
     private static (V113ChatHandler Handler, PartyService Parties, IOnlinePlayerRegistry Online) CreateHandler(int firstPartyId = 1)
     {
         var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry(firstPartyId);
-        var chatService = new ChatService(online, partyRegistry, new InMemoryGuildRegistry(new FakeGuildRepository()));
+        var chatService = new ChatService(online, partyRegistry, new InMemoryGuildRegistry(new FakeGuildRepository()), new AllianceService(new InMemoryAllianceRepository()));
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
         return (handler, new PartyService(partyRegistry), online);
     }
