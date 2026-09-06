@@ -7,7 +7,7 @@
 更新: 2026-09-06 01:30
 關聯里程碑: P004（P003 收案後殘餘 🟨 stub 清單之一）
 關聯記憶: <空>
-關聯commit: 待填
+關聯commit: 69bd8d5
 ---
 
 ## 🎯 目標（執行前先寫死，過程不偷改）
@@ -69,4 +69,4 @@
 - 修改：`src/Maple.Core/IO/PacketWriter.cs`、`src/Maple.Core/IO/PacketReader.cs`、`src/Maple.Core/Maple.Core.csproj`（新增 `System.Text.Encoding.CodePages`）、`src/Maple.Adapters.V113/Channel/V113ChannelConnectionHandler.cs`（dispatch + 4 個地圖進出場 hook）、`src/Maple.Adapters.V113/Channel/V113BroadcastPackets.cs`（新增 `PopupMessage`）、`src/Maple.Adapters.V113/Channel/V113PetPackets.cs`（寵物講話文字改用 `MapleTextEncoding`）、`src/Maple.Host.Shared/MapleServerHost.cs`（DI 註冊）
 - 新增測試：`tests/Maple.Core.Tests/Characters/MapleJobFamilyTests.cs`、`tests/Maple.Application.Tests/Parties/PartySearchServiceTests.cs`、`tests/Maple.Application.Tests/Parties/PartySearchCriteriaTests.cs`、`tests/Maple.Adapters.V113.Tests/ChannelPartySearchTests.cs`
 - 文件：本檔、`docs/design/移植狀態地圖.md`（PARTY_SEARCH×2 🟨→✅，統計更新）、`docs/devlog/進度日誌.md`（新條目）
-- commit：待填（下一步提交）
+- commit：`69bd8d5`
