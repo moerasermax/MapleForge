@@ -146,9 +146,25 @@ public sealed class FamilyService : IFamilyRegistry
 
     public async Task<Family> CreateFamilyAsync(int leaderId, CancellationToken ct = default)
     {
-        var family = CreateFamily(leaderId);
-        await _repository.SaveAsync(family, ct).ConfigureAwait(false);
-        return family;
+        // P053：不透過 CreateFamily(int)（會自己取放鎖），改成自己取鎖後把異動+持久化放在同一段
+        // 臨界區內——原本「CreateFamily 先把 family 掛進 registry，鎖外才 SaveAsync」是跟 P036 修過的
+        // GuildService.CreateGuildAsync 同一種「registry 先於持久層」風險，這裡順手一併修掉。
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var family = new Family
+            {
+                Id = AllocateFamilyIdLocked(),
+                LeaderId = leaderId,
+            };
+            TrackFamilyLocked(family);
+            await _repository.SaveAsync(family, ct).ConfigureAwait(false);
+            return family;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public FamilyCommandResult InviteToFamily(Player inviterPlayer, Player targetPlayer)
@@ -187,13 +203,13 @@ public sealed class FamilyService : IFamilyRegistry
     {
         ArgumentNullException.ThrowIfNull(targetPlayer);
 
-        Family? familyToSave;
-        Family? familyToDelete;
-        FamilyCommandResult result;
-
+        // P053：持久層呼叫搬進臨界區內，理由同 SetFamilyPreceptAsync（見上方註解）。這裡的
+        // 「合併家族」分支物件欄位異動範圍較大（P044 已記錄），這次只做「消除鎖釋放期間的
+        // race window」，尚未加上失敗時的完整回滾——失敗後重試安全性留給後續 P-phase。
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            Family? familyToDelete;
             if (!_invitesByTarget.Remove(targetPlayer.Character.Id, out var invite) || invite.InviterId != inviterCharId || invite.ExpiresAt <= DateTimeOffset.UtcNow)
             {
                 return new FamilyCommandResult(FamilyCommandStatus.InvalidInvite);
@@ -267,8 +283,13 @@ public sealed class FamilyService : IFamilyRegistry
             ApplyFamilyToCharacter(targetPlayer.Character, inviterFamily.Id, targetMember);
             TrackFamilyLocked(inviterFamily);
 
-            familyToSave = inviterFamily;
-            result = new FamilyCommandResult(
+            if (familyToDelete is not null)
+            {
+                await _repository.DeleteAsync(familyToDelete.Id, ct).ConfigureAwait(false);
+            }
+
+            await _repository.SaveAsync(inviterFamily, ct).ConfigureAwait(false);
+            return new FamilyCommandResult(
                 FamilyCommandStatus.Success,
                 inviterFamily.Snapshot(OnlineChannelsLocked()),
                 ToState(targetMember, true, _onlinePlayers.GetValueOrDefault(targetMember.CharacterId).Channel),
@@ -279,14 +300,6 @@ public sealed class FamilyService : IFamilyRegistry
         {
             _gate.Release();
         }
-
-        if (familyToDelete is not null)
-        {
-            await _repository.DeleteAsync(familyToDelete.Id, ct).ConfigureAwait(false);
-        }
-
-        await _repository.SaveAsync(familyToSave, ct).ConfigureAwait(false);
-        return result;
     }
 
     public FamilyCommandResult DenyInvite(int inviterCharId, Player targetPlayer)
@@ -314,10 +327,8 @@ public sealed class FamilyService : IFamilyRegistry
     {
         ArgumentNullException.ThrowIfNull(player);
 
-        Family? saveFamily;
-        Family? deleteFamily;
-        FamilyCommandResult result;
-
+        // P053：持久層呼叫搬進臨界區內，理由同 SetFamilyPreceptAsync（見上方註解）；
+        // SplitFamilyLocked 的子樹搬遷失敗回滾仍留給後續 P-phase（見 P044/AcceptInviteAsync 註解）。
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -334,11 +345,10 @@ public sealed class FamilyService : IFamilyRegistry
             ApplyFamilyToCharacter(player.Character, family.Id, member);
             ApplyFamilyToOnlineCharacterLocked(junior, family.Id);
             var split = SplitFamilyLocked(family, juniorId);
-            saveFamily = split.SaveFamily;
-            deleteFamily = split.DeleteFamily;
-            result = new FamilyCommandResult(
+            await SaveSplitAsync(split.SaveFamily, split.DeleteFamily, ct).ConfigureAwait(false);
+            return new FamilyCommandResult(
                 FamilyCommandStatus.Success,
-                saveFamily?.Snapshot(OnlineChannelsLocked()),
+                split.SaveFamily?.Snapshot(OnlineChannelsLocked()),
                 ToState(junior, _onlinePlayers.ContainsKey(junior.CharacterId), _onlinePlayers.GetValueOrDefault(junior.CharacterId).Channel),
                 UpdateKind: FamilyUpdateKind.JuniorDeleted,
                 AffectedCharacterIds: [player.Character.Id, juniorId]);
@@ -347,19 +357,13 @@ public sealed class FamilyService : IFamilyRegistry
         {
             _gate.Release();
         }
-
-        await SaveSplitAsync(saveFamily, deleteFamily, ct).ConfigureAwait(false);
-        return result;
     }
 
     public async Task<FamilyCommandResult> DeleteSeniorAsync(Player player, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(player);
 
-        Family? saveFamily;
-        Family? deleteFamily;
-        FamilyCommandResult result;
-
+        // P053：持久層呼叫搬進臨界區內，理由同 DeleteJuniorAsync（見上方註解）。
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -376,11 +380,10 @@ public sealed class FamilyService : IFamilyRegistry
             ApplyFamilyToOnlineCharacterLocked(senior, family.Id);
             ApplyFamilyToCharacter(player.Character, family.Id, member);
             var split = SplitFamilyLocked(family, member.CharacterId);
-            saveFamily = split.SaveFamily;
-            deleteFamily = split.DeleteFamily;
-            result = new FamilyCommandResult(
+            await SaveSplitAsync(split.SaveFamily, split.DeleteFamily, ct).ConfigureAwait(false);
+            return new FamilyCommandResult(
                 FamilyCommandStatus.Success,
-                saveFamily?.Snapshot(OnlineChannelsLocked()),
+                split.SaveFamily?.Snapshot(OnlineChannelsLocked()),
                 ToState(member, true, _onlinePlayers.GetValueOrDefault(member.CharacterId).Channel),
                 UpdateKind: FamilyUpdateKind.SeniorDeleted,
                 AffectedCharacterIds: [player.Character.Id, senior.CharacterId]);
@@ -389,18 +392,13 @@ public sealed class FamilyService : IFamilyRegistry
         {
             _gate.Release();
         }
-
-        await SaveSplitAsync(saveFamily, deleteFamily, ct).ConfigureAwait(false);
-        return result;
     }
 
     public async Task<FamilyCommandResult> UseFamilyBuffAsync(Player player, int buffType, Player? targetPlayer = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(player);
 
-        Family? familyToSave = null;
-        FamilyCommandResult result;
-
+        // P053：持久層呼叫搬進臨界區內，理由同 SetFamilyPreceptAsync（見上方註解）。
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -417,6 +415,8 @@ public sealed class FamilyService : IFamilyRegistry
                 return new FamilyCommandResult(FamilyCommandStatus.NotInFamily, Buff: entry);
             }
 
+            FamilyCommandResult result;
+            Family? familyToSave;
             if (buffType is 0 or 1)
             {
                 result = UseFamilyTeleportOrSummonLocked(player, targetPlayer, family, member, entry);
@@ -427,27 +427,27 @@ public sealed class FamilyService : IFamilyRegistry
                 result = UseFamilyTimedBuffLocked(player, family, member, entry);
                 familyToSave = result.Succeeded ? family : null;
             }
+
+            if (familyToSave is not null)
+            {
+                await _repository.SaveAsync(familyToSave, ct).ConfigureAwait(false);
+            }
+
+            return result;
         }
         finally
         {
             _gate.Release();
         }
-
-        if (familyToSave is not null)
-        {
-            await _repository.SaveAsync(familyToSave, ct).ConfigureAwait(false);
-        }
-
-        return result;
     }
 
     public async Task<FamilyCommandResult> SetFamilyPreceptAsync(Player player, string notice, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(player);
 
-        Family? familyToSave;
-        FamilyCommandResult result;
-
+        // P053：把持久層呼叫搬進臨界區內（原本在 finally 之後才存），讓「玩家異動+持久化」在同一段
+        // 連續持有的 _gate 保護下完成——不再有「鎖已釋放、持久化還沒完成」的中間狀態被其他操作看到
+        // 的 race window（見任務歷程 2026-09-06_46/54）。
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -463,8 +463,8 @@ public sealed class FamilyService : IFamilyRegistry
             }
 
             family.SetNotice(notice);
-            familyToSave = family;
-            result = new FamilyCommandResult(
+            await _repository.SaveAsync(family, ct).ConfigureAwait(false);
+            return new FamilyCommandResult(
                 FamilyCommandStatus.Success,
                 family.Snapshot(OnlineChannelsLocked()),
                 UpdateKind: FamilyUpdateKind.PreceptChanged,
@@ -474,18 +474,13 @@ public sealed class FamilyService : IFamilyRegistry
         {
             _gate.Release();
         }
-
-        await _repository.SaveAsync(familyToSave, ct).ConfigureAwait(false);
-        return result;
     }
 
     public async Task<FamilyCommandResult> HandleFamilySummonAsync(Player player, bool accepted, string summonerName, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(player);
 
-        Family? familyToSave = null;
-        FamilyCommandResult result;
-
+        // P053：持久層呼叫搬進臨界區內，理由同 SetFamilyPreceptAsync（見上方註解）。
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -522,8 +517,8 @@ public sealed class FamilyService : IFamilyRegistry
             }
 
             ApplyFamilyToCharacter(summoner.Player.Character, family.Id, summonerMember);
-            familyToSave = family;
-            result = new FamilyCommandResult(
+            await _repository.SaveAsync(family, ct).ConfigureAwait(false);
+            return new FamilyCommandResult(
                 FamilyCommandStatus.Success,
                 family.Snapshot(OnlineChannelsLocked()),
                 ToState(summonerMember, true, summoner.Channel),
@@ -536,13 +531,6 @@ public sealed class FamilyService : IFamilyRegistry
         {
             _gate.Release();
         }
-
-        if (familyToSave is not null)
-        {
-            await _repository.SaveAsync(familyToSave, ct).ConfigureAwait(false);
-        }
-
-        return result;
     }
 
     public FamilyInfoData GetFamilyInfo(int characterId)
@@ -628,10 +616,7 @@ public sealed class FamilyService : IFamilyRegistry
 
     public async Task<FamilyCommandResult> SplitFamilyAsync(int characterId, CancellationToken ct = default)
     {
-        Family? saveFamily;
-        Family? deleteFamily;
-        FamilyCommandResult result;
-
+        // P053：持久層呼叫搬進臨界區內，理由同 DeleteJuniorAsync（見上方註解）。
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -642,20 +627,16 @@ public sealed class FamilyService : IFamilyRegistry
             }
 
             var split = SplitFamilyLocked(family, characterId);
-            saveFamily = split.SaveFamily;
-            deleteFamily = split.DeleteFamily;
-            result = new FamilyCommandResult(
+            await SaveSplitAsync(split.SaveFamily, split.DeleteFamily, ct).ConfigureAwait(false);
+            return new FamilyCommandResult(
                 FamilyCommandStatus.Success,
-                saveFamily?.Snapshot(OnlineChannelsLocked()),
+                split.SaveFamily?.Snapshot(OnlineChannelsLocked()),
                 UpdateKind: FamilyUpdateKind.SeniorDeleted);
         }
         finally
         {
             _gate.Release();
         }
-
-        await SaveSplitAsync(saveFamily, deleteFamily, ct).ConfigureAwait(false);
-        return result;
     }
 
     public FamilyState? GetFamilyForCharacter(int characterId)

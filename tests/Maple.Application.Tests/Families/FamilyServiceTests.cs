@@ -21,6 +21,23 @@ namespace Maple.Application.Tests.Families;
 public sealed class FamilyServiceTests
 {
     [Fact]
+    public async Task CreateFamilyAsync_PersistsFamilyBeforeReturning()
+    {
+        // P053：CreateFamilyAsync 原本「先掛進 registry、鎖外才 SaveAsync」跟 P036 修過的
+        // GuildService.CreateGuildAsync 同一種風險，這次改成異動+持久化同一段臨界區內完成。
+        var repository = new InMemoryFamilyRepository();
+        var service = new FamilyService(repository, firstFamilyId: 5);
+
+        var family = await service.CreateFamilyAsync(leaderId: 1);
+
+        Assert.Equal(5, family.Id);
+        Assert.Equal(1, family.LeaderId);
+        var persisted = await repository.FindByIdAsync(5);
+        Assert.NotNull(persisted);
+        Assert.Equal(1, persisted!.LeaderId);
+    }
+
+    [Fact]
     public void SetOnline_LeaderComesOnline_SyncsMemberFieldsAndNotifiesOnlineFamilyMembers()
     {
         var service = new FamilyService(new InMemoryFamilyRepository());
