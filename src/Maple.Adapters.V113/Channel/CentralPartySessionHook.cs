@@ -26,7 +26,9 @@ public sealed class CentralPartySessionHook : IV113PartySessionHook
             chr.Level,
             chr.Job,
             chr.MapId,
-            ChannelIndex: Math.Max(0, online.Channel - 1));
+            ChannelIndex: Math.Max(0, online.Channel - 1),
+            Hp: chr.Stats.Hp,
+            MaxHp: chr.Stats.MaxHp);
 
         return ValueTask.FromResult<V113PartySessionPlayer?>(player);
     }

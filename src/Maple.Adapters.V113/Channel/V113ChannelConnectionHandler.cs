@@ -443,6 +443,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                             _mapRegistry.Register(chr.MapId, chr.Id, chr, (pkt, tkn) => s.SendAsync(pkt, tkn), sessionToken);
                             await _partySearchHandler.NotifyMapEntryAsync(player, (pkt, tkn) => s.SendAsync(pkt, tkn), token);
+                            await _partyOperationHandler.NotifyMapEntryAsync(player, _options.ChannelIndex, (pkt, tkn) => s.SendAsync(pkt, tkn), token);
 
                             // Notify existing players of new arrival（並讓新玩家看到現有玩家）
                             var others = _mapRegistry.GetOthers(chr.MapId, chr.Id);
@@ -1967,6 +1968,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var field = EnterField(mapId, player);
         _mapRegistry.Register(mapId, chr.Id, chr, (pkt, tkn) => session.SendAsync(pkt, tkn), sessionToken);
         await _partySearchHandler.NotifyMapEntryAsync(player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
+        await _partyOperationHandler.NotifyMapEntryAsync(player, _options.ChannelIndex, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
         await SpawnMapNpcsAsync(mapId, session, oidToNpcId, ct);
         await SendFieldHiredMerchantsAsync(mapId, session, ct);
         await SendFieldMonstersAsync(field, session, ct);

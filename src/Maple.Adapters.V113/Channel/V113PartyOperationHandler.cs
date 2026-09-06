@@ -1,4 +1,5 @@
 using Maple.Application.Parties;
+using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Core.Parties;
 using Maple.Core.World;
@@ -11,7 +12,9 @@ public sealed record V113PartySessionPlayer(
     int Level,
     int JobId,
     int MapId,
-    int ChannelIndex)
+    int ChannelIndex,
+    int Hp = 0,
+    int MaxHp = 0)
 {
     public PartyMember ToPartyMember() =>
         new(CharacterId, Name, Level, JobId, MapId, ChannelIndex);
@@ -82,6 +85,35 @@ public sealed class V113PartyOperationHandler
                 await HandleChangeLeaderAsync(reader, player, channelIndex, sendSelf, ct);
                 break;
         }
+    }
+
+    /// <summary>
+    /// 對照 Java <c>MapleMap.addPlayer</c> 尾端（<c>chr.silentPartyUpdate()</c> +
+    /// <c>chr.getClient().sendPacket(updateParty(SILENT_UPDATE))</c> + <c>updatePartyMemberHP</c> +
+    /// <c>receivePartyMemberHP</c>）：玩家進地圖時，若在隊伍中，刷新自己在隊伍快照中的
+    /// Level/Job/MapId/Channel 並廣播給所有在線隊友（含自己），再雙向同步 HP。
+    /// </summary>
+    public async Task NotifyMapEntryAsync(
+        Player player,
+        int channelIndex,
+        Func<byte[], CancellationToken, Task> sendSelf,
+        CancellationToken ct)
+    {
+        var chr = player.Character;
+        if (!_parties.IsCharacterInParty(chr.Id))
+        {
+            return;
+        }
+
+        var refreshed = PartyMember.FromCharacter(chr, channelIndex);
+        var result = _parties.UpdateMember(refreshed, PartyUpdateKind.SilentUpdate);
+        if (!result.Succeeded || result.Party is not { } updated)
+        {
+            return;
+        }
+
+        await BroadcastPartyUpdateAsync(result, player, channelIndex, sendSelf, ct);
+        await SyncPartyMemberHpAsync(updated, chr, sendSelf, ct);
     }
 
     public async Task HandleDenyPartyRequestAsync(
@@ -352,6 +384,43 @@ public sealed class V113PartyOperationHandler
             catch
             {
                 // Party broadcasts are best effort; stale sessions are cleaned by the central hook.
+            }
+        }
+    }
+
+    /// <summary>對照 Java <c>updatePartyMemberHP</c>（送出自己 HP）+ <c>receivePartyMemberHP</c>（收其他人 HP）合併一輪。</summary>
+    private async Task SyncPartyMemberHpAsync(
+        PartyState party,
+        Character self,
+        Func<byte[], CancellationToken, Task> sendSelf,
+        CancellationToken ct)
+    {
+        var selfHpPacket = V113PartyPackets.UpdatePartyMemberHp(self.Id, self.Stats.Hp, self.Stats.MaxHp);
+
+        foreach (var member in party.Members)
+        {
+            if (member.CharacterId == self.Id || !member.IsOnline)
+            {
+                continue;
+            }
+
+            try
+            {
+                await _sessions.SendToCharacterAsync(member.CharacterId, selfHpPacket, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Party HP sync is best effort; stale sessions are cleaned by the central hook.
+            }
+
+            var other = await _sessions.FindOnlinePlayerByNameAsync(member.Name, ct);
+            if (other is { } found)
+            {
+                await sendSelf(V113PartyPackets.UpdatePartyMemberHp(found.CharacterId, found.Hp, found.MaxHp), ct);
             }
         }
     }
