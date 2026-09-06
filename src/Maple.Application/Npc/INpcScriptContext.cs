@@ -78,4 +78,11 @@ public interface INpcScriptContext
     /// 非會長或無公會靜默返回，不送任何封包。
     /// </summary>
     void DisbandGuild();
+
+    /// <summary>
+    /// 開啟修理視窗（cm.sendRepairWindow）。對照 Java
+    /// <c>NPCConversationManager.sendRepairWindow</c>：純粹送出視窗封包，腳本自行接著
+    /// 呼叫 cm.dispose() 結束對話（不像 cm.openStorage 那樣自動結束）。
+    /// </summary>
+    void SendRepairWindow();
 }

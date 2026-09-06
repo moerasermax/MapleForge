@@ -36,6 +36,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     internal int? PendingBuddyCapacityUpdate { get; private set; }
     internal bool PendingGuildCapacityIncrease { get; private set; }
     internal bool PendingGuildDisband { get; private set; }
+    internal int? PendingRepairWindowNpcId { get; private set; }
     internal string? PendingPopupMessage { get; private set; }
     internal IReadOnlyList<QuestTransactionResult> PendingQuestResults => _pendingQuestResults;
     internal IReadOnlyList<(int QuestId, string Data)> PendingInfoQuestUpdates => _pendingInfoQuestUpdates;
@@ -50,6 +51,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingBuddyCapacityUpdate = null;
         PendingGuildCapacityIncrease = false;
         PendingGuildDisband = false;
+        PendingRepairWindowNpcId = null;
         PendingPopupMessage = null;
         _pendingQuestResults.Clear();
         _pendingInfoQuestUpdates.Clear();
@@ -203,6 +205,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 
         PendingGuildDisband = true;
     }
+
+    public void SendRepairWindow() => PendingRepairWindowNpcId = _npcId;
 
     private void EnqueueQuestResult(QuestTransactionResult result) => _pendingQuestResults.Add(result);
 }

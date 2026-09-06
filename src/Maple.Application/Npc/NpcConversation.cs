@@ -24,6 +24,7 @@ public sealed class NpcConversation
     private readonly Func<CancellationToken, Task>? _increaseGuildCapacity;
     private readonly Func<string, CancellationToken, Task>? _sendPopupMessage;
     private readonly Func<CancellationToken, Task>? _disbandGuild;
+    private readonly Func<int, CancellationToken, Task>? _sendRepairWindow;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -41,7 +42,8 @@ public sealed class NpcConversation
         Func<int, CancellationToken, Task>? sendBuddyCapacity = null,
         Func<CancellationToken, Task>? increaseGuildCapacity = null,
         Func<string, CancellationToken, Task>? sendPopupMessage = null,
-        Func<CancellationToken, Task>? disbandGuild = null)
+        Func<CancellationToken, Task>? disbandGuild = null,
+        Func<int, CancellationToken, Task>? sendRepairWindow = null)
     {
         NpcId = npcId;
         _script = script;
@@ -56,6 +58,7 @@ public sealed class NpcConversation
         _increaseGuildCapacity = increaseGuildCapacity;
         _sendPopupMessage = sendPopupMessage;
         _disbandGuild = disbandGuild;
+        _sendRepairWindow = sendRepairWindow;
     }
 
     /// <summary>進入對話（呼叫 start() 並 flush 第一則對話）。</summary>
@@ -116,6 +119,9 @@ public sealed class NpcConversation
 
         if (_ctx.PendingGuildDisband && _disbandGuild is not null)
             await _disbandGuild(ct);
+
+        if (_ctx.PendingRepairWindowNpcId is { } repairNpcId && _sendRepairWindow is not null)
+            await _sendRepairWindow(repairNpcId, ct);
 
         if (_ctx.Ended)
             Active = false;

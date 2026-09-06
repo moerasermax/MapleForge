@@ -1914,7 +1914,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
             sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
-            disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c));
+            disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
+            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -1949,7 +1950,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
             sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
-            disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c));
+            disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
+            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);

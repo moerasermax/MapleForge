@@ -309,6 +309,33 @@ public sealed class NpcContextTests
         Assert.False(disbandCalled);
     }
 
+    [Fact]
+    public async Task NpcConversation_SendRepairWindow_InvokesDelegateWithNpcId_AndDoesNotAutoEndConversation()
+    {
+        var player = NewPlayer();
+        var ctx = new NpcContext(2080000, player, NewQuestService());
+        var repairNpcId = 0;
+
+        var convo = new NpcConversation(
+            2080000,
+            new ActionScript(() => ctx.SendRepairWindow()),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            sendRepairWindow: (npcId, _) =>
+            {
+                repairNpcId = npcId;
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal(2080000, repairNpcId);
+        // 對照 Java 2080000.js：cm.sendRepairWindow() 之後腳本自行呼叫 cm.dispose()，
+        // 這裡的 ActionScript 只呼叫 sendRepairWindow 不呼叫 dispose，驗證本身不會自動結束對話。
+        Assert.True(convo.Active);
+    }
+
     private static Player NewPlayer()
         => new(
             new Character { Id = 1, Name = "NpcApp", Level = 30 },

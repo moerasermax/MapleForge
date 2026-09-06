@@ -128,5 +128,6 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public int getPlayerStat(string type) => _cm.GetPlayerStat(type);
         public void increaseGuildCapacity() => _cm.IncreaseGuildCapacity();
         public void disbandGuild() => _cm.DisbandGuild();
+        public void sendRepairWindow() => _cm.SendRepairWindow();
     }
 }
