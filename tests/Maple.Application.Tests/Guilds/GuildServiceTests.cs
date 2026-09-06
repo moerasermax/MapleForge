@@ -84,6 +84,49 @@ public sealed class GuildServiceTests
     }
 
     [Fact]
+    public async Task SyncMemberLevelJobAsync_MemberInGuild_UpdatesCachedFieldsGrantsGpAndReturnsRecipients()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 40), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var junior = Player(2, "Junior");
+        characters.Put(leader.Character);
+        characters.Put(junior.Character);
+
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await InviteAndJoinAsync(service, leader, junior, created.Guild!.Id);
+        // 入會本身已經依 Java 慣例加過 GP（見 AcceptInviteAsync），這裡只驗證「等級同步」這次呼叫
+        // 額外貢獻的 GP 差額，不假設一個固定的起始值。
+        var gpBeforeSync = (await service.GetGuildAsync(created.Guild.Id))!.GuildPoints;
+
+        junior.Character.Level = 35;
+        var result = await service.SyncMemberLevelJobAsync(junior);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(GuildUpdateKind.MemberLevelJobChanged, result.UpdateKind);
+        Assert.Equal(35, result.Target!.Level);
+        Assert.Equal(new[] { 1, 2 }, result.Recipients);
+        // 對照 Java (newLevel-oldLevel)*newLevel/10 = (35-30)*35/10 = 17。
+        Assert.Equal(gpBeforeSync + 17, result.Guild!.GuildPoints);
+        Assert.Equal(35, (await service.GetGuildAsync(created.Guild.Id))!.GetMember(junior.Character.Id)!.Level);
+    }
+
+    [Fact]
+    public async Task SyncMemberLevelJobAsync_NotInGuild_ReturnsNotInGuild()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 41), characters);
+        var solo = Player(9, "Solo");
+        characters.Put(solo.Character);
+
+        var result = await service.SyncMemberLevelJobAsync(solo);
+
+        Assert.Equal(GuildCommandStatus.NotInGuild, result.Status);
+    }
+
+    [Fact]
     public async Task ChangeTitlesEmblemNotice_UpdatesGuildSnapshot()
     {
         var characters = new FakeCharacterRepository();

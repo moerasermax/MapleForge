@@ -284,6 +284,79 @@ public sealed class ChannelGuildPacketTests
         Assert.Empty(hook.SentPackets);
     }
 
+    [Fact]
+    public async Task SyncMemberLevelJobAsync_BroadcastsGuildMemberLevelJobUpdateToSelfAndGuildmates()
+    {
+        var characters = new FakeCharacterRepository();
+        var registry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 50);
+        var service = new GuildService(registry, characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var junior = Player(2, "Junior");
+        characters.Put(leader.Character);
+        characters.Put(junior.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(junior.Character, channel: 1));
+        await service.AcceptInviteAsync(junior, created.Guild!.Id, channel: 1);
+
+        var hook = new FakeGuildSessionHook();
+        var handler = new V113GuildOperationHandler(service, hook, new AllianceService(new FakeAllianceRepository(), registry));
+        var selfPackets = new List<byte[]>();
+        junior.Character.Level = 35;
+
+        await handler.SyncMemberLevelJobAsync(
+            junior,
+            (packet, _) =>
+            {
+                selfPackets.Add(packet);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        var selfPacket = Assert.Single(selfPackets);
+        AssertGuildMemberLevelJobUpdate(selfPacket, created.Guild.Id, junior.Character.Id, 35);
+
+        var leaderPacket = Assert.Single(hook.SentPackets, p => p.CharacterId == leader.Character.Id);
+        AssertGuildMemberLevelJobUpdate(leaderPacket.Packet, created.Guild.Id, junior.Character.Id, 35);
+    }
+
+    [Fact]
+    public async Task SyncMemberLevelJobAsync_MemberOfAlliedGuild_BroadcastsUpdateAllianceMemberToOtherGuild()
+    {
+        var (service, alliances, guildA, guildB, allianceId) = await NewAlliedGuildsAsync();
+        var playerB = Player(2, "LeaderB");
+        playerB.JoinGuild(guildB.Id, Guild.LeaderRank);
+        await service.SetMemberOnlineAsync(playerB, online: true, channel: 5, CancellationToken.None);
+
+        var hook = new FakeGuildSessionHook();
+        var handler = new V113GuildOperationHandler(service, hook, alliances);
+        var playerA = Player(1, "LeaderA");
+        playerA.JoinGuild(guildA.Id, Guild.LeaderRank);
+        await service.SetMemberOnlineAsync(playerA, online: true, channel: 3, CancellationToken.None);
+        playerA.Character.Level = 35;
+
+        await handler.SyncMemberLevelJobAsync(playerA, (_, _) => Task.CompletedTask, CancellationToken.None);
+
+        var notice = Assert.Single(hook.SentPackets, p => p.CharacterId == playerB.Character.Id);
+        var reader = new PacketReader(notice.Packet);
+        Assert.Equal(V113AlliancePackets.SendAllianceOperationOpcode, reader.ReadShort());
+        Assert.Equal(V113AlliancePackets.UpdateAllianceMemberCode, reader.ReadByte());
+        Assert.Equal(allianceId, reader.ReadInt());
+        Assert.Equal(guildA.Id, reader.ReadInt());
+        Assert.Equal(playerA.Character.Id, reader.ReadInt());
+        Assert.Equal(35, reader.ReadInt());
+        Assert.Equal(playerA.Character.Job, reader.ReadInt());
+    }
+
+    private static void AssertGuildMemberLevelJobUpdate(byte[] packet, int guildId, int characterId, int level)
+    {
+        var reader = new PacketReader(packet);
+        Assert.Equal(V113GuildPackets.SendGuildOperationOpcode, reader.ReadShort());
+        Assert.Equal(V113GuildPackets.GuildMemberLevelJobChangedCode, reader.ReadByte());
+        Assert.Equal(guildId, reader.ReadInt());
+        Assert.Equal(characterId, reader.ReadInt());
+        Assert.Equal(level, reader.ReadInt());
+    }
+
     private static async Task<(GuildService Service, AllianceService Alliances, GuildState GuildA, GuildState GuildB, int AllianceId)> NewAlliedGuildsAsync()
     {
         var registry = new InMemoryGuildRegistry(new FakeGuildRepository());

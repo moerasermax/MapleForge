@@ -246,6 +246,90 @@ public sealed class V113GuildOperationHandler
         }
     }
 
+    /// <summary>
+    /// P059：對照 Java <c>MapleGuild.memberLevelJobUpdate</c>——玩家等級提升時同步公會成員快取的
+    /// 等級/職業並廣播 <see cref="V113GuildPackets.GuildMemberLevelJobUpdate"/>（含玩家自己，忠實對照
+    /// Java 的 <c>broadcast(packet)</c> 不排除來源角色）；若公會屬於同盟，比照
+    /// <see cref="BroadcastAllianceMemberOnlineAsync"/> 的手法通知同盟裡其他公會的線上成員
+    /// <see cref="V113AlliancePackets.UpdateAllianceMember"/>。目前只接在擊殺怪物取得經驗值升級的路徑
+    /// （<c>SendMobKillRewardsAsync</c>），道具/藥水直接領取經驗值升級與職業轉職（MapleForge 尚未實作
+    /// 轉職）暫不覆蓋，留給後續 P-phase；不在公會時呼叫端已提前跳過，這裡不會有 side effect。
+    /// </summary>
+    public async Task SyncMemberLevelJobAsync(
+        Player player,
+        Func<byte[], CancellationToken, Task> sendSelf,
+        CancellationToken ct)
+    {
+        var result = await _guilds.SyncMemberLevelJobAsync(player, ct).ConfigureAwait(false);
+        if (!result.Succeeded || result.Guild is null || result.Target is null)
+        {
+            return;
+        }
+
+        await BroadcastAsync(
+            result,
+            player.Character.Id,
+            sendSelf,
+            () => V113GuildPackets.GuildMemberLevelJobUpdate(result.Target),
+            ct);
+
+        await BroadcastAllianceMemberLevelJobAsync(result.Guild, result.Target, ct);
+    }
+
+    /// <summary>對照 Java <c>if (allianceid > 0) World.Alliance.sendGuild(updateAlliance(mgc, allianceid), id, allianceid)</c>：
+    /// 用 guildId 當排除鍵跳過來源公會（公會內部已經在上面廣播過了），通知同盟裡其他公會的線上成員。</summary>
+    private async Task BroadcastAllianceMemberLevelJobAsync(GuildState guild, GuildMember member, CancellationToken ct)
+    {
+        var allianceId = guild.AllianceId > 0
+            ? guild.AllianceId
+            : await _alliances.GetAllianceIdForGuildAsync(guild.Id, ct).ConfigureAwait(false);
+        if (allianceId <= 0)
+        {
+            return;
+        }
+
+        var alliance = await _alliances.GetAllianceInfoAsync(allianceId, ct).ConfigureAwait(false);
+        if (alliance is null)
+        {
+            return;
+        }
+
+        var packet = V113AlliancePackets.UpdateAllianceMember(allianceId, guild.Id, member.CharacterId, member.Level, member.JobId);
+        foreach (var guildId in alliance.GuildIds)
+        {
+            if (guildId == guild.Id)
+            {
+                continue;
+            }
+
+            var otherGuild = await _guilds.GetGuildAsync(guildId, ct).ConfigureAwait(false);
+            if (otherGuild is null)
+            {
+                continue;
+            }
+
+            foreach (var otherMember in otherGuild.Members)
+            {
+                if (!otherMember.IsOnline)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await _sessions.SendToCharacterAsync(otherMember.CharacterId, packet, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
     private async Task HandleCreateAsync(
         PacketReader reader,
         Player player,

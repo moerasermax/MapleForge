@@ -110,6 +110,30 @@ public sealed class Guild
         return true;
     }
 
+    /// <summary>對照 Java <c>MapleGuild.memberLevelJobUpdate</c>：更新成員快取的等級/職業，等級提升時
+    /// 依 <c>(newLevel-oldLevel)*newLevel/10</c> 公式加公會經驗值（GP）。找不到成員回 false。</summary>
+    public bool TryUpdateMemberLevelJob(int characterId, short level, int jobId, out GuildMember? changed)
+    {
+        var member = GetMember(characterId);
+        if (member is null)
+        {
+            changed = null;
+            return false;
+        }
+
+        var oldLevel = member.Level;
+        member.Level = level;
+        member.JobId = jobId;
+
+        if (level > oldLevel)
+        {
+            GainGuildPoints((level - oldLevel) * level / 10);
+        }
+
+        changed = member.Clone();
+        return true;
+    }
+
     public bool TryChangeRankTitles(IReadOnlyList<string> titles)
     {
         if (titles.Count != RankCount || titles.Any(static t => string.IsNullOrWhiteSpace(t)))

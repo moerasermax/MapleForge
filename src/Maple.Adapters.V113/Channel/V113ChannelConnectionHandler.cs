@@ -3478,6 +3478,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 await session.SendAsync(statsPacket, ct);
             }
+
+            // P059：對照 Java MapleGuild.memberLevelJobUpdate，升級時同步公會成員快取欄位並廣播。
+            if (mutation.Updates.Any(static u => u.Kind == PlayerStatKind.Level))
+            {
+                await _guildOperationHandler.SyncMemberLevelJobAsync(
+                    player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
+            }
         }
         else if (rewards.ExpGained > 0)
         {

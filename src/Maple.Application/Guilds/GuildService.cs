@@ -16,6 +16,7 @@ public enum GuildUpdateKind
     NoticeChanged,
     MemberOnline,
     MemberOffline,
+    MemberLevelJobChanged,
     CapacityChanged,
     Disbanded,
 }
@@ -94,6 +95,10 @@ public interface IGuildRegistry
     Task<GuildCommandResult> ChangeNoticeAsync(int initiatorId, string notice, CancellationToken ct = default);
 
     Task<GuildCommandResult> SetMemberOnlineAsync(GuildMember member, bool online, int channel, CancellationToken ct = default);
+
+    /// <summary>對照 Java <c>MapleGuild.memberLevelJobUpdate</c>（P059：等級提升時同步公會成員快取欄位
+    /// + 加 GP + 廣播 <c>guildMemberLevelJobUpdate</c>）。找不到公會/成員回非 Success。</summary>
+    Task<GuildCommandResult> UpdateMemberLevelJobAsync(int characterId, short level, int jobId, CancellationToken ct = default);
 
     Task<GuildInviteResult> InviteMemberAsync(int inviterId, GuildMember invitee, CancellationToken ct = default);
 
@@ -422,6 +427,38 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
                 guild.Snapshot(),
                 changed,
                 GuildUpdateKind.RankChanged,
+                OnlineRecipientIds(guild));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<GuildCommandResult> UpdateMemberLevelJobAsync(int characterId, short level, int jobId, CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var guild = GetGuildForCharacterLocked(characterId);
+            if (guild is null)
+            {
+                return new GuildCommandResult(GuildCommandStatus.NotInGuild);
+            }
+
+            if (!guild.TryUpdateMemberLevelJob(characterId, level, jobId, out var changed) || changed is null)
+            {
+                return new GuildCommandResult(GuildCommandStatus.TargetNotFound, guild.Snapshot());
+            }
+
+            await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+
+            return new GuildCommandResult(
+                GuildCommandStatus.Success,
+                guild.Snapshot(),
+                changed,
+                GuildUpdateKind.MemberLevelJobChanged,
                 OnlineRecipientIds(guild));
         }
         finally
@@ -995,6 +1032,16 @@ public sealed class GuildService
     {
         ArgumentNullException.ThrowIfNull(initiator);
         return _registry.ChangeRankTitlesAsync(initiator.Character.Id, titles, ct);
+    }
+
+    /// <summary>P059：玩家等級提升時同步公會成員快取（見 <see cref="IGuildRegistry.UpdateMemberLevelJobAsync"/>）。
+    /// 呼叫端只在角色不在公會（<c>GuildId&lt;=0</c>）時直接跳過，省一次不會命中的登記表查找。</summary>
+    public Task<GuildCommandResult> SyncMemberLevelJobAsync(Player player, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return player.Character.GuildId <= 0
+            ? Task.FromResult(new GuildCommandResult(GuildCommandStatus.NotInGuild))
+            : _registry.UpdateMemberLevelJobAsync(player.Character.Id, player.Character.Level, player.Character.Job, ct);
     }
 
     public const int IncreaseCapacityCost = 250_000;
