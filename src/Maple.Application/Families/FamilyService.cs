@@ -105,7 +105,11 @@ public sealed class FamilyService : IFamilyRegistry
     public const int OnlinePedigreeBuffRequiredCount = 7;
 
     private readonly IFamilyRepository _repository;
-    private readonly object _sync = new();
+
+    // P052：從 lock/Monitor 換成 SemaphoreSlim（比照 Guild/Alliance），前置條件是 P051 已把
+    // Register/Unregister 的重入呼叫拆成 *Locked 版本——SemaphoreSlim 不可重入，若還有重入
+    // 呼叫鏈會死結。這一步只換原語本身，尚未把持久層呼叫搬進臨界區（那是後續 P-phase）。
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<int, Family> _families = new();
     private readonly Dictionary<int, int> _familyByCharacter = new();
     private readonly Dictionary<int, OnlineFamilyPlayer> _onlinePlayers = new();
@@ -123,7 +127,8 @@ public sealed class FamilyService : IFamilyRegistry
 
     public Family CreateFamily(int leaderId)
     {
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             var family = new Family
             {
@@ -132,6 +137,10 @@ public sealed class FamilyService : IFamilyRegistry
             };
             TrackFamilyLocked(family);
             return family;
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
@@ -147,7 +156,8 @@ public sealed class FamilyService : IFamilyRegistry
         ArgumentNullException.ThrowIfNull(inviterPlayer);
         ArgumentNullException.ThrowIfNull(targetPlayer);
 
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             var validation = ValidateInviteLocked(inviterPlayer, targetPlayer);
             if (validation != FamilyCommandStatus.Success)
@@ -167,6 +177,10 @@ public sealed class FamilyService : IFamilyRegistry
                 UpdateKind: FamilyUpdateKind.InviteCreated,
                 AffectedCharacterIds: [targetPlayer.Character.Id]);
         }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task<FamilyCommandResult> AcceptInviteAsync(int inviterCharId, Player targetPlayer, CancellationToken ct = default)
@@ -177,7 +191,8 @@ public sealed class FamilyService : IFamilyRegistry
         Family? familyToDelete;
         FamilyCommandResult result;
 
-        lock (_sync)
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             if (!_invitesByTarget.Remove(targetPlayer.Character.Id, out var invite) || invite.InviterId != inviterCharId || invite.ExpiresAt <= DateTimeOffset.UtcNow)
             {
@@ -260,6 +275,10 @@ public sealed class FamilyService : IFamilyRegistry
                 UpdateKind: oldTargetFamily is null && inviterFamily.Members.Count == 2 ? FamilyUpdateKind.Created : FamilyUpdateKind.Joined,
                 AffectedCharacterIds: inviterFamily.Members.Keys.ToArray());
         }
+        finally
+        {
+            _gate.Release();
+        }
 
         if (familyToDelete is not null)
         {
@@ -274,7 +293,8 @@ public sealed class FamilyService : IFamilyRegistry
     {
         ArgumentNullException.ThrowIfNull(targetPlayer);
 
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             if (_invitesByTarget.TryGetValue(targetPlayer.Character.Id, out var invite) && invite.InviterId == inviterCharId)
             {
@@ -283,6 +303,10 @@ public sealed class FamilyService : IFamilyRegistry
             }
 
             return new FamilyCommandResult(FamilyCommandStatus.InvalidInvite);
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
@@ -294,7 +318,8 @@ public sealed class FamilyService : IFamilyRegistry
         Family? deleteFamily;
         FamilyCommandResult result;
 
-        lock (_sync)
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             var family = GetFamilyForCharacterLocked(player.Character.Id);
             var member = family?.GetMember(player.Character.Id);
@@ -318,6 +343,10 @@ public sealed class FamilyService : IFamilyRegistry
                 UpdateKind: FamilyUpdateKind.JuniorDeleted,
                 AffectedCharacterIds: [player.Character.Id, juniorId]);
         }
+        finally
+        {
+            _gate.Release();
+        }
 
         await SaveSplitAsync(saveFamily, deleteFamily, ct).ConfigureAwait(false);
         return result;
@@ -331,7 +360,8 @@ public sealed class FamilyService : IFamilyRegistry
         Family? deleteFamily;
         FamilyCommandResult result;
 
-        lock (_sync)
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             var family = GetFamilyForCharacterLocked(player.Character.Id);
             var member = family?.GetMember(player.Character.Id);
@@ -355,6 +385,10 @@ public sealed class FamilyService : IFamilyRegistry
                 UpdateKind: FamilyUpdateKind.SeniorDeleted,
                 AffectedCharacterIds: [player.Character.Id, senior.CharacterId]);
         }
+        finally
+        {
+            _gate.Release();
+        }
 
         await SaveSplitAsync(saveFamily, deleteFamily, ct).ConfigureAwait(false);
         return result;
@@ -367,7 +401,8 @@ public sealed class FamilyService : IFamilyRegistry
         Family? familyToSave = null;
         FamilyCommandResult result;
 
-        lock (_sync)
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             var entry = FamilyBuff.Find(buffType);
             if (entry is null)
@@ -393,6 +428,10 @@ public sealed class FamilyService : IFamilyRegistry
                 familyToSave = result.Succeeded ? family : null;
             }
         }
+        finally
+        {
+            _gate.Release();
+        }
 
         if (familyToSave is not null)
         {
@@ -409,7 +448,8 @@ public sealed class FamilyService : IFamilyRegistry
         Family? familyToSave;
         FamilyCommandResult result;
 
-        lock (_sync)
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             var family = GetFamilyForCharacterLocked(player.Character.Id);
             if (family is null)
@@ -430,6 +470,10 @@ public sealed class FamilyService : IFamilyRegistry
                 UpdateKind: FamilyUpdateKind.PreceptChanged,
                 AffectedCharacterIds: family.Members.Keys.ToArray());
         }
+        finally
+        {
+            _gate.Release();
+        }
 
         await _repository.SaveAsync(familyToSave, ct).ConfigureAwait(false);
         return result;
@@ -442,7 +486,8 @@ public sealed class FamilyService : IFamilyRegistry
         Family? familyToSave = null;
         FamilyCommandResult result;
 
-        lock (_sync)
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             var entry = FamilyBuff.Find(1)!;
             if (!_pendingSummonsByTarget.TryGetValue(player.Character.Id, out var pendingSummoner) ||
@@ -487,6 +532,10 @@ public sealed class FamilyService : IFamilyRegistry
                 new FamilyWarpTarget(player.Character.Id, summoner.Player.Character.MapId, summoner.Player.Position),
                 [player.Character.Id, summoner.Player.Character.Id]);
         }
+        finally
+        {
+            _gate.Release();
+        }
 
         if (familyToSave is not null)
         {
@@ -498,7 +547,8 @@ public sealed class FamilyService : IFamilyRegistry
 
     public FamilyInfoData GetFamilyInfo(int characterId)
     {
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             var family = GetFamilyForCharacterLocked(characterId);
             var member = family?.GetMember(characterId);
@@ -527,11 +577,16 @@ public sealed class FamilyService : IFamilyRegistry
                 family.Notice,
                 Array.Empty<FamilyBuffUsage>());
         }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public FamilyPedigreeData GetFamilyPedigree(int characterId)
     {
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             var family = GetFamilyForCharacterLocked(characterId);
             if (family is null)
@@ -565,6 +620,10 @@ public sealed class FamilyService : IFamilyRegistry
                 GetDescendantCounts(family, characterId),
                 Array.Empty<FamilyBuffUsage>());
         }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task<FamilyCommandResult> SplitFamilyAsync(int characterId, CancellationToken ct = default)
@@ -573,7 +632,8 @@ public sealed class FamilyService : IFamilyRegistry
         Family? deleteFamily;
         FamilyCommandResult result;
 
-        lock (_sync)
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
             var family = GetFamilyForCharacterLocked(characterId);
             if (family is null)
@@ -589,6 +649,10 @@ public sealed class FamilyService : IFamilyRegistry
                 saveFamily?.Snapshot(OnlineChannelsLocked()),
                 UpdateKind: FamilyUpdateKind.SeniorDeleted);
         }
+        finally
+        {
+            _gate.Release();
+        }
 
         await SaveSplitAsync(saveFamily, deleteFamily, ct).ConfigureAwait(false);
         return result;
@@ -596,17 +660,27 @@ public sealed class FamilyService : IFamilyRegistry
 
     public FamilyState? GetFamilyForCharacter(int characterId)
     {
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             return GetFamilyForCharacterLocked(characterId)?.Snapshot(OnlineChannelsLocked());
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
     public FamilyState? GetFamily(int familyId)
     {
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             return _families.TryGetValue(familyId, out var family) ? family.Snapshot(OnlineChannelsLocked()) : null;
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
@@ -614,9 +688,14 @@ public sealed class FamilyService : IFamilyRegistry
     {
         ArgumentNullException.ThrowIfNull(family);
 
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             RegisterLocked(family);
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
@@ -624,17 +703,27 @@ public sealed class FamilyService : IFamilyRegistry
     {
         ArgumentNullException.ThrowIfNull(player);
 
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             RegisterLocked(player, channel);
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
     public void Unregister(int characterId)
     {
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             UnregisterLocked(characterId);
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
@@ -673,7 +762,8 @@ public sealed class FamilyService : IFamilyRegistry
     {
         ArgumentNullException.ThrowIfNull(player);
 
-        lock (_sync)
+        _gate.Wait();
+        try
         {
             var wasOnline = _onlinePlayers.ContainsKey(player.Character.Id);
             if (online)
@@ -702,6 +792,10 @@ public sealed class FamilyService : IFamilyRegistry
                     .ToArray();
 
             return new FamilyOnlineStatusChange(true, online, player.Character.Name, recipients);
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
