@@ -3200,6 +3200,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        // 對照 Java PlayerHandler.closeRangeAttack：技能種類跟宣稱的攻擊封包分類不符
+        // （registerOffense(ATTACK_TYPE_ERROR) + return，整包丟棄，不處理傷害也不廣播）。
+        if (!IsCloseRangedAttackSkill(attack.SkillId))
+        {
+            _log.LogWarning(
+                "[Channel] 玩家 {Name} 近戰攻擊技能種類不符 skill={Skill}", player.Character.Name, attack.SkillId);
+            return;
+        }
+
         var attackBroadcast = V113CombatPackets.CloseRangeAttackBroadcast(player.Character.Id, attack, player.Character.Level);
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
@@ -3235,6 +3244,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
         catch (InvalidDataException)
         {
+            return;
+        }
+
+        // 對照 Java PlayerHandler.rangedAttack：技能種類跟宣稱的攻擊封包分類不符（見
+        // HandleCloseRangeAttackAsync 註解）。
+        if (!IsRangedAttackSkill(attack.SkillId))
+        {
+            _log.LogWarning(
+                "[Channel] 玩家 {Name} 遠程攻擊技能種類不符 skill={Skill}", player.Character.Name, attack.SkillId);
             return;
         }
 
@@ -3292,6 +3310,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
         catch (InvalidDataException)
         {
+            return;
+        }
+
+        // 對照 Java PlayerHandler.MagicDamage：技能種類跟宣稱的攻擊封包分類不符（見
+        // HandleCloseRangeAttackAsync 註解）。
+        if (!IsMagicAttackSkill(attack.SkillId))
+        {
+            _log.LogWarning(
+                "[Channel] 玩家 {Name} 魔法攻擊技能種類不符 skill={Skill}", player.Character.Name, attack.SkillId);
             return;
         }
 
@@ -3852,6 +3879,56 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// <summary>對照 Java <c>MobHandler.CheckMobVac_x</c>：非飛行怪物 <c>abs(startX - endX) &gt; 500</c>。</summary>
     internal static bool IsMobVacXAnomaly(bool fly, int endX, int startX)
         => !fly && Math.Abs(endX - startX) > 500;
+
+    // ── P058：ATTACK_TYPE_ERROR（反作弊 3 件第 3 件另一子項，拆解自 registerOffense 籠統標籤）──
+    // 對照 Java constants.SkillConstants：三個攻擊封包（近戰/遠程/魔法）宣稱使用的技能 id
+    // 必須屬於對應分類的硬編碼清單，否則 PlayerHandler.closeRangeAttack/rangedAttack/MagicDamage
+    // 會 registerOffense(ATTACK_TYPE_ERROR) 並直接 return（整包丟棄，不處理傷害也不廣播）。
+    // 清單內容用 awk/grep 對原始碼機械抽取，並逐段人工核對 switch-case 本體（無 fallthrough
+    // 陷阱、無多值合併），確保跟 Java 逐一比對過，降低「手抄漏字誤傷合法玩家攻擊」風險。
+    // isSpecialMove（type 4）在 Java 是空 switch（只有 default），永遠回傳 false，MapleForge
+    // 目前 3 個攻擊封包沒有對應 type=4 的入口，故不需要移植。
+
+    internal static readonly HashSet<int> CloseRangedAttackSkillIds =
+    [
+        0, 1009, 1020, 1001004, 1001005, 1100002, 1100003, 1111003, 1111004, 1111005,
+        1111006, 1111008, 1121006, 1121008, 1200002, 1200003, 1211002, 1221007, 1221009, 1221011,
+        1300002, 1300003, 1311001, 1311002, 1311003, 1311004, 1311005, 1311006, 1321003, 3101003,
+        3201003, 4001002, 4001334, 4121008, 4201004, 4201005, 4211002, 4211004, 4211006, 4221001,
+        4221007, 5001001, 5001002, 5101002, 5101003, 5101004, 5110001, 5111002, 5111004, 5111006,
+        5121001, 5121004, 5121005, 5121007, 5201002, 5201004, 5221003, 9001006, 10001009, 10001020,
+        11001002, 11001003, 11101002, 11111003, 11111004, 11111006, 14001002, 14111006, 15001001, 15001002,
+        15100004, 15101003, 15101004, 15101005, 15111001, 15111003, 15111004, 20000014, 20000015, 20000016,
+        20001009, 20001020, 20011020, 21000002, 21100001, 21100002, 21101003, 21110003, 21110006, 21110007,
+        21110008, 21120005, 21120009, 21120010,
+    ];
+
+    internal static readonly HashSet<int> RangedAttackSkillIds =
+    [
+        0, 3001004, 3001005, 3100001, 3101005, 3110001, 3111003, 3111004, 3111006, 3121003,
+        3121004, 3200001, 3201005, 3210001, 3211003, 3211004, 3211006, 3221001, 3221003, 3221007,
+        4001344, 4101005, 4111004, 4111005, 4121003, 4121007, 4221003, 5001003, 5121002, 5201001,
+        5201006, 5210000, 5211004, 5211005, 5211006, 5220011, 5221004, 5221007, 5221008, 5221009,
+        11101004, 13001003, 13101002, 13101005, 13111000, 13111001, 13111002, 13111006, 13111007, 14001004,
+        14101006, 14111002, 14111005, 15111006, 15111007, 21100004, 21110004, 21120006,
+    ];
+
+    internal static readonly HashSet<int> MagicAttackSkillIds =
+    [
+        1000, 2001004, 2001005, 2101004, 2101005, 2111002, 2111003, 2111006, 2121001, 2121003,
+        2121006, 2121007, 2201004, 2201005, 2211002, 2211003, 2211006, 2221001, 2221003, 2221006,
+        2221007, 2301002, 2301005, 2311004, 2321001, 2321007, 2321008, 10001000, 12101002, 12001003,
+        12101006, 12111003, 12111005, 12111006, 20001000,
+    ];
+
+    /// <summary>對照 Java <c>SkillConstants.isCloseRangedAttack</c>（91 個技能 id）。</summary>
+    internal static bool IsCloseRangedAttackSkill(int skillId) => CloseRangedAttackSkillIds.Contains(skillId);
+
+    /// <summary>對照 Java <c>SkillConstants.isRangedAttack</c>（58 個技能 id）。</summary>
+    internal static bool IsRangedAttackSkill(int skillId) => RangedAttackSkillIds.Contains(skillId);
+
+    /// <summary>對照 Java <c>SkillConstants.isMagicAttack</c>（35 個技能 id）。</summary>
+    internal static bool IsMagicAttackSkill(int skillId) => MagicAttackSkillIds.Contains(skillId);
 
     /// <summary>
     /// 一般地圖聊天（對照 Java ChatHandler.GeneralChat 核心）。
