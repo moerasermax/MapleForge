@@ -263,9 +263,10 @@ public static class MapleServerHost
         builder.Services.AddSingleton<IChannelConnectionHandler, V113ChannelConnectionHandler>();
         builder.Services.AddHostedService<TcpChannelListener>();
 
-        // 世界 tick 排程器（M4-2 第三步：掉落物過期，見 P063）。
+        // 世界 tick 排程器（M4-2：掉落物過期 P063 + 怪物重生 P067）。
         builder.Services.AddSingleton<V113DropExpiryHandler>();
-        builder.Services.AddHostedService<DropExpiryHostedService>();
+        builder.Services.AddSingleton<V113MobRespawnHandler>();
+        builder.Services.AddHostedService<WorldTickHostedService>();
 
         return builder;
     }

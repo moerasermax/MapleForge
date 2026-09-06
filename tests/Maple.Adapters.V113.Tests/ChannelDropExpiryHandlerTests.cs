@@ -10,7 +10,7 @@ namespace Maple.Adapters.V113.Tests;
 /// <summary>
 /// P063（M4-2 世界 tick 第三步）：<see cref="V113DropExpiryHandler.ExpireDropsAsync"/>——單一 field
 /// 的過期掉落物廣播（對照 Java <c>MapleMapItem.expire</c> 的 <c>removeItemFromMap(oid, 0, 0)</c>）。
-/// 排程本身（PeriodicTimer/多久跑一次）由 Maple.Host.Shared 的 DropExpiryHostedService 負責，不在
+/// 排程本身（PeriodicTimer/多久跑一次）由 Maple.Host.Shared 的 WorldTickHostedService 負責，不在
 /// 這裡測試範圍——這裡只驗證「給定一個 field + now，該廣播什麼給誰」。
 /// </summary>
 public sealed class ChannelDropExpiryHandlerTests
