@@ -31,4 +31,29 @@ public sealed class MapData
         if (spawns.Count == 0) return null;
         return spawnPoint < spawns.Count ? spawns[spawnPoint] : spawns[0];
     }
+
+    /// <summary>
+    /// 對照 Java <c>MapleMap.findClosestSpawnpoint(Point)</c>：取離指定座標最近的出生點
+    /// （歐氏距離平方比較，避免開根號）；沒有出生點時回 null。
+    /// </summary>
+    public MapPortal? GetClosestSpawnPoint(int x, int y)
+    {
+        MapPortal? closest = null;
+        long closestDistanceSquared = long.MaxValue;
+        foreach (var portal in Portals)
+        {
+            if (!portal.IsSpawnPoint) continue;
+
+            long dx = portal.X - x;
+            long dy = portal.Y - y;
+            var distanceSquared = (dx * dx) + (dy * dy);
+            if (distanceSquared < closestDistanceSquared)
+            {
+                closestDistanceSquared = distanceSquared;
+                closest = portal;
+            }
+        }
+
+        return closest;
+    }
 }

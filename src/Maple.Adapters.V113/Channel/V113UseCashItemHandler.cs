@@ -1,4 +1,5 @@
 using Maple.Application.Maps;
+using Maple.Application.OnlinePlayers;
 using Maple.Application.Pets;
 using Maple.Application.NpcItemServices;
 using Maple.Application.Social;
@@ -17,7 +18,8 @@ internal sealed record V113UseCashItemResult(
     bool Handled,
     bool CharacterMutated,
     IReadOnlyList<byte[]> Packets,
-    int? WarpToMapId = null)
+    int? WarpToMapId = null,
+    int WarpToPortalId = 0)
 {
     public IReadOnlyList<byte[]> BroadcastPackets { get; init; } = Array.Empty<byte[]>();
 
@@ -42,6 +44,7 @@ public sealed class V113UseCashItemHandler
     private readonly PetService _petService;
     private readonly NoteService _noteService;
     private readonly MapService _mapService;
+    private readonly IOnlinePlayerRegistry _onlinePlayers;
     private readonly ILogger<V113UseCashItemHandler> _log;
 
     public V113UseCashItemHandler(
@@ -49,12 +52,14 @@ public sealed class V113UseCashItemHandler
         PetService petService,
         NoteService noteService,
         MapService mapService,
+        IOnlinePlayerRegistry onlinePlayers,
         ILogger<V113UseCashItemHandler> log)
     {
         _owlService = owlService;
         _petService = petService;
         _noteService = noteService;
         _mapService = mapService;
+        _onlinePlayers = onlinePlayers;
         _log = log;
     }
 
@@ -346,18 +351,35 @@ public sealed class V113UseCashItemHandler
 
         if (mode == 1)
         {
+            string targetName;
             try
             {
-                var targetName = reader.ReadMapleString();
-                _log.LogDebug(
-                    "[UseCashItem] Teleport rock player mode deferred itemId={ItemId} target={Target}",
-                    itemId,
-                    targetName);
+                targetName = reader.ReadMapleString();
             }
             catch (InvalidDataException)
             {
                 _log.LogDebug("[UseCashItem] Teleport rock player mode malformed itemId={ItemId}", itemId);
+                return EnableActionsOnly();
             }
+
+            // 對照 Java UseTeleRock 玩家導向分支：GM／EventInstance 排除在 MapleForge 恆為
+            // 「不成立」（尚無 GM／活動副本系統，見 P022/P046），故略去不寫。
+            var victim = _onlinePlayers.FindByName(targetName);
+            if (victim is null || IsMapleLand(victim.Character.MapId))
+            {
+                return EnableActionsOnly();
+            }
+
+            var sameContinent = victim.Character.MapId / 100_000_000 == player.Character.MapId / 100_000_000;
+            if (IsVipRockWarpBlocked(player, victim.Character.MapId) || (itemId != 5041000 && !sameContinent))
+            {
+                return EnableActionsOnly();
+            }
+
+            // 對照 Java findClosestSpawnpoint：找離目標玩家目前座標最近的出生點。
+            var targetMap = _mapService.LoadMap(victim.Character.MapId);
+            var spawn = targetMap.GetClosestSpawnPoint(victim.Player.Position.X, victim.Player.Position.Y);
+            return ConsumeCashItemForWarp(player, slot, itemId, victim.Character.MapId, spawn?.Id ?? 0);
         }
 
         return EnableActionsOnly();
@@ -806,11 +828,11 @@ public sealed class V113UseCashItemHandler
             });
     }
 
-    private V113UseCashItemResult ConsumeCashItemForWarp(Player player, short slot, int itemId, int mapId)
+    private V113UseCashItemResult ConsumeCashItemForWarp(Player player, short slot, int itemId, int mapId, int portalId = 0)
     {
         var result = ConsumeCashItem(player, slot, itemId);
         return result.CharacterMutated
-            ? result with { WarpToMapId = mapId }
+            ? result with { WarpToMapId = mapId, WarpToPortalId = portalId }
             : result;
     }
 

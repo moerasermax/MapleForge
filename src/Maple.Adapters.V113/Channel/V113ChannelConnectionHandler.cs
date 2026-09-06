@@ -1229,7 +1229,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                     s,
                                     cashWarpMapId,
                                     sessionToken,
-                                    token);
+                                    token,
+                                    useCashResult.WarpToPortalId);
                             }
                         }
                         break;

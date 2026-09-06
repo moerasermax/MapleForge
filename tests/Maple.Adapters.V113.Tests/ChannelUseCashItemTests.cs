@@ -1,6 +1,7 @@
 using Maple.Adapters.V113.Channel;
 using Maple.Application.Maps;
 using Maple.Application.NpcItemServices;
+using Maple.Application.OnlinePlayers;
 using Maple.Application.Pets;
 using Maple.Application.Social;
 using Maple.Core.Characters;
@@ -809,7 +810,7 @@ public sealed class ChannelUseCashItemTests
     }
 
     [Fact]
-    public void TeleportRock_PlayerMode_IsDeferredAndDoesNotConsume()
+    public void TeleportRock_PlayerMode_VictimNotOnline_ReturnsEnableActionsAndDoesNotConsume()
     {
         var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
         var handler = CreateHandler();
@@ -827,6 +828,128 @@ public sealed class ChannelUseCashItemTests
         Assert.Null(result.WarpToMapId);
         Assert.Single(result.Packets);
         Assert.Equal(V113ChannelSendOp.UpdateStats, BitConverter.ToInt16(result.Packets[0], 0));
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void TeleportRock_PlayerMode_SameContinent_WarpsToClosestSpawnpointNearVictim()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        var online = new InMemoryOnlinePlayerRegistry();
+        var victim = new Player(
+            new Character { Id = 2, Name = "Victim", MapId = 910010000 },
+            new Position(500, 500, 0, 0));
+        online.Register(victim, channel: 1, (_, _) => Task.CompletedTask, new object());
+        var maps = new MapService(new FakeMapFieldLimitProvider());
+        var handler = CreateHandler(maps: maps, onlinePlayers: online);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(1)
+            .WriteMapleString("Victim")
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        AssertWarpConsumed(result, player, expectedMapId: 910010000);
+    }
+
+    [Fact]
+    public void TeleportRock_PlayerMode_DifferentContinent_NonPremiumItem_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        var online = new InMemoryOnlinePlayerRegistry();
+        var victim = new Player(
+            new Character { Id = 2, Name = "Victim", MapId = 200000100 },
+            new Position(0, 0, 0, 0));
+        online.Register(victim, channel: 1, (_, _) => Task.CompletedTask, new object());
+        var handler = CreateHandler(onlinePlayers: online);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(1)
+            .WriteMapleString("Victim")
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void TeleportRock_PlayerMode_5041000_DifferentContinent_StillWarps()
+    {
+        // 對照 Java：5041000（高級順移之石）不受大陸限制，任何大陸都能傳送過去。
+        var player = CreatePlayerWithCashItem(910000000, 5041000, 1);
+        var online = new InMemoryOnlinePlayerRegistry();
+        var victim = new Player(
+            new Character { Id = 2, Name = "Victim", MapId = 200000100 },
+            new Position(0, 0, 0, 0));
+        online.Register(victim, channel: 1, (_, _) => Task.CompletedTask, new object());
+        var handler = CreateHandler(onlinePlayers: online);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5041000)
+            .WriteByte(1)
+            .WriteMapleString("Victim")
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        AssertWarpConsumed(result, player, expectedMapId: 200000100);
+    }
+
+    [Fact]
+    public void TeleportRock_PlayerMode_VictimInMapleLand_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        var online = new InMemoryOnlinePlayerRegistry();
+        var victim = new Player(
+            new Character { Id = 2, Name = "Victim", MapId = 1010003 },
+            new Position(0, 0, 0, 0));
+        online.Register(victim, channel: 1, (_, _) => Task.CompletedTask, new object());
+        var handler = CreateHandler(onlinePlayers: online);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(1)
+            .WriteMapleString("Victim")
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void TeleportRock_PlayerMode_VictimMapHasVipRockFieldLimit_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        var online = new InMemoryOnlinePlayerRegistry();
+        var victim = new Player(
+            new Character { Id = 2, Name = "Victim", MapId = 910010000 },
+            new Position(0, 0, 0, 0));
+        online.Register(victim, channel: 1, (_, _) => Task.CompletedTask, new object());
+        var maps = new MapService(new FakeMapFieldLimitProvider(new Dictionary<int, long> { [910010000] = 0x40 }));
+        var handler = CreateHandler(maps: maps, onlinePlayers: online);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(1)
+            .WriteMapleString("Victim")
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
         Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
     }
 
@@ -1142,12 +1265,14 @@ public sealed class ChannelUseCashItemTests
     private static V113UseCashItemHandler CreateHandler(
         PetService? pets = null,
         TestNoteRepository? notes = null,
-        MapService? maps = null)
+        MapService? maps = null,
+        IOnlinePlayerRegistry? onlinePlayers = null)
         => new(
             new OwlService(new EmptyOwlSearchCatalog()),
             pets ?? new PetService(),
             new NoteService(notes ?? new TestNoteRepository()),
             maps ?? new MapService(new FakeMapFieldLimitProvider()),
+            onlinePlayers ?? new InMemoryOnlinePlayerRegistry(),
             NullLogger<V113UseCashItemHandler>.Instance);
 
     private static V113UseCashItemHandler CreateHandlerWithResults(
@@ -1158,6 +1283,7 @@ public sealed class ChannelUseCashItemTests
             pets ?? new PetService(),
             new NoteService(notes ?? new TestNoteRepository()),
             new MapService(new FakeMapFieldLimitProvider()),
+            new InMemoryOnlinePlayerRegistry(),
             NullLogger<V113UseCashItemHandler>.Instance);
 
     /// <summary>P041：讓測試可以指定特定 mapId 的 <c>info/fieldLimit</c>，其餘 mapId 一律回傳 0（不受限）。</summary>
