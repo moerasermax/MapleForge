@@ -205,8 +205,12 @@ public static class MapleServerHost
         builder.Services.AddSingleton<NoteService>();
         builder.Services.AddSingleton<V113NoteHandler>();
         builder.Services.AddSingleton<Maple.Core.Families.IFamilyRepository, Maple.Application.Families.InMemoryFamilyRepository>();
-        builder.Services.AddSingleton<Maple.Application.Families.IFamilyRegistry, Maple.Application.Families.FamilyService>();
+        // 對照本檔其餘 registry 註冊：FamilyService 需要同時以 IFamilyRegistry 與具體型別兩種方式
+        // 被注入，故用工廠委派共用同一個單例（不可分開各自 AddSingleton，否則兩個型別各自解析出
+        // 獨立實例，彼此的 in-memory 狀態互不相通，見任務歷程 2026-09-06_12）。
         builder.Services.AddSingleton<Maple.Application.Families.FamilyService>();
+        builder.Services.AddSingleton<Maple.Application.Families.IFamilyRegistry>(
+            sp => sp.GetRequiredService<Maple.Application.Families.FamilyService>());
         builder.Services.AddSingleton<IV113FamilySessionHook, CentralFamilySessionHook>();
         builder.Services.AddSingleton<V113FamilyHandler>();
         builder.Services.AddSingleton<CoconutEventService>();
