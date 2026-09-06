@@ -192,11 +192,21 @@ public static class V113PetHandler
             ct);
     }
 
-    public static async Task HandlePetAutoPotion(
+    /// <summary>
+    /// 對照 Java <c>PetHandler.Pet_AutoPotion</c>：封包只給 slot，itemId 要先查庫存
+    /// （<see cref="PetService.HandleAutoPotion"/> 負責存活/道具存在驗證），驗證通過後委派
+    /// <see cref="V113UseConsumableHandler.HandleKnownItem"/> 做實際套用+消耗（跟一般
+    /// <c>USE_ITEM(0x42)</c> 共用同一套邏輯）。<paramref name="canUsePotion"/> 語意與
+    /// <see cref="V113UseConsumableHandler.Handle"/> 相同（呼叫端已算好 FieldLimitType.PotionUse
+    /// 場地限制）。回傳結果供呼叫端決定是否需要持久化角色（<c>CharacterMutated</c>）。
+    /// </summary>
+    internal static async Task<V113UseConsumableResult> HandlePetAutoPotion(
         PacketReader reader,
         Player player,
         MapleSession session,
         PetService pets,
+        V113UseConsumableHandler useConsumable,
+        bool canUsePotion,
         CancellationToken ct)
     {
         V113PetAutoPotionRequest request;
@@ -206,14 +216,35 @@ public static class V113PetHandler
         }
         catch (InvalidDataException)
         {
-            return;
+            return await SendEnableActionsAsync(session, ct);
         }
 
-        var result = pets.HandleAutoPotion(player, request.Slot);
-        if (!result.Success)
+        // 對照 Java：地圖 749040100 完全靜默不回應，連 EnableActions 都不送（硬編排除，
+        // 跟 V113ItemUseHandler.HandleUseReturnScroll 排除的是同一個地圖 id）。
+        if (player.Character.MapId == 749040100)
         {
-            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return new V113UseConsumableResult(true, false, Array.Empty<byte[]>());
         }
+
+        var lookup = pets.HandleAutoPotion(player, request.Slot);
+        if (!lookup.Success)
+        {
+            return await SendEnableActionsAsync(session, ct);
+        }
+
+        var result = useConsumable.HandleKnownItem(player, request.Slot, lookup.ItemId, canUsePotion);
+        foreach (var packet in result.Packets)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        return result;
+    }
+
+    private static async Task<V113UseConsumableResult> SendEnableActionsAsync(MapleSession session, CancellationToken ct)
+    {
+        await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+        return new V113UseConsumableResult(true, false, [V113StatsPackets.EnableActions()]);
     }
 
     public static async Task HandlePetIgnore(

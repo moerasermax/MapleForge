@@ -1370,9 +1370,22 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.PetAutoPot:
+                    {
                         if (player is null) break;
-                        await V113PetHandler.HandlePetAutoPotion(reader, player, s, _petService, token);
+                        // 對照 Java PetHandler.Pet_AutoPotion：與一般補藥共用同一個 PotionUse
+                        // 場地限制旗標（見 P031 UseItem 的同款計算）。
+                        var petAutoPotCanUse =
+                            !FieldLimitType.PotionUse.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit)
+                            || player.Character.MapId is 610030600 or 105100300;
+                        var petAutoPotResult = await V113PetHandler.HandlePetAutoPotion(
+                            reader, player, s, _petService, _useConsumableHandler, petAutoPotCanUse, token);
+                        if (petAutoPotResult.CharacterMutated)
+                        {
+                            await _charService.UpdateAsync(player.Character, token);
+                        }
+
                         break;
+                    }
 
                     case V113ChannelRecvOp.PetIgnore:
                         if (player is null) break;

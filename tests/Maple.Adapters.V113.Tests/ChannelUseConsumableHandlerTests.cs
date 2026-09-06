@@ -78,6 +78,35 @@ public sealed class ChannelUseConsumableHandlerTests
         Assert.Equal(V113StatsPackets.EnableActions(), packet);
     }
 
+    [Fact]
+    public void HandleKnownItem_Success_ConsumesUpdatesStatsAndEnablesActions()
+    {
+        // 對照 Java PetHandler.Pet_AutoPotion 共用 InventoryHandler.UseItem 的套用邏輯，
+        // 差別只在 itemId 不是從封包讀而是先查庫存拿到（呼叫端職責）。
+        var player = NewPlayer(hp: 25, maxHp: 100, mp: 10, maxMp: 50, UseItem(2000000, 1, 1));
+        var handler = NewHandler();
+
+        var result = handler.HandleKnownItem(player, slot: 1, itemId: 2000000);
+
+        Assert.True(result.CharacterMutated);
+        Assert.Equal((short)75, player.Hp);
+        Assert.Equal(3, result.Packets.Count);
+    }
+
+    [Fact]
+    public void HandleKnownItem_FieldLimitBlocked_DoesNotConsume()
+    {
+        var player = NewPlayer(hp: 25, maxHp: 100, mp: 10, maxMp: 50, UseItem(2000000, 1, 1));
+        var handler = NewHandler();
+
+        var result = handler.HandleKnownItem(player, slot: 1, itemId: 2000000, canUsePotion: false);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal((short)25, player.Hp);
+        var packet = Assert.Single(result.Packets);
+        Assert.Equal(V113StatsPackets.EnableActions(), packet);
+    }
+
     private static V113UseConsumableHandler NewHandler()
         => new(new UseItemService(new HardcodedItemEffectCatalog()));
 
