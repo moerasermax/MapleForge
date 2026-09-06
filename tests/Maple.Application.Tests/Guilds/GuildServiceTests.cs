@@ -112,6 +112,68 @@ public sealed class GuildServiceTests
         Assert.Equal(GuildService.CreationCost + GuildService.EmblemCost - GuildService.CreationCost - GuildService.EmblemCost, leader.Character.Meso);
     }
 
+    [Fact]
+    public async Task IncreaseGuildCapacityAsync_BelowCap_IncreasesByFiveAndDeductsMeso()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 30), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost + GuildService.IncreaseCapacityCost, mapId: GuildService.CreationMapId);
+        characters.Put(leader.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+
+        var result = await service.IncreaseGuildCapacityAsync(leader);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(GuildUpdateKind.CapacityChanged, result.UpdateKind);
+        Assert.Equal(Guild.InitialCapacity + 5, result.Guild!.Capacity);
+        Assert.Equal(0, leader.Character.Meso);
+        Assert.Equal(new[] { 1 }, result.Recipients);
+        Assert.Equal(Guild.InitialCapacity + 5, (await service.GetGuildAsync(created.Guild!.Id))!.Capacity);
+    }
+
+    [Fact]
+    public async Task IncreaseGuildCapacityAsync_AtCap_StillDeductsMeso_MatchingJavaUncheckedReturnValue()
+    {
+        // 對照 Java NPCConversationManager.increaseGuildCapacity：World.Guild.increaseGuildCapacity(gid)
+        // 的回傳值被忽略，即使公會已達 100 人上限、容量沒真的增加，楓幣依然無條件扣除。
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 40), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        characters.Put(leader.Character);
+        await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        var guild = (await service.GetGuildForCharacterAsync(leader.Character.Id))!;
+        var atCapGuild = (await guilds.FindByIdAsync(guild.Id))!;
+        for (var i = 0; i < 20; i++)
+        {
+            atCapGuild.TryIncreaseCapacity();
+        }
+        Assert.Equal(Guild.MaximumCapacity, atCapGuild.Capacity);
+        leader.GainMeso(GuildService.IncreaseCapacityCost);
+
+        var result = await service.IncreaseGuildCapacityAsync(leader);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(0, leader.Character.Meso);
+        Assert.Equal(Guild.MaximumCapacity, (await service.GetGuildAsync(guild.Id))!.Capacity);
+    }
+
+    [Fact]
+    public async Task IncreaseGuildCapacityAsync_NoGuild_ReturnsNotInGuild_WithoutDeductingMeso()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 50), characters);
+        var loner = Player(1, "Loner", meso: GuildService.IncreaseCapacityCost);
+        characters.Put(loner.Character);
+
+        var result = await service.IncreaseGuildCapacityAsync(loner);
+
+        Assert.Equal(GuildCommandStatus.NotInGuild, result.Status);
+        Assert.Equal(GuildService.IncreaseCapacityCost, loner.Character.Meso);
+    }
+
     private static async Task InviteAndJoinAsync(GuildService service, Player leader, Player target, int guildId)
     {
         var invite = await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(target.Character, channel: 1));

@@ -11,6 +11,8 @@ namespace Maple.Application.Tests.Npcs;
 /// 對照 Java NPCConversationManager.updateBuddyCapacity → MapleCharacter.setBuddyCapacity
 /// → client.sendPacket(MaplePacketCreator.updateBuddyCapacity)：即時委派 + 送包，非僅記錄待送。
 /// cm.getPlayerStat（P022）：對照 Java AbstractPlayerInteraction.getPlayerStat 逐 key 核對。
+/// cm.increaseGuildCapacity（P023）：驗證 meso/gid 兩道守門 + pending 委派時機，實際公會擴充
+/// 邏輯由 GuildServiceTests 覆蓋。
 /// </summary>
 public sealed class NpcContextTests
 {
@@ -159,6 +161,98 @@ public sealed class NpcContextTests
         Assert.Equal(1, ctx.GetPlayerStat("GRANK"));
     }
 
+    [Fact]
+    public async Task NpcConversation_IncreaseGuildCapacity_SufficientMesoAndGuild_InvokesDelegate()
+    {
+        var player = NewPlayer();
+        player.Character.Meso = 250_000;
+        player.Character.GuildId = 7;
+        var ctx = new NpcContext(2010007, player, NewQuestService());
+        var increaseCalled = false;
+
+        var convo = new NpcConversation(
+            2010007,
+            new ActionScript(() => ctx.IncreaseGuildCapacity()),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            increaseGuildCapacity: _ =>
+            {
+                increaseCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.True(increaseCalled);
+    }
+
+    [Fact]
+    public async Task NpcConversation_IncreaseGuildCapacity_InsufficientMeso_SendsPopupNotIncreaseRequest()
+    {
+        var player = NewPlayer();
+        player.Character.Meso = 249_999;
+        player.Character.GuildId = 7;
+        var ctx = new NpcContext(2010007, player, NewQuestService());
+        var increaseCalled = false;
+        string? popup = null;
+
+        var convo = new NpcConversation(
+            2010007,
+            new ActionScript(() => ctx.IncreaseGuildCapacity()),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            increaseGuildCapacity: _ =>
+            {
+                increaseCalled = true;
+                return Task.CompletedTask;
+            },
+            sendPopupMessage: (msg, _) =>
+            {
+                popup = msg;
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.False(increaseCalled);
+        Assert.Equal("金錢不足25萬.", popup);
+    }
+
+    [Fact]
+    public async Task NpcConversation_IncreaseGuildCapacity_NoGuild_SendsNothing_MatchingJavaSilentReturn()
+    {
+        var player = NewPlayer();
+        player.Character.Meso = 250_000;
+        player.Character.GuildId = 0;
+        var ctx = new NpcContext(2010007, player, NewQuestService());
+        var increaseCalled = false;
+        var popupCalled = false;
+
+        var convo = new NpcConversation(
+            2010007,
+            new ActionScript(() => ctx.IncreaseGuildCapacity()),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            increaseGuildCapacity: _ =>
+            {
+                increaseCalled = true;
+                return Task.CompletedTask;
+            },
+            sendPopupMessage: (_, _) =>
+            {
+                popupCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.False(increaseCalled);
+        Assert.False(popupCalled);
+    }
+
     private static Player NewPlayer()
         => new(
             new Character { Id = 1, Name = "NpcApp", Level = 30 },
@@ -187,6 +281,17 @@ public sealed class NpcContextTests
             _ctx.UpdateBuddyCapacity(_newCapacity);
             _ctx.Dispose();
         }
+
+        public void Resume(int mode, int type, int selection) { }
+    }
+
+    private sealed class ActionScript : INpcScript
+    {
+        private readonly Action _onStart;
+
+        public ActionScript(Action onStart) => _onStart = onStart;
+
+        public void Start() => _onStart();
 
         public void Resume(int mode, int type, int selection) { }
     }

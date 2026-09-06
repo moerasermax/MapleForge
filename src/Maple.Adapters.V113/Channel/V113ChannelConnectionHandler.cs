@@ -1874,7 +1874,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             openStorage: openStorage,
             sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
             sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
-            sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c));
+            sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
+            increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
+            sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -1906,11 +1908,53 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             openStorage: openStorage,
             sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
             sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
-            sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c));
+            sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
+            increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
+            sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
         return convo.Active ? convo : null;
+    }
+
+    /// <summary>
+    /// cm.increaseGuildCapacity 的實際擴充+廣播（對照 Java <c>MapleGuild.increaseCapacity</c> 的
+    /// broadcast）。楓幣已在 <see cref="NpcContext.IncreaseGuildCapacity"/> 決定送出請求時，於
+    /// <c>GuildService.IncreaseGuildCapacityAsync</c> 內無條件扣除；這裡只負責容量真的增加時的廣播，
+    /// 已達上限（<see cref="GuildCommandResult.Succeeded"/> 為 false）則不廣播，僅錢已經扣了。
+    /// </summary>
+    private async Task IncreaseGuildCapacityAndBroadcastAsync(Player player, MapleSession session, CancellationToken ct)
+    {
+        var result = await _guildService.IncreaseGuildCapacityAsync(player, ct);
+        if (!result.Succeeded || result.Guild is null)
+        {
+            return;
+        }
+
+        var packet = V113GuildPackets.GuildCapacityChange(result.Guild.Id, result.Guild.Capacity);
+        foreach (var recipientId in result.Recipients.Distinct())
+        {
+            if (recipientId == player.Character.Id)
+            {
+                await session.SendAsync(packet, ct);
+                continue;
+            }
+
+            var target = _onlinePlayers.FindById(recipientId);
+            if (target is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                await target.SendPacket(packet, ct);
+            }
+            catch
+            {
+                // Guild 廣播 best-effort；session 可能剛好斷線。
+            }
+        }
     }
 
     private static async Task SendPlayerEventResultAsync(

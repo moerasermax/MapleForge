@@ -16,6 +16,7 @@ public enum GuildUpdateKind
     NoticeChanged,
     MemberOnline,
     MemberOffline,
+    CapacityChanged,
 }
 
 public enum GuildCommandStatus
@@ -76,6 +77,10 @@ public interface IGuildRegistry
     Task<GuildCommandResult> ChangeRankAsync(int initiatorId, int targetId, byte newRank, CancellationToken ct = default);
 
     Task<GuildCommandResult> ChangeRankTitlesAsync(int initiatorId, IReadOnlyList<string> titles, CancellationToken ct = default);
+
+    /// <summary>擴充公會人數上限（cm.increaseGuildCapacity 用）。對照 Java <c>MapleGuild.increaseCapacity</c>：
+    /// +5、上限 100，找不到公會或已達上限回非 Success（不拋例外）。</summary>
+    Task<GuildCommandResult> IncreaseCapacityAsync(int guildId, CancellationToken ct = default);
 
     Task<GuildCommandResult> ChangeEmblemAsync(int initiatorId, GuildEmblem emblem, CancellationToken ct = default);
 
@@ -402,6 +407,36 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
                 initiator.Clone(),
                 GuildUpdateKind.RankTitlesChanged,
                 OnlineRecipientIds(guild));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<GuildCommandResult> IncreaseCapacityAsync(int guildId, CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!_guilds.TryGetValue(guildId, out var guild))
+            {
+                return new GuildCommandResult(GuildCommandStatus.GuildNotFound);
+            }
+
+            if (!guild.TryIncreaseCapacity())
+            {
+                return new GuildCommandResult(GuildCommandStatus.InvalidOperation, guild.Snapshot());
+            }
+
+            await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+
+            return new GuildCommandResult(
+                GuildCommandStatus.Success,
+                guild.Snapshot(),
+                UpdateKind: GuildUpdateKind.CapacityChanged,
+                RecipientCharacterIds: OnlineRecipientIds(guild));
         }
         finally
         {
@@ -847,6 +882,31 @@ public sealed class GuildService
     {
         ArgumentNullException.ThrowIfNull(initiator);
         return _registry.ChangeRankTitlesAsync(initiator.Character.Id, titles, ct);
+    }
+
+    public const int IncreaseCapacityCost = 250_000;
+
+    /// <summary>
+    /// 對照 Java <c>NPCConversationManager.increaseGuildCapacity</c>：呼叫端（<c>NpcContext</c>）已先
+    /// 檢查 meso 足夠且 gid&gt;0 才會走到這裡。楓幣**無條件扣**（Java 對 <c>World.Guild.increaseGuildCapacity</c>
+    /// 的回傳值不做檢查，即使公會已滿 100 人上限、容量沒真的增加，錢一樣扣）——刻意保留這個 Java 行為，
+    /// 不「修得比原版更合理」。
+    /// </summary>
+    public async Task<GuildCommandResult> IncreaseGuildCapacityAsync(Player player, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (player.Character.GuildId <= 0)
+        {
+            return new GuildCommandResult(GuildCommandStatus.NotInGuild);
+        }
+
+        var result = await _registry.IncreaseCapacityAsync(player.Character.GuildId, ct).ConfigureAwait(false);
+
+        player.GainMeso(-IncreaseCapacityCost);
+        await _characters.UpdateAsync(player.Character, ct).ConfigureAwait(false);
+
+        return result;
     }
 
     public async Task<GuildCommandResult> ChangeEmblemAsync(Player initiator, GuildEmblem emblem, CancellationToken ct = default)

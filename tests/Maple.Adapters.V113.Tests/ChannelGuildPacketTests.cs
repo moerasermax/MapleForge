@@ -14,6 +14,20 @@ namespace Maple.Adapters.V113.Tests;
 public sealed class ChannelGuildPacketTests
 {
     [Fact]
+    public void GuildCapacityChange_WritesJavaLayout()
+    {
+        // 對照 Java MaplePacketCreator.guildCapacityChange：GUILD_OPERATION + 0x3A + int guildId + byte capacity。
+        var packet = V113GuildPackets.GuildCapacityChange(25, 15);
+        var r = new PacketReader(packet);
+
+        Assert.Equal(V113GuildPackets.SendGuildOperationOpcode, r.ReadShort());
+        Assert.Equal(V113GuildPackets.GuildCapacityChangedCode, r.ReadByte());
+        Assert.Equal(25, r.ReadInt());
+        Assert.Equal(15, r.ReadByte());
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
     public void ShowGuildInfo_WritesJavaGuildInfoLayout()
     {
         var leader = Member(1, "Leader", rank: Guild.LeaderRank);

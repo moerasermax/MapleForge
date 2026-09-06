@@ -65,4 +65,11 @@ public interface INpcScriptContext
     /// 未知 type 回傳 -1（同 Java）。GM/ADMIN：MapleForge 尚無 GM 系統，固定回 0（無人具 GM 身分，非造假）。
     /// </summary>
     int GetPlayerStat(string type);
+
+    /// <summary>
+    /// 擴充公會人數（cm.increaseGuildCapacity）。對照 Java
+    /// <c>NPCConversationManager.increaseGuildCapacity</c>：meso 不足彈出粉紅字提示；
+    /// 有公會才會真的送出擴充請求（送出後楓幣無條件扣，即使已達上限也扣，見 <c>GuildService</c> 註解）。
+    /// </summary>
+    void IncreaseGuildCapacity();
 }

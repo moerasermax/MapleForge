@@ -21,6 +21,8 @@ public sealed class NpcConversation
     private readonly Func<QuestTransactionResult, CancellationToken, Task>? _sendQuestResult;
     private readonly Func<int, string, CancellationToken, Task>? _sendInfoQuestUpdate;
     private readonly Func<int, CancellationToken, Task>? _sendBuddyCapacity;
+    private readonly Func<CancellationToken, Task>? _increaseGuildCapacity;
+    private readonly Func<string, CancellationToken, Task>? _sendPopupMessage;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -35,7 +37,9 @@ public sealed class NpcConversation
         Func<int, CancellationToken, Task>? openStorage = null,
         Func<QuestTransactionResult, CancellationToken, Task>? sendQuestResult = null,
         Func<int, string, CancellationToken, Task>? sendInfoQuestUpdate = null,
-        Func<int, CancellationToken, Task>? sendBuddyCapacity = null)
+        Func<int, CancellationToken, Task>? sendBuddyCapacity = null,
+        Func<CancellationToken, Task>? increaseGuildCapacity = null,
+        Func<string, CancellationToken, Task>? sendPopupMessage = null)
     {
         NpcId = npcId;
         _script = script;
@@ -47,6 +51,8 @@ public sealed class NpcConversation
         _sendQuestResult = sendQuestResult;
         _sendInfoQuestUpdate = sendInfoQuestUpdate;
         _sendBuddyCapacity = sendBuddyCapacity;
+        _increaseGuildCapacity = increaseGuildCapacity;
+        _sendPopupMessage = sendPopupMessage;
     }
 
     /// <summary>進入對話（呼叫 start() 並 flush 第一則對話）。</summary>
@@ -98,6 +104,12 @@ public sealed class NpcConversation
 
         if (_ctx.PendingBuddyCapacityUpdate is { } capacity && _sendBuddyCapacity is not null)
             await _sendBuddyCapacity(capacity, ct);
+
+        if (_ctx.PendingGuildCapacityIncrease && _increaseGuildCapacity is not null)
+            await _increaseGuildCapacity(ct);
+
+        if (_ctx.PendingPopupMessage is { } popup && _sendPopupMessage is not null)
+            await _sendPopupMessage(popup, ct);
 
         if (_ctx.Ended)
             Active = false;

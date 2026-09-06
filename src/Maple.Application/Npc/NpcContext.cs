@@ -1,6 +1,7 @@
 using Maple.Core.Inventory;
 using Maple.Core.Quests;
 using Maple.Core.World;
+using Maple.Application.Guilds;
 using Maple.Application.Quests;
 
 namespace Maple.Application.Npcs;
@@ -32,6 +33,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     internal int? PendingShop { get; private set; }
     internal int? PendingStorageNpcId { get; private set; }
     internal int? PendingBuddyCapacityUpdate { get; private set; }
+    internal bool PendingGuildCapacityIncrease { get; private set; }
+    internal string? PendingPopupMessage { get; private set; }
     internal IReadOnlyList<QuestTransactionResult> PendingQuestResults => _pendingQuestResults;
     internal IReadOnlyList<(int QuestId, string Data)> PendingInfoQuestUpdates => _pendingInfoQuestUpdates;
     internal bool Ended { get; private set; }
@@ -43,6 +46,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingShop = null;
         PendingStorageNpcId = null;
         PendingBuddyCapacityUpdate = null;
+        PendingGuildCapacityIncrease = false;
+        PendingPopupMessage = null;
         _pendingQuestResults.Clear();
         _pendingInfoQuestUpdates.Clear();
     }
@@ -168,6 +173,22 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
             "HAIR" => character.Hair,
             _ => -1,
         };
+    }
+
+    public void IncreaseGuildCapacity()
+    {
+        if (_player.Character.Meso < GuildService.IncreaseCapacityCost)
+        {
+            PendingPopupMessage = "金錢不足25萬.";
+            return;
+        }
+
+        if (_player.Character.GuildId <= 0)
+        {
+            return; // 對照 Java：無公會靜默返回，不送任何封包
+        }
+
+        PendingGuildCapacityIncrease = true;
     }
 
     private void EnqueueQuestResult(QuestTransactionResult result) => _pendingQuestResults.Add(result);

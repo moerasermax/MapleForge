@@ -126,5 +126,6 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public int getBuddyCapacity() => _cm.GetBuddyCapacity();
         public void updateBuddyCapacity(int capacity) => _cm.UpdateBuddyCapacity(capacity);
         public int getPlayerStat(string type) => _cm.GetPlayerStat(type);
+        public void increaseGuildCapacity() => _cm.IncreaseGuildCapacity();
     }
 }
