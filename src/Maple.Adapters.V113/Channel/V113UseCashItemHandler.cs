@@ -107,9 +107,19 @@ public sealed class V113UseCashItemHandler
                 itemId,
                 channel,
                 static (message, _, _) => V113BroadcastPackets.Megaphone(message)),
-            // 5071000/5072000 皆為 Java World.Broadcast.broadcastSmega（頻道/全服）範圍，非地圖範圍；
-            // 5071000 的封包格式（Java 用 plain getMegaphone，非 getSuperMegaphone）另案追蹤，本次只修範圍。
-            5071000 or 5072000 => HandleMegaphone(
+            // 對照 Java：5071000 讀 message+ear 但建包只呼叫 getMegaphone(message)（ear 是 Java 原始碼
+            // 本身的死變數，忠實重現、不修正），封包格式是 plain Megaphone，非 SuperMegaphone；範圍是
+            // c.getChannelServer().broadcastSmega＝頻道範圍。
+            5071000 => HandleMegaphone(
+                reader,
+                player,
+                slot,
+                itemId,
+                channel,
+                static (message, _, _) => V113BroadcastPackets.Megaphone(message),
+                broadcastChannelWide: true),
+            // 5072000 是 World.Broadcast.broadcastSmega（全服）範圍 + getSuperMegaphone 格式。
+            5072000 => HandleMegaphone(
                 reader,
                 player,
                 slot,

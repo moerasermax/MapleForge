@@ -790,18 +790,36 @@ public sealed class ChannelUseCashItemTests
     }
 
     [Fact]
-    public void SuperMegaphone_WritesChannelAndEar()
+    public void ChannelMegaphone5071000_WritesPlainMegaphoneFormat_ChannelWide()
     {
+        // 對照 Java 5071000 分支：讀 message+ear，但建包只呼叫 getMegaphone(message)——ear 是
+        // Java 原始碼本身的死變數，plain Megaphone 格式沒有 channel/ear 欄位；範圍是
+        // c.getChannelServer().broadcastSmega（頻道範圍，非地圖）。
         var player = CreatePlayerWithCashItem(910000000, 5071000, 1);
         var handler = CreateHandler();
         var body = CashMegaphoneBody(5071000, "hello channel", ear: true);
 
         var result = handler.Handle(new PacketReader(body), player, channel: 5);
 
-        // 對照 Java World.Broadcast.broadcastSmega：SuperMegaphone 是頻道/全服範圍，不是地圖範圍。
+        Assert.Empty(result.MapPackets);
+        var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType: 2);
+        Assert.Equal("CashPlayer : hello channel", reader.ReadMapleString());
+        Assert.Equal(0, reader.Remaining);
+    }
+
+    [Fact]
+    public void SuperMegaphone5072000_WritesChannelAndEar_WorldWide()
+    {
+        // 對照 Java 5072000（高效能喇叭）：World.Broadcast.broadcastSmega（全服）+ getSuperMegaphone 格式。
+        var player = CreatePlayerWithCashItem(910000000, 5072000, 1);
+        var handler = CreateHandler();
+        var body = CashMegaphoneBody(5072000, "hello world", ear: true);
+
+        var result = handler.Handle(new PacketReader(body), player, channel: 5);
+
         Assert.Empty(result.MapPackets);
         var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType: 3);
-        Assert.Equal("CashPlayer : hello channel", reader.ReadMapleString());
+        Assert.Equal("CashPlayer : hello world", reader.ReadMapleString());
         Assert.Equal(4, reader.ReadByte());
         Assert.Equal(1, reader.ReadByte());
     }
