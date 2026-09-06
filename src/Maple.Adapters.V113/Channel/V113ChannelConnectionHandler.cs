@@ -1019,7 +1019,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.UseSummonBag:
                     {
                         if (player is null || currentField is null) break;
-                        var ctx = new V113ItemUseContext { ReturnMapId = player.Character.MapId };
+                        var ctx = new V113ItemUseContext
+                        {
+                            ReturnMapId = player.Character.MapId,
+                            CanUseSummonBag = !FieldLimitType.SummoningBag.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit),
+                        };
                         var result = _itemUseHandler.HandleUseSummonBag(reader, player, ctx);
                         currentField = await HandleItemUseResultAsync(result, player, currentField, npcOidToId, s, sessionToken, token);
                         break;
@@ -1058,7 +1062,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.UseReturnScroll:
                     {
                         if (player is null || currentField is null) break;
-                        var ctx = new V113ItemUseContext { ReturnMapId = player.Character.MapId };
+                        var ctx = new V113ItemUseContext
+                        {
+                            ReturnMapId = player.Character.MapId,
+                            // 對照 Java InventoryHandler.UseReturnScroll：跟一般補藥共用 PotionUse 旗標，非獨立旗標。
+                            CanUseReturnScroll = !FieldLimitType.PotionUse.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit),
+                        };
                         var result = _itemUseHandler.HandleUseReturnScroll(reader, player, ctx);
                         currentField = await HandleItemUseResultAsync(result, player, currentField, npcOidToId, s, sessionToken, token);
                         break;

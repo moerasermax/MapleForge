@@ -56,6 +56,64 @@ public sealed class ChannelItemUseHandlerTests
     }
 
     [Fact]
+    public void HandleUseSummonBag_FieldLimitBlocked_ConsumesItemButSpawnsNothing()
+    {
+        // 對照 Java InventoryHandler：removeFromSlot 在 FieldLimitType.SummoningBag 檢查之前，
+        // 場地限制只擋「召喚」，道具照樣被消耗掉（照抄這個看似不利玩家的 Java 行為，不修正）。
+        var player = NewPlayer();
+        player.Inventory.By(InventoryType.Use).Put(new Item { Slot = 1, ItemId = 2100000, Quantity = 1 });
+        var catalog = new FakeItemUseCatalog();
+        catalog.SummonBags[2100000] = new List<SummonBagMobEntry> { new(100100, 100) };
+        var handler = NewHandler(catalog, randomValues: new[] { 0 });
+
+        var result = handler.HandleUseSummonBag(
+            new V113UseItemRequest(1234, 1, 2100000),
+            player,
+            new V113ItemUseContext { CanUseSummonBag = false });
+
+        Assert.True(result.Applied);
+        Assert.Empty(result.SpawnMonsterIds);
+        Assert.Null(player.Inventory.By(InventoryType.Use).Get(1));
+    }
+
+    [Fact]
+    public void HandleUseSummonBag_GmBypassesFieldLimit()
+    {
+        var player = NewPlayer();
+        player.Inventory.By(InventoryType.Use).Put(new Item { Slot = 1, ItemId = 2100000, Quantity = 1 });
+        var catalog = new FakeItemUseCatalog();
+        catalog.SummonBags[2100000] = new List<SummonBagMobEntry> { new(100100, 100) };
+        var handler = NewHandler(catalog, randomValues: new[] { 0 });
+
+        var result = handler.HandleUseSummonBag(
+            new V113UseItemRequest(1234, 1, 2100000),
+            player,
+            new V113ItemUseContext { CanUseSummonBag = false, IsGm = true });
+
+        Assert.Equal(new[] { 100100 }, result.SpawnMonsterIds);
+    }
+
+    [Fact]
+    public void HandleUseReturnScroll_FieldLimitBlocked_DoesNotConsumeItem()
+    {
+        // 對照 Java InventoryHandler.UseReturnScroll：FieldLimitType.PotionUse 檢查包住整個
+        // apply+consume 區塊，被擋時道具完全不消耗（跟 SummonBag 的行為不同，各自照抄）。
+        var player = NewPlayer(mapId: 100000000);
+        player.Inventory.By(InventoryType.Use).Put(new Item { Slot = 1, ItemId = 2030000, Quantity = 1 });
+        var catalog = new FakeItemUseCatalog();
+        catalog.ReturnScrollDestinations[2030000] = V113ItemUseHandler.ReturnMapSentinel;
+        var handler = NewHandler(catalog);
+
+        var result = handler.HandleUseReturnScroll(
+            new V113UseItemRequest(1234, 1, 2030000),
+            player,
+            new V113ItemUseContext { ReturnMapId = 100000001, CanUseReturnScroll = false });
+
+        Assert.False(result.Applied);
+        Assert.Equal((short)1, player.Inventory.By(InventoryType.Use).Get(1)!.Quantity);
+    }
+
+    [Fact]
     public void HandleUseReturnScroll_ConsumesItemAndReturnsWarpMapIntent()
     {
         var player = NewPlayer(mapId: 100000000);
