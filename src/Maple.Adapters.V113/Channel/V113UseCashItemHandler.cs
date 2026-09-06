@@ -1,8 +1,10 @@
+using Maple.Application.Maps;
 using Maple.Application.Pets;
 using Maple.Application.NpcItemServices;
 using Maple.Application.Social;
 using Maple.Core.Inventory;
 using Maple.Core.IO;
+using Maple.Core.Maps;
 using Maple.Core.Pets;
 using Maple.Core.Shops;
 using Maple.Core.World;
@@ -39,19 +41,31 @@ public sealed class V113UseCashItemHandler
     private readonly OwlService _owlService;
     private readonly PetService _petService;
     private readonly NoteService _noteService;
+    private readonly MapService _mapService;
     private readonly ILogger<V113UseCashItemHandler> _log;
 
     public V113UseCashItemHandler(
         OwlService owlService,
         PetService petService,
         NoteService noteService,
+        MapService mapService,
         ILogger<V113UseCashItemHandler> log)
     {
         _owlService = owlService;
         _petService = petService;
         _noteService = noteService;
+        _mapService = mapService;
         _log = log;
     }
+
+    /// <summary>
+    /// 對照 Java <c>InventoryHandler.UseTeleRock</c>／<c>UseCashItem</c> 任意門分支共用的
+    /// VipRock 場地限制守門：目前地圖或目標地圖任一設了 <see cref="FieldLimitType.VipRock"/>
+    /// 旗標就整段擋下（靜默略過，不送錯誤訊息，對照 Java 該旗標成立時直接跳過 changeMap）。
+    /// </summary>
+    private bool IsVipRockWarpBlocked(Player player, int targetMapId)
+        => FieldLimitType.VipRock.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit) ||
+           FieldLimitType.VipRock.Check(_mapService.LoadMap(targetMapId).FieldLimit);
 
     internal V113UseCashItemResult Handle(PacketReader reader, Player player, int channel = 1)
         => HandleAsync(reader, player, channel, CancellationToken.None).GetAwaiter().GetResult();
@@ -313,8 +327,13 @@ public sealed class V113UseCashItemHandler
             }
 
             var mapId = reader.ReadInt();
-            // TODO: Apply MapleLand, saved-rock, continent, event-instance, and FieldLimitType.VipRock checks
-            // once MapleForge has per-map field-limit data and full rock-map persistence semantics.
+            // TODO: Apply MapleLand, saved-rock, and continent checks once MapleForge has full
+            // rock-map persistence semantics for this flow (見 P041：VipRock 場地限制已接線)。
+            if (IsVipRockWarpBlocked(player, mapId))
+            {
+                return EnableActionsOnly();
+            }
+
             return ConsumeCashItemForWarp(player, slot, itemId, mapId);
         }
 
@@ -357,7 +376,13 @@ public sealed class V113UseCashItemHandler
             return EnableActionsOnly();
         }
 
-        // TODO: Apply MapleLand, event-instance, and FieldLimitType.VipRock checks once map field limits are loaded.
+        // TODO: Apply MapleLand and event-instance checks once those subsystems exist in
+        // MapleForge（見 P041：VipRock 場地限制已接線）。
+        if (IsVipRockWarpBlocked(player, mapId))
+        {
+            return EnableActionsOnly();
+        }
+
         return ConsumeCashItemForWarp(player, slot, itemId, mapId);
     }
 

@@ -1,8 +1,10 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Maps;
 using Maple.Application.NpcItemServices;
 using Maple.Application.Pets;
 using Maple.Application.Social;
 using Maple.Core.Characters;
+using Maple.Core.Data;
 using Maple.Core.Inventory;
 using Maple.Core.IO;
 using Maple.Core.NpcItemServices;
@@ -682,6 +684,50 @@ public sealed class ChannelUseCashItemTests
     }
 
     [Fact]
+    public void TeleportRock_MapMode_TargetMapHasVipRockFieldLimit_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        var maps = new MapService(new FakeMapFieldLimitProvider(new Dictionary<int, long> { [100000000] = 0x40 }));
+        var handler = CreateHandler(maps: maps);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(0)
+            .WriteInt(100000000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Single(result.Packets);
+        Assert.Equal(V113ChannelSendOp.UpdateStats, BitConverter.ToInt16(result.Packets[0], 0));
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void TeleportRock_MapMode_CurrentMapHasVipRockFieldLimit_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        var maps = new MapService(new FakeMapFieldLimitProvider(new Dictionary<int, long> { [910000000] = 0x40 }));
+        var handler = CreateHandler(maps: maps);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5040000)
+            .WriteByte(0)
+            .WriteInt(100000000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
     public void TeleportRock_PlayerMode_IsDeferredAndDoesNotConsume()
     {
         var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
@@ -720,6 +766,27 @@ public sealed class ChannelUseCashItemTests
         var result = handler.Handle(new PacketReader(body), player);
 
         AssertWarpConsumed(result, player, expectedMapId: 200000001);
+    }
+
+    [Fact]
+    public void AnyDoor_MapMode_TargetMapHasVipRockFieldLimit_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5560000, 1);
+        var maps = new MapService(new FakeMapFieldLimitProvider(new Dictionary<int, long> { [200000001] = 0x40 }));
+        var handler = CreateHandler(maps: maps);
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5560000)
+            .WriteByte(0)
+            .WriteInt(200000001)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
     }
 
     [Fact]
@@ -973,11 +1040,13 @@ public sealed class ChannelUseCashItemTests
 
     private static V113UseCashItemHandler CreateHandler(
         PetService? pets = null,
-        TestNoteRepository? notes = null)
+        TestNoteRepository? notes = null,
+        MapService? maps = null)
         => new(
             new OwlService(new EmptyOwlSearchCatalog()),
             pets ?? new PetService(),
             new NoteService(notes ?? new TestNoteRepository()),
+            maps ?? new MapService(new FakeMapFieldLimitProvider()),
             NullLogger<V113UseCashItemHandler>.Instance);
 
     private static V113UseCashItemHandler CreateHandlerWithResults(
@@ -987,7 +1056,61 @@ public sealed class ChannelUseCashItemTests
             new OwlService(new TestOwlSearchCatalog()),
             pets ?? new PetService(),
             new NoteService(notes ?? new TestNoteRepository()),
+            new MapService(new FakeMapFieldLimitProvider()),
             NullLogger<V113UseCashItemHandler>.Instance);
+
+    /// <summary>P041：讓測試可以指定特定 mapId 的 <c>info/fieldLimit</c>，其餘 mapId 一律回傳 0（不受限）。</summary>
+    private sealed class FakeMapFieldLimitProvider : IDataProvider
+    {
+        private readonly Dictionary<int, long> _fieldLimits;
+
+        public FakeMapFieldLimitProvider(Dictionary<int, long>? fieldLimits = null)
+            => _fieldLimits = fieldLimits ?? new Dictionary<int, long>();
+
+        public IDataNode GetRoot(string fileName) => new Node(fileName);
+
+        public IDataNode? GetAt(string fileName, string path)
+        {
+            if (fileName != "Map")
+            {
+                return null;
+            }
+
+            var fileNamePart = path.Split('/')[^1];
+            var mapId = int.Parse(fileNamePart.AsSpan(0, fileNamePart.IndexOf('.')));
+            var infoChildren = new Dictionary<string, IDataNode>();
+            if (_fieldLimits.TryGetValue(mapId, out var fieldLimit))
+            {
+                infoChildren["fieldLimit"] = new Node("fieldLimit", (int)fieldLimit);
+            }
+
+            return new Node(fileNamePart, children: new Dictionary<string, IDataNode>
+            {
+                ["info"] = new Node("info", children: infoChildren),
+                ["portal"] = new Node("portal"),
+                ["foothold"] = new Node("foothold"),
+                ["life"] = new Node("life"),
+            });
+        }
+
+        private sealed class Node : IDataNode
+        {
+            public Node(string name, object? value = null, IReadOnlyDictionary<string, IDataNode>? children = null)
+            {
+                Name = name;
+                Value = value;
+                Children = children ?? new Dictionary<string, IDataNode>();
+            }
+
+            public string Name { get; }
+
+            public IReadOnlyDictionary<string, IDataNode> Children { get; }
+
+            public object? Value { get; }
+
+            public IDataNode? this[string name] => Children.TryGetValue(name, out var child) ? child : null;
+        }
+    }
 
     private static void AssertWarpConsumed(V113UseCashItemResult result, Player player, int expectedMapId)
     {
