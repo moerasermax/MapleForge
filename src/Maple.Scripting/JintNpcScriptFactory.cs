@@ -123,5 +123,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public int getJob() => _cm.GetJob();
         public int getMeso() => _cm.GetMeso();
         public int getMap() => _cm.GetMap();
+        public int getBuddyCapacity() => _cm.GetBuddyCapacity();
+        public void updateBuddyCapacity(int capacity) => _cm.UpdateBuddyCapacity(capacity);
     }
 }

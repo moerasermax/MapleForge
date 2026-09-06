@@ -88,6 +88,19 @@ public sealed class ChannelBuddyPacketTests
     }
 
     [Fact]
+    public void UpdateBuddyCapacity_WritesJavaLayout()
+    {
+        byte[] expected =
+        [
+            0x38, 0x00,
+            0x15,
+            25,
+        ];
+
+        Assert.Equal(expected, V113BuddyPackets.UpdateBuddyCapacity(25));
+    }
+
+    [Fact]
     public void ParseModify_AddAcceptDelete_ReadsClientPayloads()
     {
         var addWriter = new PacketWriter()

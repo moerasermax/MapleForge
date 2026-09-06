@@ -1873,7 +1873,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             openShop: openShop,
             openStorage: openStorage,
             sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
-            sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c));
+            sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
+            sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -1904,7 +1905,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             openShop: openShop,
             openStorage: openStorage,
             sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
-            sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c));
+            sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
+            sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);

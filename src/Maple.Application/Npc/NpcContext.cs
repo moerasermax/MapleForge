@@ -31,6 +31,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     internal int? PendingWarp { get; private set; }
     internal int? PendingShop { get; private set; }
     internal int? PendingStorageNpcId { get; private set; }
+    internal int? PendingBuddyCapacityUpdate { get; private set; }
     internal IReadOnlyList<QuestTransactionResult> PendingQuestResults => _pendingQuestResults;
     internal IReadOnlyList<(int QuestId, string Data)> PendingInfoQuestUpdates => _pendingInfoQuestUpdates;
     internal bool Ended { get; private set; }
@@ -41,6 +42,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingWarp = null;
         PendingShop = null;
         PendingStorageNpcId = null;
+        PendingBuddyCapacityUpdate = null;
         _pendingQuestResults.Clear();
         _pendingInfoQuestUpdates.Clear();
     }
@@ -132,6 +134,14 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public int GetJob() => _player.Character.Job;
     public int GetMeso() => _player.Character.Meso;
     public int GetMap() => _player.Character.MapId;
+
+    public int GetBuddyCapacity() => _player.BuddyList.Capacity;
+
+    public void UpdateBuddyCapacity(int capacity)
+    {
+        _player.BuddyList.Capacity = (byte)capacity;
+        PendingBuddyCapacityUpdate = capacity;
+    }
 
     private void EnqueueQuestResult(QuestTransactionResult result) => _pendingQuestResults.Add(result);
 }

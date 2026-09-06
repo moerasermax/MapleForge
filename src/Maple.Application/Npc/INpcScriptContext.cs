@@ -52,4 +52,10 @@ public interface INpcScriptContext
     int GetJob();
     int GetMeso();
     int GetMap();
+
+    /// <summary>取得好友名單容量（cm.getBuddyCapacity）。</summary>
+    int GetBuddyCapacity();
+
+    /// <summary>擴充好友名單容量並即時通知客戶端（cm.updateBuddyCapacity）。</summary>
+    void UpdateBuddyCapacity(int capacity);
 }

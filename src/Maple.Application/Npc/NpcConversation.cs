@@ -20,6 +20,7 @@ public sealed class NpcConversation
     private readonly Func<int, CancellationToken, Task>? _openStorage;
     private readonly Func<QuestTransactionResult, CancellationToken, Task>? _sendQuestResult;
     private readonly Func<int, string, CancellationToken, Task>? _sendInfoQuestUpdate;
+    private readonly Func<int, CancellationToken, Task>? _sendBuddyCapacity;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -33,7 +34,8 @@ public sealed class NpcConversation
         Func<int, CancellationToken, Task>? openShop = null,
         Func<int, CancellationToken, Task>? openStorage = null,
         Func<QuestTransactionResult, CancellationToken, Task>? sendQuestResult = null,
-        Func<int, string, CancellationToken, Task>? sendInfoQuestUpdate = null)
+        Func<int, string, CancellationToken, Task>? sendInfoQuestUpdate = null,
+        Func<int, CancellationToken, Task>? sendBuddyCapacity = null)
     {
         NpcId = npcId;
         _script = script;
@@ -44,6 +46,7 @@ public sealed class NpcConversation
         _openStorage = openStorage;
         _sendQuestResult = sendQuestResult;
         _sendInfoQuestUpdate = sendInfoQuestUpdate;
+        _sendBuddyCapacity = sendBuddyCapacity;
     }
 
     /// <summary>進入對話（呼叫 start() 並 flush 第一則對話）。</summary>
@@ -92,6 +95,9 @@ public sealed class NpcConversation
 
         if (_ctx.PendingStorageNpcId is { } npcId && _openStorage is not null)
             await _openStorage(npcId, ct);
+
+        if (_ctx.PendingBuddyCapacityUpdate is { } capacity && _sendBuddyCapacity is not null)
+            await _sendBuddyCapacity(capacity, ct);
 
         if (_ctx.Ended)
             Active = false;
