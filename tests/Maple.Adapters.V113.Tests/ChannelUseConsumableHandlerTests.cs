@@ -38,6 +38,28 @@ public sealed class ChannelUseConsumableHandlerTests
     }
 
     [Fact]
+    public void Handle_FieldLimitBlocked_DoesNotConsumeOrApplyEffect()
+    {
+        // 對照 Java InventoryHandler.UseItem：場地限制生效時整個套用+消耗都跳過，道具不消耗。
+        var player = NewPlayer(hp: 25, maxHp: 100, mp: 10, maxMp: 50, UseItem(2000000, 1, 1));
+        var handler = NewHandler();
+        var body = new PacketWriter()
+            .WriteInt(1234)
+            .WriteShort(1)
+            .WriteInt(2000000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player, canUsePotion: false);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Equal((short)25, player.Hp);
+        Assert.Equal((short)1, player.Character.Items.Single(i => i.ItemId == 2000000).Quantity);
+        var packet = Assert.Single(result.Packets);
+        Assert.Equal(V113StatsPackets.EnableActions(), packet);
+    }
+
+    [Fact]
     public void Handle_MissingItem_ReturnsEnableActions()
     {
         var player = NewPlayer(hp: 25, maxHp: 100, mp: 10, maxMp: 50);

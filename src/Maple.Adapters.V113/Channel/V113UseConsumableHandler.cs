@@ -19,7 +19,13 @@ public sealed class V113UseConsumableHandler
         _service = service;
     }
 
-    internal V113UseConsumableResult Handle(PacketReader reader, Player player)
+    /// <summary>
+    /// 對照 Java InventoryHandler.UseItem：<paramref name="canUsePotion"/> 為 false（場地限制
+    /// FieldLimitType.PotionUse 生效且不在硬編外的地圖）時整個套用+消耗都跳過，只回 EnableActions
+    /// （道具不消耗，語意同 <see cref="V113ItemUseHandler.HandleUseReturnScroll"/>，跟一般補藥
+    /// 共用同一個場地限制旗標）。預設 true 維持既有呼叫端（如測試）不需要改動。
+    /// </summary>
+    internal V113UseConsumableResult Handle(PacketReader reader, Player player, bool canUsePotion = true)
     {
         if (reader.Remaining < 10)
         {
@@ -29,6 +35,11 @@ public sealed class V113UseConsumableHandler
         reader.Skip(4);
         var slot = reader.ReadShort();
         var itemId = reader.ReadInt();
+
+        if (!canUsePotion)
+        {
+            return EnableActionsOnly();
+        }
 
         var result = _service.Use(player, slot, itemId);
         if (!result.Success || result.InventoryMutation is null)

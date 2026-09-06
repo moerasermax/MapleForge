@@ -1147,7 +1147,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.UseItem:
                         if (player is null) break;
-                        var useItemResult = _useConsumableHandler.Handle(reader, player);
+                        // 對照 Java InventoryHandler.UseItem：610030600/105100300 是 Java 自己的
+                        // "cwk quick hack" 硬編例外地圖，即使場地限制生效也允許使用。
+                        var canUsePotion =
+                            !FieldLimitType.PotionUse.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit)
+                            || player.Character.MapId is 610030600 or 105100300;
+                        var useItemResult = _useConsumableHandler.Handle(reader, player, canUsePotion);
                         if (useItemResult.Handled)
                         {
                             foreach (var packet in useItemResult.Packets)
