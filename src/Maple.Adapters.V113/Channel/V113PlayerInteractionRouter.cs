@@ -342,6 +342,44 @@ public sealed class V113PlayerInteractionRouter
         return false;
     }
 
+    /// <summary>
+    /// 對照 Java <c>MapleClient</c> 斷線流程 <c>removalTask</c>：<c>shop.removeVisitor(player)</c>
+    /// 對任何身處 shop 中的玩家（含 owner，惟 owner 在 MapleForge 的 Visitors 清單中永遠查無 slot，
+    /// 呼叫為 no-op）在斷線時無條件觸發，不像 <see cref="HandleMerchantExitAsync"/> 只有主動送出
+    /// EXIT(0x0A) 才會走到。owner 在 Java 是否保留 shop 開放（<c>getShopType()==HIRED_MERCHANT
+    /// &amp;&amp; isAvailable()</c> 則 <c>setOpen(true)</c>）與 MapleForge 現行「過期轉 claimable」
+    /// 背景服務設計不同，屬於既有架構差異，本次不動——僅收斂「訪客斷線沒被清出」這一個缺口。
+    /// </summary>
+    public async Task NotifyDisconnectAsync(Player player, CancellationToken ct)
+    {
+        if (!MerchantServicesAvailable || player.ActiveShopId is not { } storeId)
+        {
+            return;
+        }
+
+        var merchant = await _merchants!.FindByStoreIdAsync(storeId, ct).ConfigureAwait(false);
+        if (merchant is null)
+        {
+            player.CloseShop();
+            return;
+        }
+
+        var leave = await _shops!.LeaveMerchantAsync(storeId, player, ct).ConfigureAwait(false);
+        if (leave.Status == PlayerShopServiceStatus.Success && leave.Merchant is not null && leave.Slot > 0)
+        {
+            await SendToMerchantParticipantsAsync(
+                    leave.Merchant,
+                    V113HiredMerchantPackets.ShopVisitorLeave(leave.Slot),
+                    fallbackSelf: null,
+                    ct,
+                    exceptCharacterId: player.Character.Id)
+                .ConfigureAwait(false);
+            _merchantSessions?.Deregister(storeId, player.Character.Id);
+        }
+
+        player.CloseShop();
+    }
+
     private async Task<bool> HandleMerchantExitAsync(
         Player player,
         Func<byte[], CancellationToken, Task>? sendSelf,

@@ -1620,6 +1620,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
                         await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
                         await _messengerHandler.NotifyDisconnectAsync(player, CancellationToken.None);
+                        await _playerInteractionRouter.NotifyDisconnectAsync(player, CancellationToken.None);
                     }
                     catch (Exception ex)
                     {

@@ -203,6 +203,88 @@ public sealed class ChannelPlayerInteractionHiredMerchantTests
         }
     }
 
+    [Fact]
+    public async Task NotifyDisconnectAsync_VisitorDisconnects_RemovesVisitorAndBroadcastsToRemainingParticipants()
+    {
+        var repo = new InMemoryHiredMerchantRepository();
+        var router = Router(repo);
+        var owner = PlayerWithItems(
+            id: 1,
+            accountId: 10,
+            name: "Owner",
+            mapId: 910000001,
+            meso: 0,
+            new ItemRecord { Type = (byte)InventoryType.Cash, ItemId = 5030000, Slot = 1, Quantity = 1 },
+            new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2000000, Slot = 2, Quantity = 10 });
+        var buyer = PlayerWithItems(2, 20, "Buyer", 910000001, meso: 1_000);
+        var visitor = PlayerWithItems(3, 30, "Visitor", 910000001, meso: 1_000);
+        var ownerSelf = new List<byte[]>();
+        var buyerSelf = new List<byte[]>();
+
+        await router.HandleAsync(CreateMerchant("Potions"), owner, Capture(ownerSelf), Noop, 1, _now, CancellationToken.None);
+        await router.HandleAsync(AddItem(InventoryType.Use, 2, 2, 3, 100), owner, Capture(ownerSelf), Noop, 1, _now, CancellationToken.None);
+        await router.HandleAsync(Interaction(0x0B), owner, Capture(ownerSelf), Noop, 1, _now, CancellationToken.None);
+        await router.HandleAsync(Visit(owner.Character.Id), buyer, Capture(buyerSelf), Noop, 1, _now, CancellationToken.None);
+        await router.HandleAsync(Visit(owner.Character.Id), visitor, Noop, Noop, 1, _now, CancellationToken.None);
+
+        var storeId = buyer.ActiveShopId!.Value;
+        var merchant = await repo.FindByStoreIdAsync(storeId);
+        Assert.Contains(merchant!.State.Visitors, v => v.CharacterId == visitor.Character.Id);
+
+        // 對照 Java MapleClient 斷線流程 removalTask 的 shop.removeVisitor(player)：訪客斷線要被清出，
+        // 仍留在 shop 內的 buyer 收到 ShopVisitorLeave 通知，訪客自己（已斷線）不會被送包。owner 開店
+        // 後（HandleOpenMerchantAsync 會 `_merchantSessions.Clear`）已不在 live session 名單內，
+        // 除非重新 Visit 自己的攤位，故不斷言 owner 收包。
+        await router.NotifyDisconnectAsync(visitor, CancellationToken.None);
+
+        merchant = await repo.FindByStoreIdAsync(storeId);
+        Assert.DoesNotContain(merchant!.State.Visitors, v => v.CharacterId == visitor.Character.Id);
+        Assert.Null(visitor.ActiveShopId);
+        Assert.Contains(buyerSelf, p => PacketAction(p) == 0x0A);
+    }
+
+    [Fact]
+    public async Task NotifyDisconnectAsync_OwnerDisconnectsWhileEditingDraft_ClearsActiveShopIdWithoutClosingMerchant()
+    {
+        var repo = new InMemoryHiredMerchantRepository();
+        var router = Router(repo);
+        var owner = PlayerWithItems(
+            id: 1,
+            accountId: 10,
+            name: "Owner",
+            mapId: 910000001,
+            meso: 0,
+            new ItemRecord { Type = (byte)InventoryType.Cash, ItemId = 5030000, Slot = 1, Quantity = 1 });
+        var ownerSelf = new List<byte[]>();
+
+        await router.HandleAsync(CreateMerchant("Potions"), owner, Capture(ownerSelf), Noop, 1, _now, CancellationToken.None);
+
+        var storeId = owner.ActiveShopId!.Value;
+        var beforeCount = ownerSelf.Count;
+
+        // owner 在 MapleForge 的 Visitors 清單中查無 slot（owner 本身不是 visitor），LeaveMerchantAsync
+        // 對 owner 是 no-op，不觸發任何廣播——對照 Java 的 owner 分支邏輯（HIRED_MERCHANT 保持開放，
+        // 而非關閉）；MapleForge 現行「過期轉 claimable」背景服務設計不依賴 owner 是否在線，本次不動。
+        await router.NotifyDisconnectAsync(owner, CancellationToken.None);
+
+        Assert.Null(owner.ActiveShopId);
+        var merchant = await repo.FindByStoreIdAsync(storeId);
+        Assert.Equal(PlayerShopStatus.Draft, merchant!.Status);
+        Assert.Equal(beforeCount, ownerSelf.Count);
+    }
+
+    [Fact]
+    public async Task NotifyDisconnectAsync_PlayerNotInAnyShop_DoesNothing()
+    {
+        var repo = new InMemoryHiredMerchantRepository();
+        var router = Router(repo);
+        var player = PlayerWithItems(1, 10, "Solo", 910000001, meso: 0);
+
+        await router.NotifyDisconnectAsync(player, CancellationToken.None);
+
+        Assert.Null(player.ActiveShopId);
+    }
+
     private static V113PlayerInteractionRouter Router(IHiredMerchantRepository repo)
         => new(
             new TradeService(new InMemoryOnlinePlayerRegistry()),
