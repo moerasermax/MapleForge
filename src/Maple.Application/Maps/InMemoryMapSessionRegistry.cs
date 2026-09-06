@@ -39,4 +39,10 @@ public sealed class InMemoryMapSessionRegistry : IMapSessionRegistry
         if (!_maps.TryGetValue(mapId, out var map)) return Array.Empty<MapPlayerEntry>();
         return map.Values.Where(e => e.CharId != charId).ToList();
     }
+
+    public IReadOnlyList<MapPlayerEntry> GetAll(int mapId)
+    {
+        if (!_maps.TryGetValue(mapId, out var map)) return Array.Empty<MapPlayerEntry>();
+        return map.Values.ToList();
+    }
 }

@@ -20,6 +20,10 @@ public interface IMapSessionRegistry
 
     /// <summary>取得同地圖其他玩家（不包含 charId 自己）。</summary>
     IReadOnlyList<MapPlayerEntry> GetOthers(int mapId, int charId);
+
+    /// <summary>取得該地圖目前所有玩家（不排除任何人）。P063（M4-2 世界 tick）：背景排程器沒有
+    /// 「自己」這個概念，廣播對象是整個地圖，跟既有 <see cref="GetOthers"/> 的排除語意不同。</summary>
+    IReadOnlyList<MapPlayerEntry> GetAll(int mapId);
 }
 
 /// <summary>

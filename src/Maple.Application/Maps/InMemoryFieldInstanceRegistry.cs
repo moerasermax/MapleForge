@@ -23,5 +23,16 @@ public sealed class InMemoryFieldInstanceRegistry : IFieldInstanceRegistry
             return field;
         }
     }
+
+    public IReadOnlyCollection<FieldInstance> All
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _fields.Values.ToArray();
+            }
+        }
+    }
 }
 
