@@ -234,6 +234,42 @@ public sealed class GuildServiceTests
         Assert.Equal(GuildCommandStatus.NotLeader, result.Status);
     }
 
+    [Fact]
+    public async Task CreateGuildAsync_RepositoryAddFails_DoesNotLeaveCharacterLockedInRegistry()
+    {
+        // P036：AddAsync 失敗前不能先登記進 registry，否則角色會被 AlreadyInGuild 卡死、
+        // 再也建不了公會（registry 認為已有公會，但 DB 其實沒有這筆資料）。
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository { ThrowOnNextAdd = true };
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 90), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost * 2, mapId: GuildService.CreationMapId);
+        characters.Put(leader.Character);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateGuildAsync(leader, "Forge", channel: 1));
+
+        // registry 沒有殘留任何登記，重試應該正常成功。
+        var retry = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        Assert.True(retry.Succeeded);
+    }
+
+    [Fact]
+    public async Task DisbandGuildAsync_RepositoryDeleteFails_GuildStillExistsInRegistry()
+    {
+        // P036：DeleteAsync 失敗前不能先從 registry 移除，否則 process 重啟後公會會從 DB「詐屍」
+        // 復活，但成員在這段期間已經以為公會不存在。
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 91), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        characters.Put(leader.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        guilds.ThrowOnNextDelete = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.DisbandGuildAsync(leader));
+
+        Assert.NotNull(await service.GetGuildAsync(created.Guild!.Id));
+    }
+
     private static async Task InviteAndJoinAsync(GuildService service, Player leader, Player target, int guildId)
     {
         var invite = await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(target.Character, channel: 1));
@@ -257,6 +293,10 @@ public sealed class GuildServiceTests
     {
         private readonly Dictionary<int, Guild> _guilds = new();
 
+        /// <summary>P036 容錯測試用：下一次對應操作拋例外，模擬 DB 寫入失敗。</summary>
+        public bool ThrowOnNextAdd { get; set; }
+        public bool ThrowOnNextDelete { get; set; }
+
         public Task<IReadOnlyList<Guild>> GetAllAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<Guild>>(_guilds.Values.ToList());
 
@@ -268,6 +308,12 @@ public sealed class GuildServiceTests
 
         public Task AddAsync(Guild guild, CancellationToken ct = default)
         {
+            if (ThrowOnNextAdd)
+            {
+                ThrowOnNextAdd = false;
+                throw new InvalidOperationException("模擬 DB 寫入失敗");
+            }
+
             _guilds[guild.Id] = guild;
             return Task.CompletedTask;
         }
@@ -280,6 +326,12 @@ public sealed class GuildServiceTests
 
         public Task DeleteAsync(int guildId, CancellationToken ct = default)
         {
+            if (ThrowOnNextDelete)
+            {
+                ThrowOnNextDelete = false;
+                throw new InvalidOperationException("模擬 DB 刪除失敗");
+            }
+
             _guilds.Remove(guildId);
             return Task.CompletedTask;
         }

@@ -185,9 +185,12 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
             leader.AllianceRank = Guild.DefaultAllianceRank;
             guild.TryAddMember(leader);
 
+            // 先寫持久層，成功才登記進記憶體 registry：避免 AddAsync 拋例外時，registry 已經
+            // 認為公會存在（characterId→guildId 映射卡死該角色再也建不了公會）但 DB 其實沒有這筆
+            // 資料的不一致狀態（無 rollback 機制，之前的寫法是先登記記憶體才寫 DB）。
+            await _repository.AddAsync(guild, ct).ConfigureAwait(false);
             _guilds.Add(guild.Id, guild);
             _guildByCharacter.Add(leader.CharacterId, guild.Id);
-            await _repository.AddAsync(guild, ct).ConfigureAwait(false);
 
             return new GuildCommandResult(
                 GuildCommandStatus.Success,
@@ -465,13 +468,16 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
             var snapshot = guild.Snapshot();
             var recipients = OnlineRecipientIds(guild);
 
+            // 先刪持久層，成功才從記憶體 registry 移除：避免 DeleteAsync 拋例外時公會已經從
+            // registry 消失（成員可以另建/加入新公會）但 DB 那筆還在，process 重啟後「詐屍」。
+            await _repository.DeleteAsync(guildId, ct).ConfigureAwait(false);
+
             foreach (var member in guild.Members)
             {
                 _guildByCharacter.Remove(member.CharacterId);
             }
 
             _guilds.Remove(guildId);
-            await _repository.DeleteAsync(guildId, ct).ConfigureAwait(false);
 
             return new GuildCommandResult(
                 GuildCommandStatus.Success,
