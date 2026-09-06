@@ -670,6 +670,16 @@ public sealed class ChannelUseCashItemTests
     public void TeleportRock_MapMode_ReadsMapIdAndConsumes(int itemId)
     {
         var player = CreatePlayerWithCashItem(910000000, itemId, 1);
+        // P043：目標地圖須先在對應的已註冊傳送石清單裡（5041000 走高級清單，其餘走一般清單）。
+        if (itemId == 5041000)
+        {
+            player.AddVipRock(100000000);
+        }
+        else
+        {
+            player.AddRegularRock(100000000);
+        }
+
         var handler = CreateHandler();
         var body = new PacketWriter()
             .WriteShort(1)
@@ -683,10 +693,55 @@ public sealed class ChannelUseCashItemTests
         AssertWarpConsumed(result, player, expectedMapId: 100000000);
     }
 
+    [Theory]
+    [InlineData(5041000)] // 高級順移之石：目標不在玩家的高級傳送石清單裡
+    [InlineData(5040000)] // 一般順移之石：目標不在玩家的一般傳送石清單裡
+    public void TeleportRock_MapMode_TargetMapNotRegistered_ReturnsEnableActionsAndDoesNotConsume(int itemId)
+    {
+        var player = CreatePlayerWithCashItem(910000000, itemId, 1);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(itemId)
+            .WriteByte(0)
+            .WriteInt(100000000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void TeleportRock_MapMode_5041000_RegisteredOnlyInRegularList_ReturnsEnableActionsAndDoesNotConsume()
+    {
+        // 對照 Java：5041000 走高級清單（isRockMap），不接受只登記在一般清單（isRegRockMap）的地圖。
+        var player = CreatePlayerWithCashItem(910000000, 5041000, 1);
+        player.AddRegularRock(100000000);
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5041000)
+            .WriteByte(0)
+            .WriteInt(100000000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
+        Assert.True(result.Handled);
+        Assert.False(result.CharacterMutated);
+        Assert.Null(result.WarpToMapId);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
     [Fact]
     public void TeleportRock_MapMode_TargetMapHasVipRockFieldLimit_ReturnsEnableActionsAndDoesNotConsume()
     {
         var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        player.AddRegularRock(100000000);
         var maps = new MapService(new FakeMapFieldLimitProvider(new Dictionary<int, long> { [100000000] = 0x40 }));
         var handler = CreateHandler(maps: maps);
         var body = new PacketWriter()
@@ -710,6 +765,7 @@ public sealed class ChannelUseCashItemTests
     public void TeleportRock_MapMode_CurrentMapHasVipRockFieldLimit_ReturnsEnableActionsAndDoesNotConsume()
     {
         var player = CreatePlayerWithCashItem(910000000, 5040000, 1);
+        player.AddRegularRock(100000000);
         var maps = new MapService(new FakeMapFieldLimitProvider(new Dictionary<int, long> { [910000000] = 0x40 }));
         var handler = CreateHandler(maps: maps);
         var body = new PacketWriter()
@@ -735,6 +791,7 @@ public sealed class ChannelUseCashItemTests
         int targetMapId)
     {
         var player = CreatePlayerWithCashItem(currentMapId, 5040000, 1);
+        player.AddRegularRock(targetMapId);
         var handler = CreateHandler();
         var body = new PacketWriter()
             .WriteShort(1)

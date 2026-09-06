@@ -99,6 +99,10 @@ public sealed partial class Player : IFieldObject
 
     public bool RemoveVipRock(int mapId) => Character.RemoveVipRock(mapId);
 
+    public bool IsRegularRockMap(int mapId) => Character.IsRegularRockMap(mapId);
+
+    public bool IsVipRockMap(int mapId) => Character.IsVipRockMap(mapId);
+
     public void ChangeKeyBinding(int key, byte type, int action) => Character.ChangeKeyBinding(key, type, action);
 
     public void UpdateSkillMacro(int position, string name, byte shout, int skill1, int skill2, int skill3)

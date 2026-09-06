@@ -330,9 +330,13 @@ public sealed class V113UseCashItemHandler
             }
 
             var mapId = reader.ReadInt();
-            // TODO: Apply saved-rock and continent checks once MapleForge has full rock-map
-            // persistence semantics for this flow（見 P041：VipRock；P042：MapleLand 已接線）。
-            if (IsMapleLand(player.Character.MapId) || IsMapleLand(mapId) || IsVipRockWarpBlocked(player, mapId))
+            // 對照 Java UseTeleRock：5041000（高級順移之石）要求目標地圖在玩家的高級傳送石
+            // 已註冊清單裡，其餘（2320000/5040000/5040001）要求在一般傳送石已註冊清單裡。
+            var isRegisteredRockMap = itemId == 5041000 ? player.IsVipRockMap(mapId) : player.IsRegularRockMap(mapId);
+            // TODO: Apply continent check once MapleForge has full rock-map persistence semantics
+            // for this flow（見 P041：VipRock；P042：MapleLand；P043：已註冊地圖清單已接線）。
+            if (IsMapleLand(player.Character.MapId) || IsMapleLand(mapId) || !isRegisteredRockMap ||
+                IsVipRockWarpBlocked(player, mapId))
             {
                 return EnableActionsOnly();
             }

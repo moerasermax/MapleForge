@@ -274,6 +274,12 @@ public sealed class Character
         return RemoveRockMap(VipRocks, mapId);
     }
 
+    /// <summary>對照 Java <c>MapleCharacter.isRegRockMap</c>：目標地圖是否在一般傳送石已註冊清單裡。</summary>
+    public bool IsRegularRockMap(int mapId) => RegularRocks.Contains(mapId);
+
+    /// <summary>對照 Java <c>MapleCharacter.isRockMap</c>：目標地圖是否在高級傳送石已註冊清單裡。</summary>
+    public bool IsVipRockMap(int mapId) => VipRocks.Contains(mapId);
+
     private static List<int> EmptyRockSlots(int count)
         => Enumerable.Repeat(EmptyRockMapId, count).ToList();
 
