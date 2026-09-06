@@ -205,6 +205,28 @@ public sealed class ChannelMobMovementTests
         Assert.Equal(1, r.Remaining);
     }
 
+    // ── P057：MOB_VAC_X（反作弊 3 件第 3 件簡化子項）────────────────────────────
+
+    [Fact]
+    public void IsMobVacXAnomaly_NonFlyingWithinRange_ReturnsFalse()
+    {
+        // 對照 Java：abs(startX - endX) <= 500 不算異常。
+        Assert.False(V113ChannelConnectionHandler.IsMobVacXAnomaly(fly: false, endX: 500, startX: 0));
+    }
+
+    [Fact]
+    public void IsMobVacXAnomaly_NonFlyingBeyondRange_ReturnsTrue()
+    {
+        Assert.True(V113ChannelConnectionHandler.IsMobVacXAnomaly(fly: false, endX: 501, startX: 0));
+    }
+
+    [Fact]
+    public void IsMobVacXAnomaly_FlyingMonster_AlwaysReturnsFalse()
+    {
+        // 對照 Java：飛行怪物完全豁免這個檢查，不管落差多大。
+        Assert.False(V113ChannelConnectionHandler.IsMobVacXAnomaly(fly: true, endX: 10000, startX: 0));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static Mob SampleMob()

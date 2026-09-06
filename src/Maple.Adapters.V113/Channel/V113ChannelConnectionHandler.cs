@@ -3741,6 +3741,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             mob.MoveTo(new Position(data.StartX, data.StartY, mob.Position.Stance, mob.Position.Foothold));
         }
 
+        // 對照 Java MobHandler.CheckMobVac_x（反作弊 3 件第 3 件的簡化子項）：非飛行怪物單次
+        // 移動的 X 座標落差過大只記錄，不阻擋（Java 用計數器每 10 次才記一次避免洗版，這裡簡化
+        // 成每次觸發都記，偵測邏輯與門檻本身忠實對照，差別僅在記錄頻率，不影響防護效果）。
+        if (IsMobVacXAnomaly(mob.Stats.Fly, mob.Position.X, data.StartX))
+        {
+            _log.LogWarning(
+                "[Channel] MoveLife X 座標異常 charId={CharId} mapId={MapId} monsterId={MonsterId} objectId={ObjectId} startX={StartX} endX={EndX}",
+                player.Character.Id, player.Character.MapId, mob.Definition.MonsterId, data.ObjectId, data.StartX, mob.Position.X);
+        }
+
         // Response 給控制者
         await session.SendAsync(
             V113MobMovementPackets.MoveMonsterResponse(data.ObjectId, data.MoveId, mob.Mp, aggro: false),
@@ -3838,6 +3848,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var dy = a.Y - b.Y;
         return ((long)dx * dx) + ((long)dy * dy);
     }
+
+    /// <summary>對照 Java <c>MobHandler.CheckMobVac_x</c>：非飛行怪物 <c>abs(startX - endX) &gt; 500</c>。</summary>
+    internal static bool IsMobVacXAnomaly(bool fly, int endX, int startX)
+        => !fly && Math.Abs(endX - startX) > 500;
 
     /// <summary>
     /// 一般地圖聊天（對照 Java ChatHandler.GeneralChat 核心）。

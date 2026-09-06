@@ -13,7 +13,8 @@ public sealed record MobStats(
     bool Mobile = false,
     bool Friendly = false,
     byte HpDisplayType = 3,
-    sbyte SelfDestructAnimation = -1);
+    sbyte SelfDestructAnimation = -1,
+    bool Fly = false);
 
 /// <summary>單次怪物傷害套用結果。</summary>
 public sealed record MobDamageResult(
