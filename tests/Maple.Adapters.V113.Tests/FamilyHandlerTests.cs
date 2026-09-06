@@ -186,6 +186,36 @@ public sealed class FamilyHandlerTests
         Assert.Equal(V113FamilyPackets.SendFamilyNotifyLoginOrLogout, reader.ReadShort());
         Assert.Equal(1, reader.ReadByte());
         Assert.Equal("Junior", reader.ReadMapleString());
+
+        // 對照 Java InterServerHandler 登入流程 c.sendPacket(FamilyPacket.getFamilyInfo(player))：
+        // 個人家族資訊要跟著登入無條件送給玩家自己（junior 本人也收到一份）。
+        var infoPacket = Assert.Single(harness.Hook.SentPackets[junior.Character.Id]);
+        var infoReader = new PacketReader(infoPacket);
+        Assert.Equal(V113FamilyPackets.SendFamilyInfoResult, infoReader.ReadShort());
+    }
+
+    [Fact]
+    public async Task NotifyLoginAsync_PlayerWithNoFamily_StillSendsDefaultFamilyInfoToSelf()
+    {
+        // 對照 Java：getFamilyInfo(player) 在 if (getFamilyId() > 0) 區塊之外，對所有玩家無條件
+        // 送出——沒有家族的玩家也要收到一份預設值封包，不是「開家族 UI 才需要」。
+        var harness = NewHarness();
+        var solo = Player(9, "Solo", level: 10);
+
+        await harness.Handler.NotifyLoginAsync(solo, channel: 1, CancellationToken.None);
+
+        var infoPacket = Assert.Single(harness.Hook.SentPackets[solo.Character.Id]);
+        var reader = new PacketReader(infoPacket);
+        Assert.Equal(V113FamilyPackets.SendFamilyInfoResult, reader.ReadShort());
+        Assert.Equal(0, reader.ReadInt());
+        Assert.Equal(0, reader.ReadInt());
+        Assert.Equal(0, reader.ReadInt());
+        Assert.Equal(0, reader.ReadShort());
+        Assert.Equal(2, reader.ReadShort());
+        Assert.Equal(0, reader.ReadShort());
+        Assert.Equal(0L, reader.ReadLongForTest());
+        Assert.Equal(0, reader.ReadInt());
+        Assert.Equal(0, reader.Remaining);
     }
 
     [Fact]

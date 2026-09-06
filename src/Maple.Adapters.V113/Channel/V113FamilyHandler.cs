@@ -38,9 +38,21 @@ public sealed class V113FamilyHandler
     /// 只散落在各家族操作 handler 內，登入完全沒呼叫，其他成員在此之前查族譜看不到剛上線的人）。額外
     /// 對照 Java <c>MapleFamily.setOnline</c> 補上 <c>familyLoggedIn</c> 廣播——這個封包（
     /// <see cref="V113FamilyPackets.FamilyLoggedIn"/>）先前已存在但零呼叫者。
+    /// 同時對照同一段登入流程緊接著的 <c>c.sendPacket(FamilyPacket.getFamilyInfo(player))</c>：
+    /// 這行在 <c>if (getFamilyId() > 0)</c> 區塊**之外**，對所有玩家無條件送出個人家族資訊
+    /// （<see cref="FamilyService.GetFamilyInfo"/> 對沒有家族的玩家已有預設回傳分支）——
+    /// P016 曾把這個封包誤判為「玩家自己開 UI 才需要」而未接線，這裡一併補上。
     /// </summary>
-    public Task NotifyLoginAsync(Player player, int channel, CancellationToken ct) =>
-        DispatchOnlineStatusChangeAsync(_families.SetOnline(player, online: true, channel), ct);
+    public async Task NotifyLoginAsync(Player player, int channel, CancellationToken ct)
+    {
+        await _sessions.SendPacketAsync(
+                player.Character.Id,
+                V113FamilyPackets.FamilyInfo(_families.GetFamilyInfo(player.Character.Id)),
+                ct)
+            .ConfigureAwait(false);
+
+        await DispatchOnlineStatusChangeAsync(_families.SetOnline(player, online: true, channel), ct).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// 對照 Java <c>MapleClient.disconnect()</c> 的 <c>World.Family.setFamilyMemberOnline(chrf, false, -1)</c>：
