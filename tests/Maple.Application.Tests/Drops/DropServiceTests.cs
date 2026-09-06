@@ -48,6 +48,29 @@ public sealed class DropServiceTests
     }
 
     [Fact]
+    public void OnMobKilled_SpawnedDrops_StampSpawnTimeFromTimeProvider()
+    {
+        // P061：對照 Java MapleMap.spawnFromMonster：掉落物出生時間要能查得到，供後續世界 tick
+        // 判斷是否該過期（見 MapDrop.ShouldExpire）。
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var service = MakeDropService(new FakeTimeProvider(now), new MonsterDropEntry(4000000, 999_999, 3, 3));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = MakeMob(level: 1, exp: 7);
+        field.Add(player);
+        field.Add(mob);
+
+        var rewards = service.OnMobKilled(field, player, mob);
+
+        foreach (var drop in rewards.SpawnedDrops)
+        {
+            Assert.Equal(now, drop.SpawnedAt);
+            Assert.False(drop.ShouldExpire(now + MapDrop.ExpireAfter - TimeSpan.FromSeconds(1)));
+            Assert.True(drop.ShouldExpire(now + MapDrop.ExpireAfter));
+        }
+    }
+
+    [Fact]
     public void OnMobKilled_UsesStatsExperienceEntryAndCanLevelUp()
     {
         var service = MakeDropService();
@@ -81,7 +104,8 @@ public sealed class DropServiceTests
             new Position(10, 20, 0, 7),
             100001,
             player.Character.Id,
-            dropType: 0);
+            dropType: 0,
+            spawnedAt: DateTimeOffset.UtcNow);
         field.Add(player);
         field.Add(drop);
 
@@ -109,7 +133,8 @@ public sealed class DropServiceTests
             new Position(10, 20, 0, 7),
             100001,
             player.Character.Id,
-            dropType: 0);
+            dropType: 0,
+            spawnedAt: DateTimeOffset.UtcNow);
         field.Add(player);
         field.Add(drop);
 
@@ -172,7 +197,8 @@ public sealed class DropServiceTests
             new Position(10, 20, 0, 7),
             100001,
             ownerId: 2,
-            dropType: 0);
+            dropType: 0,
+            spawnedAt: DateTimeOffset.UtcNow);
         field.Add(player);
         field.Add(drop);
 
@@ -208,12 +234,24 @@ public sealed class DropServiceTests
     }
 
     private static DropService MakeDropService(params MonsterDropEntry[] entries)
+        => MakeDropService(timeProvider: null, entries);
+
+    private static DropService MakeDropService(TimeProvider? timeProvider, params MonsterDropEntry[] entries)
     {
         var catalog = new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>
         {
             [100100] = entries,
         });
-        return new DropService(catalog);
+        return new DropService(catalog, timeProvider: timeProvider);
+    }
+
+    private sealed class FakeTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _now;
+
+        public FakeTimeProvider(DateTimeOffset now) => _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
     }
 
     private static Player MakePlayer(int id = 1)

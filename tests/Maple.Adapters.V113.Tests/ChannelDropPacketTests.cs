@@ -50,7 +50,8 @@ public sealed class ChannelDropPacketTests
             new Position(10, 20, 0, 7),
             sourceObjectId: 100001,
             ownerId: 1,
-            dropType: 0);
+            dropType: 0,
+            spawnedAt: DateTimeOffset.UtcNow);
 
         var r = new PacketReader(V113DropPackets.DropItemFromMapObject(drop));
 

@@ -7,6 +7,11 @@ public sealed class MapDrop : IFieldObject
 {
     private bool _pickedUp;
 
+    /// <summary>對照 Java <c>MapleMap.spawn*Drop</c>：非 everlast 地圖的掉落物固定 120 秒後過期
+    /// （<c>mdrop.registerExpire(120000)</c>）。MapleForge 目前沒有 everlast 地圖旗標，所有地圖統一
+    /// 套用這個過期時間，Java 的 everlast 特殊地圖例外暫不移植（見 P061 任務歷程）。</summary>
+    public static readonly TimeSpan ExpireAfter = TimeSpan.FromMilliseconds(120_000);
+
     private MapDrop(
         int objectId,
         Position position,
@@ -17,7 +22,8 @@ public sealed class MapDrop : IFieldObject
         bool playerDrop,
         Item? item,
         int meso,
-        short questId)
+        short questId,
+        DateTimeOffset spawnedAt)
     {
         ObjectId = objectId;
         Position = position;
@@ -29,6 +35,7 @@ public sealed class MapDrop : IFieldObject
         Item = item;
         Meso = Math.Max(0, meso);
         QuestId = questId;
+        SpawnedAt = spawnedAt;
     }
 
     public int ObjectId { get; }
@@ -59,6 +66,8 @@ public sealed class MapDrop : IFieldObject
 
     public bool IsPickedUp => _pickedUp;
 
+    public DateTimeOffset SpawnedAt { get; }
+
     public static MapDrop ForItem(
         int objectId,
         Item item,
@@ -67,11 +76,12 @@ public sealed class MapDrop : IFieldObject
         int sourceObjectId,
         int ownerId,
         byte dropType,
+        DateTimeOffset spawnedAt,
         bool playerDrop = false,
         short questId = 0)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return new MapDrop(objectId, position, sourcePosition, sourceObjectId, ownerId, dropType, playerDrop, item, 0, questId);
+        return new MapDrop(objectId, position, sourcePosition, sourceObjectId, ownerId, dropType, playerDrop, item, 0, questId, spawnedAt);
     }
 
     public static MapDrop ForMeso(
@@ -82,6 +92,7 @@ public sealed class MapDrop : IFieldObject
         int sourceObjectId,
         int ownerId,
         byte dropType,
+        DateTimeOffset spawnedAt,
         bool playerDrop = false)
     {
         if (meso <= 0)
@@ -89,7 +100,7 @@ public sealed class MapDrop : IFieldObject
             throw new ArgumentOutOfRangeException(nameof(meso), "Meso drop must be positive.");
         }
 
-        return new MapDrop(objectId, position, sourcePosition, sourceObjectId, ownerId, dropType, playerDrop, null, meso, 0);
+        return new MapDrop(objectId, position, sourcePosition, sourceObjectId, ownerId, dropType, playerDrop, null, meso, 0, spawnedAt);
     }
 
     public bool TryMarkPickedUp()
@@ -102,4 +113,7 @@ public sealed class MapDrop : IFieldObject
         _pickedUp = true;
         return true;
     }
+
+    /// <summary>對照 Java <c>MapleMapItem.shouldExpire</c>：尚未被撿走且已經過了 <see cref="ExpireAfter"/>。</summary>
+    public bool ShouldExpire(DateTimeOffset now) => !_pickedUp && now - SpawnedAt >= ExpireAfter;
 }

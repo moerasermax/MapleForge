@@ -61,11 +61,13 @@ public sealed class DropService : IMobKillHandler
 
     private readonly IMonsterDropCatalog _catalog;
     private readonly DropServiceOptions _options;
+    private readonly TimeProvider _timeProvider;
 
-    public DropService(IMonsterDropCatalog catalog, DropServiceOptions? options = null)
+    public DropService(IMonsterDropCatalog catalog, DropServiceOptions? options = null, TimeProvider? timeProvider = null)
     {
         _catalog = catalog;
         _options = options ?? new DropServiceOptions();
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob)
@@ -167,6 +169,7 @@ public sealed class DropService : IMobKillHandler
             player.ObjectId,
             player.Character.Id,
             dropType: 0,
+            _timeProvider.GetUtcNow(),
             playerDrop: true);
 
         field.Add(drop);
@@ -202,6 +205,7 @@ public sealed class DropService : IMobKillHandler
                 mob.ObjectId,
                 ownerId,
                 dropType,
+                _timeProvider.GetUtcNow(),
                 questId: entry.QuestId);
 
             field.Add(drop);
@@ -220,7 +224,8 @@ public sealed class DropService : IMobKillHandler
                 mob.Position,
                 mob.ObjectId,
                 ownerId,
-                dropType);
+                dropType,
+                _timeProvider.GetUtcNow());
 
             field.Add(drop);
             spawned.Add(drop);
