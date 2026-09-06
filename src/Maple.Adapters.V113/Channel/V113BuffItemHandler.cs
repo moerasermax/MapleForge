@@ -28,7 +28,8 @@ public sealed class V113XmasSurpriseRewardSource : IV113XmasSurpriseRewardSource
 public sealed record V113BuffItemHandleResult(
     bool Handled,
     bool CharacterMutated,
-    IReadOnlyList<byte[]> Packets);
+    IReadOnlyList<byte[]> Packets,
+    bool LeveledUp = false);
 
 public sealed record V113TransformPlayerHandleResult(
     bool Handled,
@@ -125,7 +126,11 @@ public sealed class V113BuffItemHandler
         {
             new PlayerStatUpdate(PlayerStatKind.GachaponExp, 0),
         }));
-        return new V113BuffItemHandleResult(true, true, packets);
+
+        // P060：對照 Java MapleGuild.memberLevelJobUpdate，扭蛋機經驗值升級跟打怪升級一樣要同步
+        // 公會成員快取（見 P059 SendMobKillRewardsAsync 的同款檢查）。
+        var leveledUp = mutation.Updates.Any(static u => u.Kind == PlayerStatKind.Level);
+        return new V113BuffItemHandleResult(true, true, packets, leveledUp);
     }
 
     public V113TransformPlayerHandleResult HandleTransformPlayer(

@@ -2284,6 +2284,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await _charService.UpdateAsync(player.Character, ct);
         }
+
+        // P060：對照 Java MapleGuild.memberLevelJobUpdate，扭蛋機經驗值升級跟打怪升級（P059）一樣要
+        // 同步公會成員快取。
+        if (result.LeveledUp)
+        {
+            await _guildOperationHandler.SyncMemberLevelJobAsync(
+                player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
+        }
     }
 
     private async Task SendHiredMerchantResultAsync(

@@ -74,6 +74,25 @@ public sealed class ChannelBuffItemPacketTests
         Assert.Equal(500, player.Character.Exp);
         Assert.Equal(4, result.Packets.Count);
         Assert.Equal(V113BuffItemPackets.SendShowStatusInfo, BitConverter.ToInt16(result.Packets[2], 0));
+        // P060：沒升級就不用同步公會成員快取。
+        Assert.False(result.LeveledUp);
+    }
+
+    [Fact]
+    public void HandleGachExp_ExperienceCrossesLevelThreshold_ReportsLeveledUp()
+    {
+        // 對照 Java MapleGuild.memberLevelJobUpdate 系列：扭蛋機經驗值升級（P060）也要跟打怪升級
+        // （P059）一樣讓呼叫端知道該同步公會成員快取——這裡只驗證 handler 正確回報 LeveledUp，
+        // 實際公會廣播由中央 dispatcher 的 HandleBuffItemResultAsync 負責（見 P059/P060 任務歷程）。
+        var player = MakePlayer("Gach", level: 20);
+        player.Character.GachExp = 50_000_000;
+        var handler = NewHandler(statsService: new StatsService(TimeProvider.System, static (_, _) => 1));
+
+        var result = handler.HandleGachExp(new PacketReader(new PacketWriter().WriteInt(123).ToArray()), player);
+
+        Assert.True(result.Handled);
+        Assert.True(player.Character.Level > 20);
+        Assert.True(result.LeveledUp);
     }
 
     [Fact]
