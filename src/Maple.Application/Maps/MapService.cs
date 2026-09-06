@@ -33,6 +33,7 @@ public sealed class MapService
         var info = mapImg["info"];
         var returnMapId = GetInt(info, "returnMap", mapId);
         var town = GetInt(info, "town", 0) != 0;
+        var fieldLimit = GetLong(info, "fieldLimit", 0);
 
         var portals = LoadPortals(mapImg["portal"]);
         var footholds = LoadFootholds(mapImg["foothold"]);
@@ -44,6 +45,7 @@ public sealed class MapService
             MapId = mapId,
             ReturnMapId = returnMapId,
             Town = town,
+            FieldLimit = fieldLimit,
             Portals = portals,
             Footholds = footholds,
             Npcs = npcs,

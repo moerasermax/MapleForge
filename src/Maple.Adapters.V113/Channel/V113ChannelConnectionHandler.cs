@@ -27,6 +27,7 @@ using Maple.Core.Characters;
 using Maple.Core.Guilds;
 using Maple.Core.Guilds.Bbs;
 using Maple.Core.IO;
+using Maple.Core.Maps;
 using Maple.Core.Quests;
 using Maple.Core.Skills;
 using Maple.Core.World;
@@ -2522,6 +2523,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         var mapId = player.Character.MapId;
+        // 對照 Java PlayerHandler.TrockAddMap：新增（VIP 與一般）都要先過 FieldLimitType.VipRock
+        // 檢查，該圖設了這個旗標就整段跳過（連錯誤訊息都不送，靜默略過）；刪除不受此限制。
+        var canAddRock = !FieldLimitType.VipRock.Check(_mapService.LoadMap(mapId).FieldLimit);
         var changed = false;
         if (request.IsVip)
         {
@@ -2529,7 +2533,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 changed = player.RemoveVipRock(request.MapId);
             }
-            else if (request.IsAdd && mapId != 180000000)
+            else if (request.IsAdd && canAddRock && mapId != 180000000)
             {
                 changed = player.AddVipRock(mapId);
             }
@@ -2538,7 +2542,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             changed = player.RemoveRegularRock(request.MapId);
         }
-        else if (request.IsAdd && mapId <= 197010000 && mapId != 180000000)
+        else if (request.IsAdd && canAddRock && mapId <= 197010000 && mapId != 180000000)
         {
             changed = player.AddRegularRock(mapId);
         }

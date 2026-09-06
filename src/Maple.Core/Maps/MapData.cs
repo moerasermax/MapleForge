@@ -11,6 +11,10 @@ public sealed class MapData
     public int ReturnMapId { get; init; }
     public bool Town { get; init; }
 
+    /// <summary>對照 Java <c>MapleMap.fieldLimit</c>（WZ <c>info/fieldLimit</c>）：位元旗標限制此圖能否用
+    /// 跳躍/移動技能/召喚袋/秘密門/傳送石等，見 <see cref="FieldLimitType"/>。預設 0（無限制）。</summary>
+    public long FieldLimit { get; init; }
+
     public IReadOnlyList<MapPortal> Portals { get; init; } = Array.Empty<MapPortal>();
     public IReadOnlyList<MapFoothold> Footholds { get; init; } = Array.Empty<MapFoothold>();
 
