@@ -1,3 +1,4 @@
+using Maple.Application.Guilds;
 using Maple.Core.Alliances;
 
 namespace Maple.Application.Alliances;
@@ -53,19 +54,29 @@ public sealed class AllianceService
     public const int MaximumNoticeLength = 100;
 
     private readonly IAllianceRepository _repository;
+    private readonly IGuildRegistry _guilds;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<int, Alliance> _alliances = new();
     private readonly Dictionary<int, int> _allianceByGuild = new();
     private readonly Dictionary<int, AllianceInvitation> _invitesByGuild = new();
     private int _nextAllianceId;
 
-    public AllianceService(IAllianceRepository repository, int firstAllianceId = 1)
+    public AllianceService(IAllianceRepository repository, IGuildRegistry guilds, int firstAllianceId = 1)
     {
         if (firstAllianceId <= 0) throw new ArgumentOutOfRangeException(nameof(firstAllianceId));
 
         _repository = repository;
+        _guilds = guilds;
         _nextAllianceId = firstAllianceId;
     }
+
+    /// <summary>
+    /// 對照本身的 <c>_allianceByGuild</c> 權威狀態，把公會的同盟歸屬同步寫回
+    /// <see cref="IGuildRegistry"/>（見任務歷程 2026-09-06_10/_11：<c>GuildState.AllianceId</c>
+    /// 過去從未真正持久化，只在少數封包建構情境被臨時投影）。
+    /// </summary>
+    private Task SyncGuildAllianceIdAsync(int guildId, int allianceId, CancellationToken ct) =>
+        _guilds.SetAllianceIdAsync(guildId, allianceId, ct);
 
     public async Task<AllianceState?> GetAllianceInfoAsync(int allianceId, CancellationToken ct = default)
     {
@@ -141,6 +152,8 @@ public sealed class AllianceService
 
             await _repository.SaveAsync(alliance, ct).ConfigureAwait(false);
             TrackAllianceLocked(alliance);
+            await SyncGuildAllianceIdAsync(leaderGuildId, alliance.Id, ct).ConfigureAwait(false);
+            await SyncGuildAllianceIdAsync(partnerGuildId, alliance.Id, ct).ConfigureAwait(false);
             var state = alliance.Snapshot();
             return new AllianceCommandResult(
                 AllianceCommandStatus.Success,
@@ -291,6 +304,11 @@ public sealed class AllianceService
             {
                 await _repository.DeleteAsync(alliance.Id, ct).ConfigureAwait(false);
                 UntrackAllianceLocked(alliance.Id);
+                foreach (var affectedGuildId in affectedGuilds)
+                {
+                    await SyncGuildAllianceIdAsync(affectedGuildId, allianceId: 0, ct).ConfigureAwait(false);
+                }
+
                 return new AllianceCommandResult(
                     AllianceCommandStatus.Success,
                     null,
@@ -301,6 +319,7 @@ public sealed class AllianceService
 
             await _repository.SaveAsync(alliance, ct).ConfigureAwait(false);
             TrackAllianceLocked(alliance);
+            await SyncGuildAllianceIdAsync(guildId, allianceId: 0, ct).ConfigureAwait(false);
             return new AllianceCommandResult(
                 AllianceCommandStatus.Success,
                 alliance.Snapshot(),
@@ -482,6 +501,7 @@ public sealed class AllianceService
 
         await _repository.SaveAsync(alliance, ct).ConfigureAwait(false);
         TrackAllianceLocked(alliance);
+        await SyncGuildAllianceIdAsync(guildId, alliance.Id, ct).ConfigureAwait(false);
         return new AllianceCommandResult(
             AllianceCommandStatus.Success,
             alliance.Snapshot(),

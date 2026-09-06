@@ -1,5 +1,6 @@
 using Maple.Adapters.V113.Channel;
 using Maple.Application.Alliances;
+using Maple.Application.Guilds;
 using Maple.Core.Alliances;
 using Maple.Core.Characters;
 using Maple.Core.Guilds;
@@ -130,7 +131,7 @@ public sealed class AllianceHandlerTests
         Assert.Equal(AllianceCommandStatus.InvalidInvite, acceptAfterDeny.Status);
     }
 
-    private static AllianceService NewService() => new(new FakeAllianceRepository());
+    private static AllianceService NewService() => new(new FakeAllianceRepository(), new NoOpGuildRegistry());
 
     private static byte PacketCode(byte[] packet)
     {
@@ -205,6 +206,31 @@ public sealed class AllianceHandlerTests
             _alliances.Remove(allianceId);
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// 這批測試不接真實 <see cref="IGuildRegistry"/>（用 <c>GuildStateOf</c> 手刻 fixture），
+    /// 只需要滿足 <see cref="AllianceService"/> 唯一會呼叫的 <see cref="IGuildRegistry.SetAllianceIdAsync"/>；
+    /// 其餘成員若被呼叫代表這批測試的假設已過期，故意丟例外提早暴露。
+    /// </summary>
+    private sealed class NoOpGuildRegistry : IGuildRegistry
+    {
+        public Task<bool> SetAllianceIdAsync(int guildId, int allianceId, CancellationToken ct = default) =>
+            Task.FromResult(true);
+
+        public Task<GuildState?> GetGuildAsync(int guildId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildState?> GetGuildForCharacterAsync(int characterId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> CreateGuildAsync(GuildMember leader, string name, int signature, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> AddMemberAsync(int guildId, GuildMember member, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> LeaveGuildAsync(int characterId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> ExpelMemberAsync(int initiatorId, int targetId, string targetName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> ChangeRankAsync(int initiatorId, int targetId, byte newRank, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> ChangeRankTitlesAsync(int initiatorId, IReadOnlyList<string> titles, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> ChangeEmblemAsync(int initiatorId, GuildEmblem emblem, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> ChangeNoticeAsync(int initiatorId, string notice, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildCommandResult> SetMemberOnlineAsync(GuildMember member, bool online, int channel, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<GuildInviteResult> InviteMemberAsync(int inviterId, GuildMember invitee, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> ConsumeInviteAsync(int guildId, string characterName, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeAllianceSessionHook : IV113AllianceSessionHook

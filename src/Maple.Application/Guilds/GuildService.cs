@@ -85,6 +85,13 @@ public interface IGuildRegistry
     Task<GuildInviteResult> InviteMemberAsync(int inviterId, GuildMember invitee, CancellationToken ct = default);
 
     Task<bool> ConsumeInviteAsync(int guildId, string characterName, CancellationToken ct = default);
+
+    /// <summary>
+    /// 內部資料一致性維護用：把公會的同盟歸屬寫回（<c>Maple.Application.Alliances.AllianceService</c>
+    /// 是唯一呼叫端）。找不到公會回 false；這不是玩家可見指令，不走 <see cref="GuildCommandResult"/>/
+    /// recipients 廣播。
+    /// </summary>
+    Task<bool> SetAllianceIdAsync(int guildId, int allianceId, CancellationToken ct = default);
 }
 
 public sealed class InMemoryGuildRegistry : IGuildRegistry
@@ -462,6 +469,27 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
                 initiator.Clone(),
                 GuildUpdateKind.NoticeChanged,
                 OnlineRecipientIds(guild));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<bool> SetAllianceIdAsync(int guildId, int allianceId, CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!_guilds.TryGetValue(guildId, out var guild))
+            {
+                return false;
+            }
+
+            guild.AllianceId = allianceId;
+            await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            return true;
         }
         finally
         {

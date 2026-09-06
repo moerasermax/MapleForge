@@ -186,7 +186,7 @@ public sealed class ChannelMultiChatPacketTests
         var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry();
         var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 60);
-        var chatService = new ChatService(online, partyRegistry, guildRegistry, new AllianceService(new InMemoryAllianceRepository()));
+        var chatService = new ChatService(online, partyRegistry, guildRegistry, new AllianceService(new InMemoryAllianceRepository(), guildRegistry));
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
         var sender = Player(1, "Alice");
         var target = Player(2, "Bob");
@@ -222,7 +222,7 @@ public sealed class ChannelMultiChatPacketTests
         var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry();
         var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 70);
-        var alliances = new AllianceService(new InMemoryAllianceRepository());
+        var alliances = new AllianceService(new InMemoryAllianceRepository(), guildRegistry);
         var chatService = new ChatService(online, partyRegistry, guildRegistry, alliances);
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
         var sender = Player(1, "Alice");
@@ -273,7 +273,7 @@ public sealed class ChannelMultiChatPacketTests
         var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry();
         var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 80);
-        var chatService = new ChatService(online, partyRegistry, guildRegistry, new AllianceService(new InMemoryAllianceRepository()));
+        var chatService = new ChatService(online, partyRegistry, guildRegistry, new AllianceService(new InMemoryAllianceRepository(), guildRegistry));
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
         var sender = Player(1, "Alice");
         var bystanderPackets = new List<byte[]>();
@@ -293,7 +293,8 @@ public sealed class ChannelMultiChatPacketTests
     {
         var online = new InMemoryOnlinePlayerRegistry();
         var partyRegistry = new InMemoryPartyRegistry(firstPartyId);
-        var chatService = new ChatService(online, partyRegistry, new InMemoryGuildRegistry(new FakeGuildRepository()), new AllianceService(new InMemoryAllianceRepository()));
+        var guildRegistry = new InMemoryGuildRegistry(new FakeGuildRepository());
+        var chatService = new ChatService(online, partyRegistry, guildRegistry, new AllianceService(new InMemoryAllianceRepository(), guildRegistry));
         var handler = new V113ChatHandler(chatService, new CentralChatSessionHook(online));
         return (handler, new PartyService(partyRegistry), online);
     }
