@@ -616,7 +616,7 @@ public sealed class FamilyService : IFamilyRegistry
 
         lock (_sync)
         {
-            TrackFamilyLocked(family);
+            RegisterLocked(family);
         }
     }
 
@@ -626,20 +626,7 @@ public sealed class FamilyService : IFamilyRegistry
 
         lock (_sync)
         {
-            _onlinePlayers[player.Character.Id] = new OnlineFamilyPlayer(player, channel);
-            var family = GetFamilyForCharacterLocked(player.Character.Id);
-            var member = family?.GetMember(player.Character.Id);
-            if (family is not null && member is not null)
-            {
-                member.Name = player.Character.Name;
-                member.Level = player.Character.Level;
-                member.Job = player.Character.Job;
-                member.CurrentRep = player.Character.CurrentRep;
-                member.TotalRep = player.Character.TotalRep;
-                member.SeniorId = player.Character.SeniorId;
-                member.Junior1 = player.Character.Junior1;
-                member.Junior2 = player.Character.Junior2;
-            }
+            RegisterLocked(player, channel);
         }
     }
 
@@ -647,9 +634,34 @@ public sealed class FamilyService : IFamilyRegistry
     {
         lock (_sync)
         {
-            _onlinePlayers.Remove(characterId);
+            UnregisterLocked(characterId);
         }
     }
+
+    // P051：抽出不重新取鎖的 *Locked 版本，讓 SetOnline 能在自己已持有的鎖保護範圍內直接呼叫，
+    // 不必再呼叫公開的 Register/Unregister（重新取鎖）。C# lock/Monitor 目前可重入所以現狀不會出事，
+    // 但這是把 _sync 換成不可重入的 SemaphoreSlim 前必須先做的準備（見任務歷程 2026-09-06_46）。
+    private void RegisterLocked(Family family) => TrackFamilyLocked(family);
+
+    private void RegisterLocked(Player player, int channel)
+    {
+        _onlinePlayers[player.Character.Id] = new OnlineFamilyPlayer(player, channel);
+        var family = GetFamilyForCharacterLocked(player.Character.Id);
+        var member = family?.GetMember(player.Character.Id);
+        if (family is not null && member is not null)
+        {
+            member.Name = player.Character.Name;
+            member.Level = player.Character.Level;
+            member.Job = player.Character.Job;
+            member.CurrentRep = player.Character.CurrentRep;
+            member.TotalRep = player.Character.TotalRep;
+            member.SeniorId = player.Character.SeniorId;
+            member.Junior1 = player.Character.Junior1;
+            member.Junior2 = player.Character.Junior2;
+        }
+    }
+
+    private void UnregisterLocked(int characterId) => _onlinePlayers.Remove(characterId);
 
     /// <summary>
     /// 對照 Java <c>MapleFamily.setOnline</c>：登入/登出時同步線上狀態，狀態實際翻轉（上線↔離線）
@@ -666,11 +678,11 @@ public sealed class FamilyService : IFamilyRegistry
             var wasOnline = _onlinePlayers.ContainsKey(player.Character.Id);
             if (online)
             {
-                Register(player, channel);
+                RegisterLocked(player, channel);
             }
             else
             {
-                Unregister(player.Character.Id);
+                UnregisterLocked(player.Character.Id);
             }
 
             var family = GetFamilyForCharacterLocked(player.Character.Id);
