@@ -209,6 +209,70 @@ public sealed class DropServiceTests
         Assert.Empty(player.Inventory.By(InventoryType.Etc).Items);
     }
 
+    // ── ExpireDrops（P062，M4-2 世界 tick 第二步）───────────────────────────────
+
+    [Fact]
+    public void ExpireDrops_RemovesOnlyDropsPastThreshold()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var now = new DateTimeOffset(2026, 1, 1, 0, 5, 0, TimeSpan.Zero);
+        // 剛好在門檻之前出生 → 已過期；門檻前 10 秒才出生 → 還沒過期。
+        var expiredDrop = NewItemDrop(1_000_000, now - MapDrop.ExpireAfter);
+        var freshDrop = NewItemDrop(1_000_001, now - MapDrop.ExpireAfter + TimeSpan.FromSeconds(10));
+        field.Add(expiredDrop);
+        field.Add(freshDrop);
+
+        var expired = service.ExpireDrops(field, now);
+
+        var removed = Assert.Single(expired);
+        Assert.Same(expiredDrop, removed);
+        Assert.True(expiredDrop.IsPickedUp);
+        Assert.Null(field.Get(expiredDrop.ObjectId));
+        Assert.Same(freshDrop, field.Get(freshDrop.ObjectId));
+    }
+
+    [Fact]
+    public void ExpireDrops_AlreadyPickedUpDrop_IsIgnored()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var spawnedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var drop = NewItemDrop(1_000_000, spawnedAt);
+        drop.TryMarkPickedUp();
+        field.Add(drop);
+
+        var expired = service.ExpireDrops(field, spawnedAt + MapDrop.ExpireAfter + TimeSpan.FromMinutes(1));
+
+        Assert.Empty(expired);
+        Assert.Same(drop, field.Get(drop.ObjectId));
+    }
+
+    [Fact]
+    public void ExpireDrops_NoExpiredDrops_ReturnsEmptyAndLeavesFieldUnchanged()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var spawnedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var drop = NewItemDrop(1_000_000, spawnedAt);
+        field.Add(drop);
+
+        var expired = service.ExpireDrops(field, spawnedAt + MapDrop.ExpireAfter - TimeSpan.FromSeconds(1));
+
+        Assert.Empty(expired);
+        Assert.Same(drop, field.Get(drop.ObjectId));
+    }
+
+    private static MapDrop NewItemDrop(int objectId, DateTimeOffset spawnedAt) => MapDrop.ForItem(
+        objectId,
+        new Item { ItemId = 4000000, Quantity = 1 },
+        new Position(10, 20, 0, 7),
+        new Position(10, 20, 0, 7),
+        sourceObjectId: 100001,
+        ownerId: 1,
+        dropType: 0,
+        spawnedAt: spawnedAt);
+
     [Fact]
     public void CombatService_KillHook_AttachesRewardsBeforeRemovingMob()
     {

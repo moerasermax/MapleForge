@@ -140,6 +140,37 @@ public sealed class DropService : IMobKillHandler
         return new DropPickupResult(DropPickupStatus.Success, drop, gained, InventoryType: type);
     }
 
+    /// <summary>
+    /// P062（M4-2 世界 tick 第二步）：對照 Java <c>MapleMapItem.expire</c>——找出這個 field 裡已經超過
+    /// <see cref="MapDrop.ExpireAfter"/> 還沒被撿走的掉落物，標記成已撿走並從場上移除，回傳被移除的
+    /// 清單供呼叫端廣播 <c>REMOVE_ITEM_FROM_MAP</c>（animation=0/Expire）。刻意不移植 Java 的
+    /// <c>randDrop</c>（過期後自動補生一個隨機獎勵箱）分支——那是掉落表系統的獨立旗標，MapleForge
+    /// 目前沒有對應資料，留給後續評估。這個方法本身還不會被任何排程器呼叫（P063+ 才接上）。
+    /// </summary>
+    public IReadOnlyList<MapDrop> ExpireDrops(FieldInstance field, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        var expired = new List<MapDrop>();
+        foreach (var drop in field.Objects.OfType<MapDrop>().ToArray())
+        {
+            if (!drop.ShouldExpire(now))
+            {
+                continue;
+            }
+
+            if (!drop.TryMarkPickedUp())
+            {
+                continue;
+            }
+
+            field.Remove(drop.ObjectId);
+            expired.Add(drop);
+        }
+
+        return expired;
+    }
+
     public MesoDropResult TryDropMeso(FieldInstance field, Player player, int meso)
     {
         ArgumentNullException.ThrowIfNull(field);
