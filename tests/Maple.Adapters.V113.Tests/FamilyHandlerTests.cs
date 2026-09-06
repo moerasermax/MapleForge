@@ -134,7 +134,7 @@ public sealed class FamilyHandlerTests
     }
 
     [Fact]
-    public async Task NotifyLogin_MarksMemberOnlineInOtherMembersPedigreeView()
+    public async Task NotifyLoginAsync_MarksMemberOnlineAndBroadcastsFamilyLoggedInToPedigree()
     {
         var harness = NewHarness();
         var senior = Player(1, "Senior", level: 30);
@@ -143,37 +143,70 @@ public sealed class FamilyHandlerTests
         // JoinAsync 已透過 HandleFamilyOperationAsync/HandleAcceptFamilyAsync 呼叫過 _families.Register，
         // 這裡先 Unregister 模擬「junior 剛登入前，帳號從未觸發過任何家族 opcode」的真實情境。
         harness.Service.Unregister(junior.Character.Id);
+        harness.Hook.ClearSent();
 
         var beforeLogin = harness.Service.GetFamilyPedigree(senior.Character.Id);
         Assert.Contains(beforeLogin.Members, m => m.CharacterId == junior.Character.Id && !m.IsOnline);
 
-        // 對照 Java InterServerHandler 登入流程 World.Family.setFamilyMemberOnline(chrf, true, channel)：
-        // 登入當下就要同步線上狀態，不能等玩家自己觸發家族 opcode。
-        harness.Handler.NotifyLogin(junior, channel: 3);
+        // 對照 Java InterServerHandler 登入流程 World.Family.setFamilyMemberOnline(chrf, true, channel)
+        // ＋ MapleFamily.setOnline 的 familyLoggedIn 廣播：登入當下就要同步線上狀態並通知族譜可視範圍
+        // 內的其他在線成員（junior 不是 leader，故只通知自己的族譜範圍，這裡即 senior）。
+        await harness.Handler.NotifyLoginAsync(junior, channel: 3, CancellationToken.None);
 
         var afterLogin = harness.Service.GetFamilyPedigree(senior.Character.Id);
         var juniorEntry = Assert.Single(afterLogin.Members, m => m.CharacterId == junior.Character.Id);
         Assert.True(juniorEntry.IsOnline);
         Assert.Equal(3, juniorEntry.Channel);
+
+        var notice = Assert.Single(harness.Hook.SentPackets[senior.Character.Id]);
+        var reader = new PacketReader(notice);
+        Assert.Equal(V113FamilyPackets.SendFamilyNotifyLoginOrLogout, reader.ReadShort());
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal("Junior", reader.ReadMapleString());
     }
 
     [Fact]
-    public async Task NotifyDisconnect_ClearsOnlineStatusInOtherMembersPedigreeView()
+    public async Task NotifyDisconnectAsync_ClearsOnlineStatusAndBroadcastsFamilyLoggedOutToPedigree()
     {
         var harness = NewHarness();
         var senior = Player(1, "Senior", level: 30);
         var junior = Player(2, "Junior", level: 20);
         await JoinAsync(harness, senior, junior);
-        harness.Handler.NotifyLogin(junior, channel: 3);
+        await harness.Handler.NotifyLoginAsync(junior, channel: 3, CancellationToken.None);
+        harness.Hook.ClearSent();
 
-        // 對照 Java MapleClient.disconnect() 的 World.Family.setFamilyMemberOnline(chrf, false, -1)：
-        // 斷線要清除線上狀態，否則其他成員的族譜視圖會永遠顯示線上。
-        harness.Handler.NotifyDisconnect(junior);
+        // 對照 Java MapleClient.disconnect() 的 World.Family.setFamilyMemberOnline(chrf, false, -1)
+        // ＋ MapleFamily.setOnline 的 familyLoggedIn 廣播：斷線要清除線上狀態並通知族譜範圍內的
+        // 其他在線成員，否則其他成員的族譜視圖會永遠顯示線上。
+        await harness.Handler.NotifyDisconnectAsync(junior, CancellationToken.None);
 
         var afterDisconnect = harness.Service.GetFamilyPedigree(senior.Character.Id);
         var juniorEntry = Assert.Single(afterDisconnect.Members, m => m.CharacterId == junior.Character.Id);
         Assert.False(juniorEntry.IsOnline);
         Assert.Equal(-1, juniorEntry.Channel);
+
+        var notice = Assert.Single(harness.Hook.SentPackets[senior.Character.Id]);
+        var reader = new PacketReader(notice);
+        Assert.Equal(V113FamilyPackets.SendFamilyNotifyLoginOrLogout, reader.ReadShort());
+        Assert.Equal(0, reader.ReadByte());
+        Assert.Equal("Junior", reader.ReadMapleString());
+    }
+
+    [Fact]
+    public async Task NotifyLoginAsync_MemberAlreadyOnline_DoesNotBroadcastAgain()
+    {
+        var harness = NewHarness();
+        var senior = Player(1, "Senior", level: 30);
+        var junior = Player(2, "Junior", level: 20);
+        await JoinAsync(harness, senior, junior);
+        harness.Hook.ClearSent();
+
+        // JoinAsync 內部流程已經呼叫過 _families.Register(junior)（等同已在線），此時再收到一次
+        // 登入通知（例如換頻道流程）不應該重複廣播——對照 Java `if (mgc.isOnline() != online)` 只有
+        // 狀態真的翻轉才廣播的守門判斷。
+        await harness.Handler.NotifyLoginAsync(junior, channel: 5, CancellationToken.None);
+
+        Assert.False(harness.Hook.SentPackets.ContainsKey(senior.Character.Id));
     }
 
     private static async Task JoinAsync(Harness harness, Player senior, Player junior)

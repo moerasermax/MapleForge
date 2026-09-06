@@ -35,16 +35,34 @@ public sealed class V113FamilyHandler
     /// <summary>
     /// 對照 Java <c>InterServerHandler</c> 登入流程 <c>World.Family.setFamilyMemberOnline(chrf, true, channel)</c>：
     /// 家族線上狀態要在登入當下同步，不能等到玩家自己觸發某個家族 opcode（既有 <c>_families.Register</c>
-    /// 只散落在各家族操作 handler 內，登入完全沒呼叫，其他成員在此之前查族譜看不到剛上線的人）。
+    /// 只散落在各家族操作 handler 內，登入完全沒呼叫，其他成員在此之前查族譜看不到剛上線的人）。額外
+    /// 對照 Java <c>MapleFamily.setOnline</c> 補上 <c>familyLoggedIn</c> 廣播——這個封包（
+    /// <see cref="V113FamilyPackets.FamilyLoggedIn"/>）先前已存在但零呼叫者。
     /// </summary>
-    public void NotifyLogin(Player player, int channel) => _families.Register(player, channel);
+    public Task NotifyLoginAsync(Player player, int channel, CancellationToken ct) =>
+        DispatchOnlineStatusChangeAsync(_families.SetOnline(player, online: true, channel), ct);
 
     /// <summary>
     /// 對照 Java <c>MapleClient.disconnect()</c> 的 <c>World.Family.setFamilyMemberOnline(chrf, false, -1)</c>：
     /// 斷線要清除線上狀態，否則玩家登出後在其他成員的族譜視圖裡會永遠顯示線上（<c>_families.Unregister</c>
     /// 過去在整個專案零呼叫者）。
     /// </summary>
-    public void NotifyDisconnect(Player player) => _families.Unregister(player.Character.Id);
+    public Task NotifyDisconnectAsync(Player player, CancellationToken ct) =>
+        DispatchOnlineStatusChangeAsync(_families.SetOnline(player, online: false, channel: -1), ct);
+
+    private async Task DispatchOnlineStatusChangeAsync(FamilyOnlineStatusChange change, CancellationToken ct)
+    {
+        if (!change.Changed)
+        {
+            return;
+        }
+
+        var packet = V113FamilyPackets.FamilyLoggedIn(change.Online, change.MemberName);
+        foreach (var recipientId in change.NotifyRecipientIds)
+        {
+            await _sessions.SendPacketAsync(recipientId, packet, ct).ConfigureAwait(false);
+        }
+    }
 
     public async Task<V113FamilyHandleResult> HandleRequestFamilyAsync(PacketReader reader, Player player, CancellationToken ct)
     {

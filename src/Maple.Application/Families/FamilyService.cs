@@ -42,6 +42,11 @@ public enum FamilyUpdateKind
     SummonDenied,
 }
 
+public sealed record FamilyOnlineStatusChange(bool Changed, bool Online, string MemberName, IReadOnlyList<int> NotifyRecipientIds)
+{
+    public static readonly FamilyOnlineStatusChange None = new(false, false, string.Empty, Array.Empty<int>());
+}
+
 public sealed record FamilyWarpTarget(int CharacterId, int DestinationMapId, Position DestinationPosition);
 
 public sealed record FamilyBuffUsage(int BuffType, int TimesUsed);
@@ -643,6 +648,48 @@ public sealed class FamilyService : IFamilyRegistry
         lock (_sync)
         {
             _onlinePlayers.Remove(characterId);
+        }
+    }
+
+    /// <summary>
+    /// 對照 Java <c>MapleFamily.setOnline</c>：登入/登出時同步線上狀態，狀態實際翻轉（上線↔離線）
+    /// 才回傳需要收到 <c>FamilyPacket.familyLoggedIn</c> 通知的對象——leader 上下線通知全家族在線
+    /// 成員，其餘成員只通知自己的「族譜可視範圍」（<see cref="Family.GetPedigreeMembers"/>，對照 Java
+    /// <c>mgc.getPedigree()</c>），皆排除自己且只送給目前在線的人。
+    /// </summary>
+    public FamilyOnlineStatusChange SetOnline(Player player, bool online, int channel)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        lock (_sync)
+        {
+            var wasOnline = _onlinePlayers.ContainsKey(player.Character.Id);
+            if (online)
+            {
+                Register(player, channel);
+            }
+            else
+            {
+                Unregister(player.Character.Id);
+            }
+
+            var family = GetFamilyForCharacterLocked(player.Character.Id);
+            var member = family?.GetMember(player.Character.Id);
+            if (family is null || member is null || wasOnline == online)
+            {
+                return FamilyOnlineStatusChange.None;
+            }
+
+            var recipients = member.CharacterId == family.LeaderId
+                ? family.Members.Keys
+                    .Where(id => id != member.CharacterId && _onlinePlayers.ContainsKey(id))
+                    .ToArray()
+                : family.GetPedigreeMembers(member.CharacterId)
+                    .Where(m => m.CharacterId != member.CharacterId && _onlinePlayers.ContainsKey(m.CharacterId))
+                    .Select(static m => m.CharacterId)
+                    .ToArray();
+
+            return new FamilyOnlineStatusChange(true, online, player.Character.Name, recipients);
         }
     }
 
