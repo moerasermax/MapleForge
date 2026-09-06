@@ -334,6 +334,72 @@ public sealed class GuildServiceTests
         Assert.NotNull(await service.GetGuildForCharacterAsync(member.Character.Id));
     }
 
+    [Fact]
+    public async Task AcceptInviteAsync_AddMemberFails_InviteStaysUsableForRetry()
+    {
+        // P039：先確認邀請存在（不消耗），AddMemberAsync 失敗才不會白白作廢邀請——
+        // 修好之後，同一份邀請可以在下一次嘗試（DB 恢復正常）時直接重試成功，不需要對方重發。
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 110), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var target = Player(2, "Guest");
+        characters.Put(leader.Character);
+        characters.Put(target.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(target.Character, channel: 1));
+        guilds.ThrowOnNextUpdate = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.AcceptInviteAsync(target, created.Guild!.Id, channel: 1));
+
+        var retry = await service.AcceptInviteAsync(target, created.Guild!.Id, channel: 1);
+        Assert.True(retry.Succeeded);
+    }
+
+    [Fact]
+    public async Task LeaveGuildAsync_RepositoryUpdateFails_MemberStaysAndCanRetry()
+    {
+        // P039：guild.Members 的物件欄位異動也要在失敗時回滾，不然重試會被 TryRemoveMember
+        // 判斷「已經不是成員」擋下（TargetNotFound）。
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 111), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var member = Player(2, "Member");
+        characters.Put(leader.Character);
+        characters.Put(member.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await InviteAndJoinAsync(service, leader, member, created.Guild!.Id);
+        guilds.ThrowOnNextUpdate = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.LeaveGuildAsync(member));
+
+        var retry = await service.LeaveGuildAsync(member);
+        Assert.True(retry.Succeeded);
+    }
+
+    [Fact]
+    public async Task ExpelMemberAsync_RepositoryUpdateFails_TargetStaysAndCanRetry()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 112), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var member = Player(2, "Member");
+        characters.Put(leader.Character);
+        characters.Put(member.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await InviteAndJoinAsync(service, leader, member, created.Guild!.Id);
+        guilds.ThrowOnNextUpdate = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ExpelMemberAsync(leader, member.Character.Id, member.Character.Name));
+
+        var retry = await service.ExpelMemberAsync(leader, member.Character.Id, member.Character.Name);
+        Assert.True(retry.Succeeded);
+    }
+
     private static async Task InviteAndJoinAsync(GuildService service, Player leader, Player target, int guildId)
     {
         var invite = await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(target.Character, channel: 1));

@@ -97,6 +97,11 @@ public interface IGuildRegistry
 
     Task<GuildInviteResult> InviteMemberAsync(int inviterId, GuildMember invitee, CancellationToken ct = default);
 
+    /// <summary>檢查邀請是否存在且未過期，不消耗（P039：供 <c>AcceptInviteAsync</c> 先確認再
+    /// 嘗試加入，成功才呼叫 <see cref="ConsumeInviteAsync"/>，避免 <c>AddMemberAsync</c> 失敗時
+    /// 邀請已經作廢但玩家沒有真的入會）。</summary>
+    Task<bool> HasPendingInviteAsync(int guildId, string characterName, CancellationToken ct = default);
+
     Task<bool> ConsumeInviteAsync(int guildId, string characterName, CancellationToken ct = default);
 
     /// <summary>
@@ -238,11 +243,21 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
 
             guild.GainGuildPoints(50);
             // guild.Members 的異動要先做才能被 UpdateAsync 存到（跟 P036 的 CreateGuildAsync 不同，
-            // 這裡的 guild 是既有物件，必須先改狀態才有東西可存）；但 _guildByCharacter 是純本地
-            // 查找用的 registry 字典、不是要持久化的內容，延到 UpdateAsync 成功後才登記，避免
-            // DB 失敗時角色被 AlreadyInGuild 卡死（同 P036 手法，物件欄位失敗後的暫時不同步
-            // 屬較輕微風險，留給後續評估，不在這次範圍內處理）。
-            await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            // 這裡的 guild 是既有物件，必須先改狀態才有東西可存）。P039 補上失敗時的復原：
+            // P036/P037 原本只延後 _guildByCharacter 登記、沒處理物件欄位——後來發現這不只是
+            //「暫時跟 DB 不同步」，UpdateAsync 失敗後物件欄位沒回滾會導致同一個角色永遠無法
+            // 重新嘗試加入（TryAddMember 判斷「已是成員」擋下重試），所以這裡補上失敗回滾。
+            try
+            {
+                await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                guild.TryRemoveMember(member.CharacterId, out _);
+                guild.GainGuildPoints(-50);
+                throw;
+            }
+
             _guildByCharacter.Add(member.CharacterId, guild.Id);
 
             return new GuildCommandResult(
@@ -278,7 +293,20 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
 
             var recipients = OnlineRecipientIds(guild, target);
             guild.GainGuildPoints(-50);
-            await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            // P039：UpdateAsync 失敗要把成員加回去，否則跟 AddMemberAsync 同樣的道理——
+            // 角色會卡在「registry 說還在公會、guild.Members 卻已經沒有他」的中間態，且無法
+            // 重試（TryRemoveMember 對已移除的成員會回 false → TargetNotFound）。
+            try
+            {
+                await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                guild.TryAddMember(target);
+                guild.GainGuildPoints(50);
+                throw;
+            }
+
             _guildByCharacter.Remove(characterId);
 
             return new GuildCommandResult(
@@ -332,7 +360,18 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
             var recipients = OnlineRecipientIds(guild);
             guild.TryRemoveMember(targetId, out _);
             guild.GainGuildPoints(-50);
-            await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            // P039：同 LeaveGuildAsync，UpdateAsync 失敗要把成員加回去，避免卡在無法重試的中間態。
+            try
+            {
+                await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                guild.TryAddMember(removed);
+                guild.GainGuildPoints(50);
+                throw;
+            }
+
             _guildByCharacter.Remove(targetId);
 
             return new GuildCommandResult(
@@ -669,6 +708,23 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
         }
     }
 
+    public async Task<bool> HasPendingInviteAsync(int guildId, string characterName, CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            PruneInvitesLocked(now);
+            var key = new GuildInviteKey(guildId, characterName);
+            return _invites.TryGetValue(key, out var expiresAt) && expiresAt > now;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<bool> ConsumeInviteAsync(int guildId, string characterName, CancellationToken ct = default)
     {
         await EnsureLoadedAsync(ct).ConfigureAwait(false);
@@ -866,7 +922,10 @@ public sealed class GuildService
             return new GuildCommandResult(GuildCommandStatus.AlreadyInGuild);
         }
 
-        if (!await _registry.ConsumeInviteAsync(guildId, player.Character.Name, ct).ConfigureAwait(false))
+        // 對照 P037 記下的缺口：先只「確認」邀請存在（不消耗），加入成功才真的消耗，避免
+        // AddMemberAsync 因故失敗（如 DB 寫入失敗、公會滿員）時邀請已經作廢，玩家卻沒有真的
+        // 入會、只能等對方重新邀請一次。
+        if (!await _registry.HasPendingInviteAsync(guildId, player.Character.Name, ct).ConfigureAwait(false))
         {
             return new GuildCommandResult(GuildCommandStatus.InvalidInvite);
         }
@@ -881,6 +940,8 @@ public sealed class GuildService
         {
             return result;
         }
+
+        await _registry.ConsumeInviteAsync(guildId, player.Character.Name, ct).ConfigureAwait(false);
 
         player.JoinGuild(result.Guild.Id, Guild.DefaultMemberRank);
         await _characters.UpdateAsync(player.Character, ct).ConfigureAwait(false);
