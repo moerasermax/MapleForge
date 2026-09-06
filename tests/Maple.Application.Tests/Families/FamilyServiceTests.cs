@@ -94,6 +94,95 @@ public sealed class FamilyServiceTests
         Assert.Equal(1, info.JuniorCount); // 結構上的 junior 數量跟上下線無關，僅確認 GetFamilyInfo 仍可正常執行（Unregister 沒有壞掉共用狀態）
     }
 
+    [Fact]
+    public async Task DeleteJuniorAsync_JuniorWithNoDescendants_RemovesJuniorOnlyAndKeepsOldFamily()
+    {
+        // P055：DeleteJuniorAsync/DeleteSeniorAsync/SplitFamilyAsync 共用的 SplitFamilyLocked
+        // 目前完全沒有 Application 層的特徵測試（characterization test），只靠 Adapters 層間接
+        // 覆蓋。這組是最簡單的分支：被移除的 junior 沒有自己的子孫，直接離隊、不會產生新家族。
+        var repository = new InMemoryFamilyRepository();
+        var service = new FamilyService(repository, firstFamilyId: 1);
+        var (family, leader) = NewFamilyWithMembers(
+            familyId: 1,
+            leaderId: 1,
+            (juniorId: 2, grandchildId: 0),
+            (juniorId: 3, grandchildId: 0));
+        service.Register(family);
+        await repository.SaveAsync(family);
+
+        var result = await service.DeleteJuniorAsync(leader, juniorId: 2);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(result.Family);
+        Assert.Equal(2, result.Family!.Members.Count); // 只剩 leader + junior3
+        Assert.DoesNotContain(result.Family.Members, m => m.CharacterId == 2);
+
+        // 對照 P053：持久化已經在同一段臨界區內完成，這裡直接查 repository 確認真的存進去了。
+        var persisted = await repository.FindByIdAsync(1);
+        Assert.NotNull(persisted);
+        Assert.Equal(2, persisted!.Members.Count);
+    }
+
+    [Fact]
+    public async Task DeleteJuniorAsync_JuniorWithDescendant_CreatesNewFamilyAndDissolvesOldFamily()
+    {
+        // 進階分支：被移除的 junior 自己有子孫（grandchild）。junior 帶著整個子樹變成新家族的
+        // leader；舊家族因為只剩 leader 一人（<=1），連 leader 自己也會被解散（FinalizeOld...）。
+        var repository = new InMemoryFamilyRepository();
+        var service = new FamilyService(repository, firstFamilyId: 1);
+        var (family, leader) = NewFamilyWithMembers(
+            familyId: 1,
+            leaderId: 1,
+            (juniorId: 2, grandchildId: 3));
+        service.Register(family);
+        await repository.SaveAsync(family);
+
+        var result = await service.DeleteJuniorAsync(leader, juniorId: 2);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(result.Family);
+        var newFamily = result.Family!;
+        Assert.Equal(2, newFamily.LeaderId); // junior(2) 變成新家族的 leader
+        Assert.Equal(2, newFamily.Members.Count); // junior + grandchild 一起搬過去
+        Assert.Contains(newFamily.Members, m => m.CharacterId == 3);
+
+        // 舊家族（id=1）因為只剩 leader 一人，被整個解散——repository 裡應該找不到了。
+        var oldFamilyPersisted = await repository.FindByIdAsync(1);
+        Assert.Null(oldFamilyPersisted);
+
+        // 新家族有被存進去。
+        var newFamilyPersisted = await repository.FindByIdAsync(newFamily.Id);
+        Assert.NotNull(newFamilyPersisted);
+    }
+
+    /// <summary>建立一個 leader + 一或多個 junior（可各自再帶一個 grandchild）的家族。</summary>
+    private static (Family Family, Player Leader) NewFamilyWithMembers(
+        int familyId,
+        int leaderId,
+        params (int juniorId, int grandchildId)[] juniors)
+    {
+        var leaderMember = new FamilyMember { CharacterId = leaderId, Name = $"Char{leaderId}", Level = 30 };
+        var family = new Family { Id = familyId, LeaderId = leaderId };
+        family.TryAddMember(leaderMember);
+
+        foreach (var (juniorId, grandchildId) in juniors)
+        {
+            leaderMember.TryAddJunior(juniorId);
+            var juniorMember = new FamilyMember { CharacterId = juniorId, Name = $"Char{juniorId}", Level = 20, SeniorId = leaderId };
+            family.TryAddMember(juniorMember);
+
+            if (grandchildId > 0)
+            {
+                juniorMember.TryAddJunior(grandchildId);
+                var grandchildMember = new FamilyMember { CharacterId = grandchildId, Name = $"Char{grandchildId}", Level = 10, SeniorId = juniorId };
+                family.TryAddMember(grandchildMember);
+            }
+        }
+
+        var leaderPlayer = NewPlayer(leaderId, $"Char{leaderId}", level: 30, junior1: juniors.Length > 0 ? juniors[0].juniorId : 0, junior2: juniors.Length > 1 ? juniors[1].juniorId : 0);
+        return (family, leaderPlayer);
+    }
+
     private static Family NewFamily(int leaderId, int juniorId)
     {
         var leader = new FamilyMember { CharacterId = leaderId, Name = "Leader", Level = 30 };
