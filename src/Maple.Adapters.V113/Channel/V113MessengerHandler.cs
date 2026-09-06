@@ -119,7 +119,16 @@ public sealed class V113MessengerHandler
         }
     }
 
-    private async Task HandleExitAsync(Player player, CancellationToken ct)
+    private Task HandleExitAsync(Player player, CancellationToken ct) => LeaveMessengerAndNotifyAsync(player, ct);
+
+    /// <summary>
+    /// 對照 Java <c>MapleClient</c> 斷線流程：<c>World.Messenger.leaveMessenger(messengerid, chrm)</c>
+    /// 在玩家斷線（非主動退出）時也要觸發，否則其他成員的密友聊天視窗永遠留著一個已離線的殘影。
+    /// 與主動 EXIT（<see cref="HandleExitAsync"/>）共用同一段離開+廣播邏輯。
+    /// </summary>
+    public Task NotifyDisconnectAsync(Player player, CancellationToken ct) => LeaveMessengerAndNotifyAsync(player, ct);
+
+    private async Task LeaveMessengerAndNotifyAsync(Player player, CancellationToken ct)
     {
         var messenger = _messengers.GetMessengerForCharacter(player.Character.Id);
         var member = messenger?.GetMember(player.Character.Id);

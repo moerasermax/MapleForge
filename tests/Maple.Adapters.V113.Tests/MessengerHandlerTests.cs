@@ -104,6 +104,41 @@ public sealed class MessengerHandlerTests
         AssertChat(sent.Packet, "hello messenger");
     }
 
+    [Fact]
+    public async Task NotifyDisconnectAsync_MemberDisconnects_LeavesMessengerAndNotifiesRemainingMembers()
+    {
+        var service = new MessengerService(firstMessengerId: 50);
+        var leader = Player(1, "Alice");
+        var guest = Player(2, "Bob");
+        var hook = new FakeMessengerSessionHook();
+        var handler = new V113MessengerHandler(service, hook);
+
+        var created = service.CreateMessenger(new(leader.Character.Id, leader.Character.Name, ChannelIndex: 0, Position: 0));
+        Assert.True(service.JoinMessenger(created.Id, new(guest.Character.Id, guest.Character.Name, ChannelIndex: 0, Position: 1)));
+
+        // 對照 Java MapleClient 斷線流程呼叫 World.Messenger.leaveMessenger：玩家斷線（非主動按 EXIT）
+        // 也要被移出密友聊天，且其他成員要收到移除通知，否則視窗永遠留著一個已離線的殘影。
+        await handler.NotifyDisconnectAsync(guest, CancellationToken.None);
+
+        Assert.Null(service.GetMessengerForCharacter(guest.Character.Id));
+        var sent = Assert.Single(hook.SentPackets);
+        Assert.Equal(leader.Character.Id, sent.CharacterId);
+        AssertRemovePlayer(sent.Packet, expectedPosition: 1);
+    }
+
+    [Fact]
+    public async Task NotifyDisconnectAsync_PlayerNotInMessenger_DoesNothing()
+    {
+        var service = new MessengerService(firstMessengerId: 60);
+        var player = Player(1, "Alice");
+        var hook = new FakeMessengerSessionHook();
+        var handler = new V113MessengerHandler(service, hook);
+
+        await handler.NotifyDisconnectAsync(player, CancellationToken.None);
+
+        Assert.Empty(hook.SentPackets);
+    }
+
     private static Player Player(int id, string name) =>
         new(
             new Character
@@ -144,6 +179,15 @@ public sealed class MessengerHandlerTests
         var reader = new PacketReader(packet);
         Assert.Equal(V113MessengerPackets.SendMessengerOpcode, reader.ReadShort());
         Assert.Equal(0x01, reader.ReadByte());
+        Assert.Equal(expectedPosition, reader.ReadByte());
+        Assert.Equal(0, reader.Remaining);
+    }
+
+    private static void AssertRemovePlayer(byte[] packet, int expectedPosition)
+    {
+        var reader = new PacketReader(packet);
+        Assert.Equal(V113MessengerPackets.SendMessengerOpcode, reader.ReadShort());
+        Assert.Equal(0x02, reader.ReadByte());
         Assert.Equal(expectedPosition, reader.ReadByte());
         Assert.Equal(0, reader.Remaining);
     }

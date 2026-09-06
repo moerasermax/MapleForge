@@ -1619,6 +1619,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         // best-effort：公會/好友登出通知會送往其他玩家 session，失敗不可阻斷後續持久化。
                         await _guildOperationHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
                         await _buddyHandler.OnPlayerLoggedOutAsync(player, CancellationToken.None);
+                        await _messengerHandler.NotifyDisconnectAsync(player, CancellationToken.None);
                     }
                     catch (Exception ex)
                     {
