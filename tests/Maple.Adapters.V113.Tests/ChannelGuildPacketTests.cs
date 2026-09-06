@@ -1,7 +1,9 @@
 using System.Text;
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Alliances;
 using Maple.Application.Guilds;
 using Maple.Application.OnlinePlayers;
+using Maple.Core.Alliances;
 using Maple.Core.Characters;
 using Maple.Core.Guilds;
 using Maple.Core.IO;
@@ -103,8 +105,8 @@ public sealed class ChannelGuildPacketTests
     public async Task AcceptedOperation_SendsFullInfoToSelfAndBroadcastsNewMember()
     {
         var characters = new FakeCharacterRepository();
-        var guilds = new FakeGuildRepository();
-        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 40), characters);
+        var registry = new InMemoryGuildRegistry(new FakeGuildRepository(), firstGuildId: 40);
+        var service = new GuildService(registry, characters);
         var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
         var guest = Player(2, "Guest");
         characters.Put(leader.Character);
@@ -112,7 +114,7 @@ public sealed class ChannelGuildPacketTests
         var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
         await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(guest.Character, channel: 1));
         var hook = new FakeGuildSessionHook();
-        var handler = new V113GuildOperationHandler(service, hook);
+        var handler = new V113GuildOperationHandler(service, hook, new AllianceService(new FakeAllianceRepository(), registry));
         var selfPackets = new List<byte[]>();
 
         var request = new PacketWriter()
@@ -176,6 +178,102 @@ public sealed class ChannelGuildPacketTests
         var packet = new byte[] { 0x03, 0x04 };
         await hook.SendToCharacterAsync(player.Character.Id, packet, CancellationToken.None);
         Assert.Same(packet, Assert.Single(sentPackets));
+    }
+
+    [Fact]
+    public async Task OnPlayerLoggedInAsync_MemberOfAlliedGuild_BroadcastsAllianceMemberOnlineToOtherGuild()
+    {
+        var (service, alliances, guildA, guildB, allianceId) = await NewAlliedGuildsAsync();
+        // GuildB 的 leader 先前已在線（模擬對照組情境：另一個公會的成員已經上線，等著收到通知）。
+        var playerB = Player(2, "LeaderB");
+        playerB.JoinGuild(guildB.Id, Guild.LeaderRank);
+        await service.SetMemberOnlineAsync(playerB, online: true, channel: 5, CancellationToken.None);
+
+        var hook = new FakeGuildSessionHook();
+        var handler = new V113GuildOperationHandler(service, hook, alliances);
+        var playerA = Player(1, "LeaderA");
+        playerA.JoinGuild(guildA.Id, Guild.LeaderRank);
+
+        // 對照 Java MapleGuild.setOnline：狀態翻轉且公會屬於同盟時，要通知同盟裡「其他公會」的所有
+        // 成員（整個來源公會被排除，因為公會內部已經用 GuildMemberOnline 通知過）。
+        await handler.OnPlayerLoggedInAsync(playerA, channel: 3, (_, _) => Task.CompletedTask, CancellationToken.None);
+
+        var notice = Assert.Single(hook.SentPackets, p => p.CharacterId == playerB.Character.Id);
+        var reader = new PacketReader(notice.Packet);
+        Assert.Equal(V113AlliancePackets.SendAllianceOperationOpcode, reader.ReadShort());
+        Assert.Equal(V113AlliancePackets.AllianceMemberOnlineCode, reader.ReadByte());
+        Assert.Equal(allianceId, reader.ReadInt());
+        Assert.Equal(guildA.Id, reader.ReadInt());
+        Assert.Equal(playerA.Character.Id, reader.ReadInt());
+        Assert.Equal(1, reader.ReadByte());
+    }
+
+    [Fact]
+    public async Task OnPlayerLoggedOutAsync_MemberOfAlliedGuild_BroadcastsAllianceMemberOfflineToOtherGuild()
+    {
+        var (service, alliances, guildA, guildB, allianceId) = await NewAlliedGuildsAsync();
+        var playerB = Player(2, "LeaderB");
+        playerB.JoinGuild(guildB.Id, Guild.LeaderRank);
+        await service.SetMemberOnlineAsync(playerB, online: true, channel: 5, CancellationToken.None);
+
+        var hook = new FakeGuildSessionHook();
+        var handler = new V113GuildOperationHandler(service, hook, alliances);
+        var playerA = Player(1, "LeaderA");
+        playerA.JoinGuild(guildA.Id, Guild.LeaderRank);
+        await service.SetMemberOnlineAsync(playerA, online: true, channel: 3, CancellationToken.None);
+
+        await handler.OnPlayerLoggedOutAsync(playerA, CancellationToken.None);
+
+        var notice = Assert.Single(hook.SentPackets, p => p.CharacterId == playerB.Character.Id);
+        var reader = new PacketReader(notice.Packet);
+        Assert.Equal(V113AlliancePackets.SendAllianceOperationOpcode, reader.ReadShort());
+        Assert.Equal(V113AlliancePackets.AllianceMemberOnlineCode, reader.ReadByte());
+        Assert.Equal(allianceId, reader.ReadInt());
+        Assert.Equal(guildA.Id, reader.ReadInt());
+        Assert.Equal(playerA.Character.Id, reader.ReadInt());
+        Assert.Equal(0, reader.ReadByte());
+    }
+
+    [Fact]
+    public async Task OnPlayerLoggedInAsync_GuildNotInAlliance_DoesNotBroadcastAllianceMemberOnline()
+    {
+        var registry = new InMemoryGuildRegistry(new FakeGuildRepository());
+        var characters = new FakeCharacterRepository();
+        var service = new GuildService(registry, characters);
+        var alliances = new AllianceService(new FakeAllianceRepository(), registry);
+        var createdA = await registry.CreateGuildAsync(
+            new GuildMember { CharacterId = 1, Name = "LeaderA", GuildRank = Guild.LeaderRank },
+            "GuildA",
+            signature: 1);
+        var hook = new FakeGuildSessionHook();
+        var handler = new V113GuildOperationHandler(service, hook, alliances);
+        var playerA = Player(1, "LeaderA");
+        playerA.JoinGuild(createdA.Guild!.Id, Guild.LeaderRank);
+
+        await handler.OnPlayerLoggedInAsync(playerA, channel: 3, (_, _) => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Empty(hook.SentPackets);
+    }
+
+    private static async Task<(GuildService Service, AllianceService Alliances, GuildState GuildA, GuildState GuildB, int AllianceId)> NewAlliedGuildsAsync()
+    {
+        var registry = new InMemoryGuildRegistry(new FakeGuildRepository());
+        var characters = new FakeCharacterRepository();
+        var service = new GuildService(registry, characters);
+        var alliances = new AllianceService(new FakeAllianceRepository(), registry);
+
+        var createdA = await registry.CreateGuildAsync(
+            new GuildMember { CharacterId = 1, Name = "LeaderA", GuildRank = Guild.LeaderRank },
+            "GuildA",
+            signature: 1);
+        var createdB = await registry.CreateGuildAsync(
+            new GuildMember { CharacterId = 2, Name = "LeaderB", GuildRank = Guild.LeaderRank },
+            "GuildB",
+            signature: 2);
+
+        var alliance = await alliances.CreateAllianceAsync("United", leaderCharacterId: 1, createdA.Guild!.Id, createdB.Guild!.Id);
+
+        return (service, alliances, createdA.Guild!, createdB.Guild!, alliance.Alliance!.Id);
     }
 
     private static void AssertShowGuildInfo(byte[] packet)
@@ -297,6 +395,26 @@ public sealed class ChannelGuildPacketTests
         public Task DeleteAsync(int guildId, CancellationToken ct = default)
         {
             _guilds.Remove(guildId);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeAllianceRepository : IAllianceRepository
+    {
+        private readonly Dictionary<int, Alliance> _alliances = new();
+
+        public Task<Alliance?> FindByIdAsync(int allianceId, CancellationToken ct = default) =>
+            Task.FromResult(_alliances.GetValueOrDefault(allianceId));
+
+        public Task SaveAsync(Alliance alliance, CancellationToken ct = default)
+        {
+            _alliances[alliance.Id] = alliance;
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync(int allianceId, CancellationToken ct = default)
+        {
+            _alliances.Remove(allianceId);
             return Task.CompletedTask;
         }
     }

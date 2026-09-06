@@ -43,7 +43,8 @@ public sealed record GuildCommandResult(
     GuildState? Guild = null,
     GuildMember? Target = null,
     GuildUpdateKind? UpdateKind = null,
-    IReadOnlyList<int>? RecipientCharacterIds = null)
+    IReadOnlyList<int>? RecipientCharacterIds = null,
+    bool OnlineStatusChanged = false)
 {
     public bool Succeeded => Status == GuildCommandStatus.Success;
 
@@ -532,7 +533,8 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
                 guild.Snapshot(),
                 existing.Clone(),
                 online ? GuildUpdateKind.MemberOnline : GuildUpdateKind.MemberOffline,
-                changed ? OnlineRecipientIds(guild, excludeCharacterId: member.CharacterId) : Array.Empty<int>());
+                changed ? OnlineRecipientIds(guild, excludeCharacterId: member.CharacterId) : Array.Empty<int>(),
+                OnlineStatusChanged: changed);
         }
         finally
         {

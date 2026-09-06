@@ -1,3 +1,4 @@
+using Maple.Application.Alliances;
 using Maple.Application.Guilds;
 using Maple.Core.Guilds;
 using Maple.Core.IO;
@@ -42,11 +43,13 @@ public sealed class V113GuildOperationHandler
 {
     private readonly GuildService _guilds;
     private readonly IV113GuildSessionHook _sessions;
+    private readonly AllianceService _alliances;
 
-    public V113GuildOperationHandler(GuildService guilds, IV113GuildSessionHook sessions)
+    public V113GuildOperationHandler(GuildService guilds, IV113GuildSessionHook sessions, AllianceService alliances)
     {
         _guilds = guilds;
         _sessions = sessions;
+        _alliances = alliances;
     }
 
     public async Task HandleGuildOperationAsync(
@@ -157,6 +160,11 @@ public sealed class V113GuildOperationHandler
             sendSelf,
             () => V113GuildPackets.GuildMemberOnline(result.Guild.Id, result.Target.CharacterId, online: true),
             ct);
+
+        if (result.OnlineStatusChanged)
+        {
+            await BroadcastAllianceMemberOnlineAsync(result.Guild, result.Target.CharacterId, online: true, ct);
+        }
     }
 
     public async Task OnPlayerLoggedOutAsync(Player player, CancellationToken ct)
@@ -172,6 +180,70 @@ public sealed class V113GuildOperationHandler
             result.Target.CharacterId,
             V113GuildPackets.GuildMemberOnline(result.Guild.Id, result.Target.CharacterId, online: false),
             ct);
+
+        if (result.OnlineStatusChanged)
+        {
+            await BroadcastAllianceMemberOnlineAsync(result.Guild, result.Target.CharacterId, online: false, ct);
+        }
+    }
+
+    /// <summary>
+    /// 對照 Java <c>MapleGuild.setOnline</c>：狀態實際翻轉時，若該公會屬於某個同盟，還要通知同盟裡
+    /// <b>其他公會</b>的所有成員（<c>World.Alliance.sendGuild(packet, exceptionId=guildId, allianceId)</c>
+    /// 用 guildId 當排除鍵，整個來源公會都跳過——因為公會內部已經在上面用
+    /// <see cref="V113GuildPackets.GuildMemberOnline"/> 通知過了）。對應封包
+    /// <see cref="V113AlliancePackets.AllianceMemberOnline"/> 先前已存在但零呼叫者。
+    /// </summary>
+    private async Task BroadcastAllianceMemberOnlineAsync(GuildState guild, int characterId, bool online, CancellationToken ct)
+    {
+        var allianceId = guild.AllianceId > 0
+            ? guild.AllianceId
+            : await _alliances.GetAllianceIdForGuildAsync(guild.Id, ct).ConfigureAwait(false);
+        if (allianceId <= 0)
+        {
+            return;
+        }
+
+        var alliance = await _alliances.GetAllianceInfoAsync(allianceId, ct).ConfigureAwait(false);
+        if (alliance is null)
+        {
+            return;
+        }
+
+        var packet = V113AlliancePackets.AllianceMemberOnline(allianceId, guild.Id, characterId, online);
+        foreach (var guildId in alliance.GuildIds)
+        {
+            if (guildId == guild.Id)
+            {
+                continue;
+            }
+
+            var otherGuild = await _guilds.GetGuildAsync(guildId, ct).ConfigureAwait(false);
+            if (otherGuild is null)
+            {
+                continue;
+            }
+
+            foreach (var member in otherGuild.Members)
+            {
+                if (!member.IsOnline)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await _sessions.SendToCharacterAsync(member.CharacterId, packet, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                }
+            }
+        }
     }
 
     private async Task HandleCreateAsync(
