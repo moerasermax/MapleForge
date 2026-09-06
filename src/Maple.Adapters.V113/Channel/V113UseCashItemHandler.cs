@@ -20,6 +20,13 @@ internal sealed record V113UseCashItemResult(
     public IReadOnlyList<byte[]> BroadcastPackets { get; init; } = Array.Empty<byte[]>();
 
     public IReadOnlyList<byte[]> MapPackets { get; init; } = Array.Empty<byte[]>();
+
+    /// <summary>
+    /// 對照 Java <c>World.Broadcast.broadcastSmega</c>（全服，經 <c>ChannelServer.broadcastSmega</c>
+    /// 對 <c>PlayerStorage</c> 全體廣播，含發送者本人）：送給目前所有在線玩家，不限地圖。
+    /// MapleForge 現行單實例單頻道架構下，這與 Java「頻道範圍」廣播（如 5071000）實質等價。
+    /// </summary>
+    public IReadOnlyList<byte[]> ChannelBroadcastPackets { get; init; } = Array.Empty<byte[]>();
 }
 
 /// <summary>
@@ -100,27 +107,32 @@ public sealed class V113UseCashItemHandler
                 itemId,
                 channel,
                 static (message, _, _) => V113BroadcastPackets.Megaphone(message)),
+            // 5071000/5072000 皆為 Java World.Broadcast.broadcastSmega（頻道/全服）範圍，非地圖範圍；
+            // 5071000 的封包格式（Java 用 plain getMegaphone，非 getSuperMegaphone）另案追蹤，本次只修範圍。
             5071000 or 5072000 => HandleMegaphone(
                 reader,
                 player,
                 slot,
                 itemId,
                 channel,
-                static (message, broadcastChannel, ear) => V113BroadcastPackets.SuperMegaphone(message, broadcastChannel, ear)),
+                static (message, broadcastChannel, ear) => V113BroadcastPackets.SuperMegaphone(message, broadcastChannel, ear),
+                broadcastChannelWide: true),
             5073000 => HandleMegaphone(
                 reader,
                 player,
                 slot,
                 itemId,
                 channel,
-                static (message, broadcastChannel, ear) => V113BroadcastPackets.HeartMegaphone(message, broadcastChannel, ear)),
+                static (message, broadcastChannel, ear) => V113BroadcastPackets.HeartMegaphone(message, broadcastChannel, ear),
+                broadcastChannelWide: true),
             5074000 => HandleMegaphone(
                 reader,
                 player,
                 slot,
                 itemId,
                 channel,
-                static (message, broadcastChannel, ear) => V113BroadcastPackets.SkullMegaphone(message, broadcastChannel, ear)),
+                static (message, broadcastChannel, ear) => V113BroadcastPackets.SkullMegaphone(message, broadcastChannel, ear),
+                broadcastChannelWide: true),
             >= 5075000 and <= 5075002 => HandleMapleTvStub(itemId),
             5076000 => HandleItemMegaphone(reader, player, slot, itemId, channel),
             5077000 => HandleTripleMegaphone(reader, player, slot, itemId, channel),
@@ -154,7 +166,8 @@ public sealed class V113UseCashItemHandler
         int itemId,
         int channel,
         Func<string, int, bool, byte[]> buildPacket,
-        int maxMessageLength = 65)
+        int maxMessageLength = 65,
+        bool broadcastChannelWide = false)
     {
         if (!TryReadMegaphoneMessage(reader, player, maxMessageLength, out var message, out var ear))
         {
@@ -162,7 +175,9 @@ public sealed class V113UseCashItemHandler
         }
 
         var packet = buildPacket(message, NormalizeChannel(channel), ear);
-        return ConsumeCashItemWithMapPacket(player, slot, itemId, packet);
+        return broadcastChannelWide
+            ? ConsumeCashItemWithChannelBroadcast(player, slot, itemId, packet)
+            : ConsumeCashItemWithMapPacket(player, slot, itemId, packet);
     }
 
     private V113UseCashItemResult HandleTripleMegaphone(
@@ -211,7 +226,7 @@ public sealed class V113UseCashItemHandler
 
         var ear = reader.ReadByte() > 0;
         var packet = V113BroadcastPackets.TripleMegaphone(messages, NormalizeChannel(channel), ear);
-        return ConsumeCashItemWithMapPacket(player, slot, itemId, packet);
+        return ConsumeCashItemWithChannelBroadcast(player, slot, itemId, packet);
     }
 
     private V113UseCashItemResult HandleItemMegaphone(
@@ -240,7 +255,7 @@ public sealed class V113UseCashItemHandler
         }
 
         var packet = V113BroadcastPackets.ItemMegaphone(message, NormalizeChannel(channel), ear, item);
-        return ConsumeCashItemWithMapPacket(player, slot, itemId, packet);
+        return ConsumeCashItemWithChannelBroadcast(player, slot, itemId, packet);
     }
 
     private V113UseCashItemResult HandleAvatarMegaphoneFallback(
@@ -256,7 +271,8 @@ public sealed class V113UseCashItemHandler
             itemId,
             channel,
             static (message, broadcastChannel, ear) => V113BroadcastPackets.SuperMegaphone(message, broadcastChannel, ear),
-            maxMessageLength: 55);
+            maxMessageLength: 55,
+            broadcastChannelWide: true);
 
     private V113UseCashItemResult HandleMapleTvStub(int itemId)
     {
@@ -765,6 +781,19 @@ public sealed class V113UseCashItemHandler
         var result = ConsumeCashItem(player, slot, itemId);
         return result.CharacterMutated
             ? result with { MapPackets = One(mapPacket) }
+            : result;
+    }
+
+    /// <summary>對照 Java <c>World.Broadcast.broadcastSmega</c>／<c>ChannelServer.broadcastSmega</c>（見型別註解）。</summary>
+    private V113UseCashItemResult ConsumeCashItemWithChannelBroadcast(
+        Player player,
+        short slot,
+        int itemId,
+        byte[] channelPacket)
+    {
+        var result = ConsumeCashItem(player, slot, itemId);
+        return result.CharacterMutated
+            ? result with { ChannelBroadcastPackets = One(channelPacket) }
             : result;
     }
 

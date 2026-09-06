@@ -23,4 +23,7 @@ public interface IOnlinePlayerRegistry
     OnlinePlayer? FindById(int characterId);
 
     OnlinePlayer? FindByName(string name);
+
+    /// <summary>目前所有在線玩家的快照（複本，呼叫端可安全迭代，不受並發登入/登出影響）。</summary>
+    IReadOnlyList<OnlinePlayer> GetAll();
 }

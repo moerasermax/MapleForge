@@ -170,5 +170,7 @@ public sealed class TradeServiceTests
 
         public OnlinePlayer? FindByName(string name)
             => _players.Values.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+        public IReadOnlyList<OnlinePlayer> GetAll() => _players.Values.ToList();
     }
 }

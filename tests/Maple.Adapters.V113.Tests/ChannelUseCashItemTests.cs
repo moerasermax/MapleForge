@@ -770,7 +770,7 @@ public sealed class ChannelUseCashItemTests
         var result = handler.Handle(new PacketReader(body), player, channel: 3);
 
         Assert.False(result.CharacterMutated);
-        Assert.Empty(result.MapPackets);
+        Assert.Empty(result.ChannelBroadcastPackets);
         Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
         Assert.Single(result.Packets);
     }
@@ -785,7 +785,7 @@ public sealed class ChannelUseCashItemTests
         var result = handler.Handle(new PacketReader(body), player, channel: 3);
 
         Assert.False(result.CharacterMutated);
-        Assert.Empty(result.MapPackets);
+        Assert.Empty(result.ChannelBroadcastPackets);
         Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
     }
 
@@ -798,7 +798,9 @@ public sealed class ChannelUseCashItemTests
 
         var result = handler.Handle(new PacketReader(body), player, channel: 5);
 
-        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 3);
+        // 對照 Java World.Broadcast.broadcastSmega：SuperMegaphone 是頻道/全服範圍，不是地圖範圍。
+        Assert.Empty(result.MapPackets);
+        var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType: 3);
         Assert.Equal("CashPlayer : hello channel", reader.ReadMapleString());
         Assert.Equal(4, reader.ReadByte());
         Assert.Equal(1, reader.ReadByte());
@@ -815,7 +817,8 @@ public sealed class ChannelUseCashItemTests
 
         var result = handler.Handle(new PacketReader(body), player, channel: 2);
 
-        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType);
+        Assert.Empty(result.MapPackets);
+        var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType);
         Assert.Equal("CashPlayer : styled", reader.ReadMapleString());
         Assert.Equal(1, reader.ReadByte());
         Assert.Equal(0, reader.ReadByte());
@@ -848,7 +851,8 @@ public sealed class ChannelUseCashItemTests
 
         var result = handler.Handle(new PacketReader(body), player, channel: 4);
 
-        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 8);
+        Assert.Empty(result.MapPackets);
+        var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType: 8);
         Assert.Equal("CashPlayer : selling", reader.ReadMapleString());
         Assert.Equal(3, reader.ReadByte());
         Assert.Equal(0, reader.ReadByte());
@@ -867,7 +871,8 @@ public sealed class ChannelUseCashItemTests
 
         var result = handler.Handle(new PacketReader(body), player, channel: 4);
 
-        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 8);
+        Assert.Empty(result.MapPackets);
+        var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType: 8);
         Assert.Equal("CashPlayer : selling item", reader.ReadMapleString());
         Assert.Equal(3, reader.ReadByte());
         Assert.Equal(1, reader.ReadByte());
@@ -889,7 +894,8 @@ public sealed class ChannelUseCashItemTests
 
         var result = handler.Handle(new PacketReader(body), player, channel: 2);
 
-        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 10);
+        Assert.Empty(result.MapPackets);
+        var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType: 10);
         Assert.Equal("CashPlayer : line 1", reader.ReadMapleString());
         Assert.Equal(lineCount, reader.ReadByte());
         if (lineCount > 1)
@@ -920,7 +926,7 @@ public sealed class ChannelUseCashItemTests
         var result = handler.Handle(new PacketReader(body), player, channel: 2);
 
         Assert.False(result.CharacterMutated);
-        Assert.Empty(result.MapPackets);
+        Assert.Empty(result.ChannelBroadcastPackets);
         Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
     }
 
@@ -933,7 +939,8 @@ public sealed class ChannelUseCashItemTests
 
         var result = handler.Handle(new PacketReader(body), player, channel: 6);
 
-        var reader = ReadServerMessage(Assert.Single(result.MapPackets), expectedType: 3);
+        Assert.Empty(result.MapPackets);
+        var reader = ReadServerMessage(Assert.Single(result.ChannelBroadcastPackets), expectedType: 3);
         Assert.Equal("CashPlayer : avatar", reader.ReadMapleString());
         Assert.Equal(5, reader.ReadByte());
         Assert.Equal(1, reader.ReadByte());

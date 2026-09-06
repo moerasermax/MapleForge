@@ -1173,6 +1173,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 await BroadcastPacketToMapAsync(player.Character, s, pkt, token);
                             }
 
+                            foreach (var pkt in useCashResult.ChannelBroadcastPackets)
+                            {
+                                await BroadcastPacketToAllOnlineAsync(pkt, token);
+                            }
+
                             if (useCashResult.CharacterMutated)
                             {
                                 await _charService.UpdateAsync(player.Character, token);
@@ -3717,6 +3722,24 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     {
         await session.SendAsync(packet, ct);
         await BroadcastPacketToOthersAsync(chr, packet, ct);
+    }
+
+    /// <summary>
+    /// 對照 Java <c>ChannelServer.broadcastSmegaPacket</c>（對 <c>PlayerStorage</c> 全體廣播，
+    /// 含發送者本人，不限地圖）。MapleForge 現行單實例單頻道架構下，這等於「這個 process 目前所有
+    /// 在線玩家」；多實例啟用後，`IOnlinePlayerRegistry` 需要依 channel 分桶才能精確對應 Java 的
+    /// 頻道 vs 全服差異（見任務歷程 `2026-09-06_08`）。
+    /// </summary>
+    private async Task BroadcastPacketToAllOnlineAsync(byte[] packet, CancellationToken ct)
+    {
+        foreach (var online in _onlinePlayers.GetAll())
+        {
+            try
+            {
+                await online.SendPacket(packet, ct);
+            }
+            catch { /* ignore failed broadcasts */ }
+        }
     }
 
     private async Task HandleMonsterBombAsync(

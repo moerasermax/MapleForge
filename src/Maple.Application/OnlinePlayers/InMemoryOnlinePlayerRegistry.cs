@@ -65,6 +65,9 @@ public sealed class InMemoryOnlinePlayerRegistry : IOnlinePlayerRegistry
             : null;
     }
 
+    public IReadOnlyList<OnlinePlayer> GetAll() =>
+        _byId.Values.Select(static entry => entry.Player).ToList();
+
     private bool TryRemovePlayer(int characterId, RegisteredOnlinePlayer entry)
     {
         var pair = new KeyValuePair<int, RegisteredOnlinePlayer>(characterId, entry);
