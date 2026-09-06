@@ -3002,6 +3002,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        // 對照 Java InventoryHandler.ItemPickup 的反作弊距離檢查（P033 同款「只記錄不阻擋」
+        // 慣例，registerOffense 只累積違規次數）：用戶端回報座標離掉落物太遠只記錄
+        // ITEMVAC_CLIENT；只有用戶端回報距離「沒有」異常時，才進一步比對伺服器已知座標，
+        // 太遠則記錄 ITEMVAC_SERVER 並真的擋下（對照 Java if/else if，兩者互斥非各自獨立判斷）。
+        if (field.Get(req.ObjectId) is MapDrop pickupTarget)
+        {
+            if (IsFarFromDropClientReported(req.ClientPosition, pickupTarget.Position))
+            {
+                _log.LogWarning(
+                    "[Channel] ItemPickup 用戶端回報距離異常 charId={CharId} objectId={ObjectId} clientPos=({Cx},{Cy}) dropPos=({Dx},{Dy})",
+                    player.Character.Id, req.ObjectId, req.ClientPosition.X, req.ClientPosition.Y, pickupTarget.Position.X, pickupTarget.Position.Y);
+            }
+            else if (IsFarFromDropServer(player.Position, pickupTarget.Position))
+            {
+                _log.LogWarning(
+                    "[Channel] ItemPickup 伺服器已知距離異常 charId={CharId} objectId={ObjectId} charPos=({Cx},{Cy}) dropPos=({Dx},{Dy})",
+                    player.Character.Id, req.ObjectId, player.Position.X, player.Position.Y, pickupTarget.Position.X, pickupTarget.Position.Y);
+                await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+                return;
+            }
+        }
+
         DropPickupResult result;
         lock (field)
         {
@@ -3800,6 +3822,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var dx = portal.X - position.X;
         var dy = portal.Y - position.Y;
         return ((long)dx * dx) + ((long)dy * dy) > 22500;
+    }
+
+    /// <summary>對照 Java <c>Client_Reportedpos.distanceSq(mapitem.getPosition()) &gt; 2500</c>（50 格）。</summary>
+    internal static bool IsFarFromDropClientReported(Position clientPosition, Position dropPosition)
+        => DistanceSquared(clientPosition, dropPosition) > 2500;
+
+    /// <summary>對照 Java <c>chr.getPosition().distanceSq(mapitem.getPosition()) &gt; 90000.0</c>（300 格）。</summary>
+    internal static bool IsFarFromDropServer(Position serverPosition, Position dropPosition)
+        => DistanceSquared(serverPosition, dropPosition) > 90000;
+
+    private static long DistanceSquared(Position a, Position b)
+    {
+        var dx = a.X - b.X;
+        var dy = a.Y - b.Y;
+        return ((long)dx * dx) + ((long)dy * dy);
     }
 
     /// <summary>

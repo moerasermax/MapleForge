@@ -156,4 +156,42 @@ public sealed class ChannelDropPacketTests
         r.Skip(8);
         Assert.Equal(2, r.ReadShort());
     }
+
+    [Fact]
+    public void IsFarFromDropClientReported_WithinRange_ReturnsFalse()
+    {
+        // 對照 Java：distanceSq <= 2500（50 格）不算過遠。
+        var client = new Position(50, 0, 0, 0);
+        var drop = new Position(0, 0, 0, 0);
+
+        Assert.False(V113ChannelConnectionHandler.IsFarFromDropClientReported(client, drop));
+    }
+
+    [Fact]
+    public void IsFarFromDropClientReported_BeyondRange_ReturnsTrue()
+    {
+        var client = new Position(51, 0, 0, 0);
+        var drop = new Position(0, 0, 0, 0);
+
+        Assert.True(V113ChannelConnectionHandler.IsFarFromDropClientReported(client, drop));
+    }
+
+    [Fact]
+    public void IsFarFromDropServer_WithinRange_ReturnsFalse()
+    {
+        // 對照 Java：distanceSq <= 90000（300 格）不算過遠。
+        var server = new Position(300, 0, 0, 0);
+        var drop = new Position(0, 0, 0, 0);
+
+        Assert.False(V113ChannelConnectionHandler.IsFarFromDropServer(server, drop));
+    }
+
+    [Fact]
+    public void IsFarFromDropServer_BeyondRange_ReturnsTrue()
+    {
+        var server = new Position(301, 0, 0, 0);
+        var drop = new Position(0, 0, 0, 0);
+
+        Assert.True(V113ChannelConnectionHandler.IsFarFromDropServer(server, drop));
+    }
 }
