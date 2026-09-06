@@ -441,6 +441,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 token);
 
                             await _familyHandler.NotifyLoginAsync(player, channel, token);
+                            // 對照 Java InterServerHandler 登入流程 c.sendPacket(FamilyPacket.getFamilyData())：
+                            // 家族特權清單（buff 花費表）是靜態常數表，登入時無條件送給所有玩家（不限
+                            // 是否已加入家族），供家族 UI 顯示花費。V113FamilyPackets.FamilyPrivilegeList
+                            // 先前已存在但零呼叫者。
+                            await s.SendAsync(V113FamilyPackets.FamilyPrivilegeList(), token);
 
                             await _partyOperationHandler.NotifyLoginAsync(
                                 player,

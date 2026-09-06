@@ -1,6 +1,7 @@
 using Maple.Adapters.V113.Channel;
 using Maple.Application.Families;
 using Maple.Core.Characters;
+using Maple.Core.Families;
 using Maple.Core.IO;
 using Maple.Core.World;
 
@@ -8,6 +9,28 @@ namespace Maple.Adapters.V113.Tests;
 
 public sealed class FamilyHandlerTests
 {
+    [Fact]
+    public void FamilyPrivilegeList_WritesEveryCatalogEntryInDeclaredOrder()
+    {
+        // 對照 Java FamilyPacket.getFamilyData()：登入時無條件送給所有玩家的靜態特權/花費表，
+        // 之前雖已實作但零呼叫者（見 V113ChannelConnectionHandler 登入流程的接線）。
+        var reader = new PacketReader(V113FamilyPackets.FamilyPrivilegeList());
+
+        Assert.Equal(V113FamilyPackets.SendFamilyPrivilegeList, reader.ReadShort());
+        Assert.Equal(FamilyBuff.All.Count, reader.ReadInt());
+
+        foreach (var entry in FamilyBuff.All)
+        {
+            Assert.Equal(entry.Type, reader.ReadByte());
+            Assert.Equal(entry.RepCost, reader.ReadInt());
+            Assert.Equal(1, reader.ReadInt());
+            Assert.Equal(entry.BuffType, reader.ReadMapleString());
+            Assert.Equal($"{entry.BuffType}:{entry.Duration}", reader.ReadMapleString());
+        }
+
+        Assert.Equal(0, reader.Remaining);
+    }
+
     [Fact]
     public async Task InviteAndAccept_CreatesFamilyAndSendsJoinPackets()
     {
