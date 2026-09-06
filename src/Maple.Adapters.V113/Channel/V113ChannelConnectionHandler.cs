@@ -438,6 +438,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 (pkt, tkn) => s.SendAsync(pkt, tkn),
                                 token);
 
+                            await _partyOperationHandler.NotifyLoginAsync(
+                                player,
+                                _options.ChannelIndex,
+                                (pkt, tkn) => s.SendAsync(pkt, tkn),
+                                token);
+
                             var pos = player.Position;
                             currentField = EnterField(chr.MapId, player);
 
@@ -1652,6 +1658,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             if (chr is not null)
             {
                 _partySearchHandler.NotifyMapLeave(player!);
+                await _partyOperationHandler.NotifyLogoutAsync(player!, CancellationToken.None);
                 var removedFromMap = _mapRegistry.Deregister(chr.MapId, chr.Id, sessionToken);
                 if (removedFromMap)
                 {

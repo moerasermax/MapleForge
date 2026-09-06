@@ -116,6 +116,82 @@ public sealed class V113PartyOperationHandler
         await SyncPartyMemberHpAsync(updated, chr, sendSelf, ct);
     }
 
+    /// <summary>
+    /// 對照 Java <c>InterServerHandler</c> 頻道登入段落：<c>World.Party.updateParty(partyId,
+    /// LOG_ONOFF, new MaplePartyCharacter(player))</c>。只在頻道登入當下觸發一次，不隨每次換圖
+    /// 重複（換圖重複的是 <see cref="NotifyMapEntryAsync"/> 的 SILENT_UPDATE）。
+    /// </summary>
+    public async Task NotifyLoginAsync(
+        Player player,
+        int channelIndex,
+        Func<byte[], CancellationToken, Task> sendSelf,
+        CancellationToken ct)
+    {
+        var chr = player.Character;
+        if (!_parties.IsCharacterInParty(chr.Id))
+        {
+            return;
+        }
+
+        var refreshed = PartyMember.FromCharacter(chr, channelIndex, isOnline: true);
+        var result = _parties.UpdateMember(refreshed, PartyUpdateKind.LogOnOff);
+        if (!result.Succeeded)
+        {
+            return;
+        }
+
+        await BroadcastPartyUpdateAsync(result, player, channelIndex, sendSelf, ct);
+    }
+
+    /// <summary>
+    /// 對照 Java <c>MapleClient.disconnect</c>：<c>chrp.setOnline(false)</c> →
+    /// <c>updateParty(LOG_ONOFF, chrp)</c> → 若離線者是隊長，從**同地圖**在線隊友中挑等級最高者
+    /// 以 <c>CHANGE_LEADER_DC</c> 接任。呼叫端在 session 即將關閉時觸發，故不需要 <c>sendSelf</c>。
+    /// </summary>
+    public async Task NotifyLogoutAsync(Player player, CancellationToken ct)
+    {
+        var chr = player.Character;
+        var party = _parties.GetPartyForCharacter(chr.Id);
+        if (party is null)
+        {
+            return;
+        }
+
+        var existing = party.GetMember(chr.Id);
+        var offline = (existing ?? PartyMember.FromCharacter(chr, channelIndex: 0)) with { IsOnline = false };
+
+        var result = _parties.UpdateMember(offline, PartyUpdateKind.LogOnOff);
+        if (!result.Succeeded || result.Party is not { } updated)
+        {
+            return;
+        }
+
+        await BroadcastPartyUpdateAsync(result, player, existing?.ChannelIndex ?? 0, NoOpSendAsync, ct);
+
+        if (updated.LeaderId != chr.Id)
+        {
+            return;
+        }
+
+        var successor = updated.Members
+            .Where(m => m.CharacterId != chr.Id && m.IsOnline && m.MapId == chr.MapId)
+            .OrderByDescending(m => m.Level)
+            .FirstOrDefault();
+
+        if (successor is null)
+        {
+            return;
+        }
+
+        var leaderChange = _parties.ChangeLeader(chr.Id, successor.CharacterId, disconnected: true);
+        if (leaderChange.Succeeded)
+        {
+            await BroadcastPartyUpdateAsync(leaderChange, player, existing?.ChannelIndex ?? 0, NoOpSendAsync, ct);
+        }
+    }
+
+    private static Task NoOpSendAsync(byte[] packet, CancellationToken ct) => Task.CompletedTask;
+
     public async Task HandleDenyPartyRequestAsync(
         PacketReader reader,
         Player player,
