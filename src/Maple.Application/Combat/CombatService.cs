@@ -181,6 +181,7 @@ public sealed class CombatService
             if (result.Killed)
             {
                 field.Remove(mob.ObjectId);
+                NotifySpawnPointKilled(field, mob);
             }
         }
 
@@ -198,6 +199,28 @@ public sealed class CombatService
         }
 
         field.Remove(mob.ObjectId);
+        NotifySpawnPointKilled(field, mob);
         return new CombatMobKillResult(mob.ObjectId, mob.Definition.MonsterId, animation, Killed: true);
+    }
+
+    /// <summary>
+    /// P066（M4-2 世界 tick，怪物重生第三步）：對照 Java <c>MonsterListener.monsterKilled</c>——
+    /// 怪物死亡（不論是一般攻擊擊殺還是 <see cref="KillMobWithoutRewards"/> 的自爆路徑，Java
+    /// 兩者都會觸發同一個 listener）要通知它出生的重生點重算下次可重生時間、歸還並發額度。
+    /// 用 <c>Mob.Definition</c> 跟 <c>MobSpawnPoint.Definition</c> 的參照相等比對找出對應重生點
+    /// ——兩者本來就共用同一個 <see cref="Maple.Core.Maps.MapMonster"/> 物件實例（見
+    /// <see cref="SpawnMapMonsters"/>），不需要另外幫 <see cref="Mob"/> 加欄位。找不到對應重生點
+    /// （例如未來其他生怪路徑，如玩家召喚怪，本來就不該有重生點）靜默略過。
+    /// </summary>
+    private void NotifySpawnPointKilled(FieldInstance field, Mob mob)
+    {
+        foreach (var point in field.SpawnPoints)
+        {
+            if (ReferenceEquals(point.Definition, mob.Definition))
+            {
+                point.OnMonsterKilled(_timeProvider.GetUtcNow());
+                return;
+            }
+        }
     }
 }

@@ -208,6 +208,47 @@ public sealed class CombatServiceTests
         Assert.Empty(service.RespawnMonsters(field, DateTimeOffset.UtcNow));
     }
 
+    // ── P066：怪物死亡通知對應重生點（ApplyAttack / KillMobWithoutRewards 死亡路徑）────────
+
+    [Fact]
+    public void ApplyAttack_KillsMob_NotifiesMatchingSpawnPointAndAllowsRespawn()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var service = new CombatService(new MapService(new MonsterDataProvider()), timeProvider: new FakeTimeProvider(now));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        field.Add(player);
+        var initial = service.SpawnMapMonsters(field, 100000100);
+        var mob = initial[0];
+
+        var result = service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [999]),
+        ]));
+
+        Assert.True(Assert.Single(result.Hits).Killed);
+        var point = Assert.Single(field.SpawnPoints);
+        Assert.Equal(0, point.SpawnedCount);
+
+        // fixture mobTime=0 → 死亡後立刻可重生（NextPossibleSpawn == now）。
+        var respawned = service.RespawnMonsters(field, now);
+        Assert.Single(respawned);
+    }
+
+    [Fact]
+    public void KillMobWithoutRewards_NotifiesMatchingSpawnPoint()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var service = new CombatService(new MapService(new MonsterDataProvider()), timeProvider: new FakeTimeProvider(now));
+        var field = new FieldInstance(100000100);
+        var initial = service.SpawnMapMonsters(field, 100000100);
+
+        var result = service.KillMobWithoutRewards(field, initial[0].ObjectId, animation: 3);
+
+        Assert.True(result.Killed);
+        var point = Assert.Single(field.SpawnPoints);
+        Assert.Equal(0, point.SpawnedCount);
+    }
+
     private sealed class FakeTimeProvider : TimeProvider
     {
         private readonly DateTimeOffset _now;
