@@ -236,9 +236,14 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
                 return new GuildCommandResult(GuildCommandStatus.InvalidOperation, guild.Snapshot(), member.Clone());
             }
 
-            _guildByCharacter.Add(member.CharacterId, guild.Id);
             guild.GainGuildPoints(50);
+            // guild.Members 的異動要先做才能被 UpdateAsync 存到（跟 P036 的 CreateGuildAsync 不同，
+            // 這裡的 guild 是既有物件，必須先改狀態才有東西可存）；但 _guildByCharacter 是純本地
+            // 查找用的 registry 字典、不是要持久化的內容，延到 UpdateAsync 成功後才登記，避免
+            // DB 失敗時角色被 AlreadyInGuild 卡死（同 P036 手法，物件欄位失敗後的暫時不同步
+            // 屬較輕微風險，留給後續評估，不在這次範圍內處理）。
             await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            _guildByCharacter.Add(member.CharacterId, guild.Id);
 
             return new GuildCommandResult(
                 GuildCommandStatus.Success,
@@ -272,9 +277,9 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
             }
 
             var recipients = OnlineRecipientIds(guild, target);
-            _guildByCharacter.Remove(characterId);
             guild.GainGuildPoints(-50);
             await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            _guildByCharacter.Remove(characterId);
 
             return new GuildCommandResult(
                 GuildCommandStatus.Success,
@@ -326,9 +331,9 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
             var removed = target.Clone();
             var recipients = OnlineRecipientIds(guild);
             guild.TryRemoveMember(targetId, out _);
-            _guildByCharacter.Remove(targetId);
             guild.GainGuildPoints(-50);
             await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            _guildByCharacter.Remove(targetId);
 
             return new GuildCommandResult(
                 GuildCommandStatus.Success,

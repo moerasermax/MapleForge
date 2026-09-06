@@ -270,6 +270,70 @@ public sealed class GuildServiceTests
         Assert.NotNull(await service.GetGuildAsync(created.Guild!.Id));
     }
 
+    [Fact]
+    public async Task AcceptInviteAsync_RepositoryUpdateFails_DoesNotLeaveTargetLockedInRegistry()
+    {
+        // P037：AddMemberAsync 的 _guildByCharacter 登記延到 UpdateAsync 成功後才做，
+        // 失敗時目標角色不該被誤判為「已在公會」。
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 100), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var target = Player(2, "Guest");
+        characters.Put(leader.Character);
+        characters.Put(target.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(target.Character, channel: 1));
+        guilds.ThrowOnNextUpdate = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.AcceptInviteAsync(target, created.Guild!.Id, channel: 1));
+
+        Assert.Null(await service.GetGuildForCharacterAsync(target.Character.Id));
+    }
+
+    [Fact]
+    public async Task LeaveGuildAsync_RepositoryUpdateFails_CharacterStaysInRegistry()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 101), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var member = Player(2, "Member");
+        characters.Put(leader.Character);
+        characters.Put(member.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await InviteAndJoinAsync(service, leader, member, created.Guild!.Id);
+        guilds.ThrowOnNextUpdate = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.LeaveGuildAsync(member));
+
+        // _guildByCharacter（registry 字典）失敗時不該移除——這是這次修的部分。guild.Members
+        // 物件欄位本身已經先異動過（較輕微的同步風險，P036/P037 皆刻意不處理，見任務歷程）。
+        Assert.NotNull(await service.GetGuildForCharacterAsync(member.Character.Id));
+    }
+
+    [Fact]
+    public async Task ExpelMemberAsync_RepositoryUpdateFails_TargetStaysInRegistry()
+    {
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 102), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        var member = Player(2, "Member");
+        characters.Put(leader.Character);
+        characters.Put(member.Character);
+        var created = await service.CreateGuildAsync(leader, "Forge", channel: 1);
+        await InviteAndJoinAsync(service, leader, member, created.Guild!.Id);
+        guilds.ThrowOnNextUpdate = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ExpelMemberAsync(leader, member.Character.Id, member.Character.Name));
+
+        // 同上：_guildByCharacter 失敗時不該移除，guild.Members 物件欄位的同步風險不在這次範圍。
+        Assert.NotNull(await service.GetGuildForCharacterAsync(member.Character.Id));
+    }
+
     private static async Task InviteAndJoinAsync(GuildService service, Player leader, Player target, int guildId)
     {
         var invite = await service.InviteMemberAsync(leader.Character.Id, GuildMember.FromCharacter(target.Character, channel: 1));
@@ -293,9 +357,10 @@ public sealed class GuildServiceTests
     {
         private readonly Dictionary<int, Guild> _guilds = new();
 
-        /// <summary>P036 容錯測試用：下一次對應操作拋例外，模擬 DB 寫入失敗。</summary>
+        /// <summary>P036/P037 容錯測試用：下一次對應操作拋例外，模擬 DB 寫入失敗。</summary>
         public bool ThrowOnNextAdd { get; set; }
         public bool ThrowOnNextDelete { get; set; }
+        public bool ThrowOnNextUpdate { get; set; }
 
         public Task<IReadOnlyList<Guild>> GetAllAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<Guild>>(_guilds.Values.ToList());
@@ -320,6 +385,12 @@ public sealed class GuildServiceTests
 
         public Task UpdateAsync(Guild guild, CancellationToken ct = default)
         {
+            if (ThrowOnNextUpdate)
+            {
+                ThrowOnNextUpdate = false;
+                throw new InvalidOperationException("模擬 DB 更新失敗");
+            }
+
             _guilds[guild.Id] = guild;
             return Task.CompletedTask;
         }
