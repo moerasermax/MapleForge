@@ -1,4 +1,5 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Application.Skills;
 using Maple.Core.IO;
@@ -74,7 +75,9 @@ public sealed class ChannelPlayerTickHandlerTests
         var hpUpdate80 = V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, 80) });
         var hpUpdate0 = V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, 0) });
         Assert.Equal(new[] { hpUpdate80 }, received.Where(r => r.CharId == 1).Select(r => r.Packet));
-        Assert.Equal(new[] { V113StatsPackets.EnableActions(), hpUpdate0 }, received.Where(r => r.CharId == 2).Select(r => r.Packet));
+        // P076：死亡序列 = EnableActions → EXP 更新（初心者免懲罰但 Java 仍送 EXP）→ HP 更新。
+        var expUpdate = V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Exp, 0) });
+        Assert.Equal(new[] { V113StatsPackets.EnableActions(), expUpdate, hpUpdate0 }, received.Where(r => r.CharId == 2).Select(r => r.Packet));
     }
 
     private static (V113PlayerTickHandler Handler, InMemoryMapSessionRegistry Registry, FieldInstance Field) Build()
@@ -83,6 +86,7 @@ public sealed class ChannelPlayerTickHandlerTests
         var handler = new V113PlayerTickHandler(
             new SkillService(new InMemorySkillCatalog(Array.Empty<Core.Skills.MapleSkill>())),
             new FieldHazardService(),
+            new PlayerDeathService(new MapService(new NullDataProvider())),
             registry);
         return (handler, registry, new FieldInstance(100000000));
     }
@@ -97,6 +101,13 @@ public sealed class ChannelPlayerTickHandlerTests
         }
 
         return received;
+    }
+
+    private sealed class NullDataProvider : Core.Data.IDataProvider
+    {
+        public Core.Data.IDataNode GetRoot(string fileName) => throw new NotSupportedException();
+
+        public Core.Data.IDataNode? GetAt(string fileName, string path) => null;
     }
 
     private static Player NewPlayer(int id, string name, short hp = 50) =>

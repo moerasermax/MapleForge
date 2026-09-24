@@ -267,6 +267,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113DropExpiryHandler>();
         builder.Services.AddSingleton<V113MobRespawnHandler>();
         builder.Services.AddSingleton<FieldHazardService>();
+        builder.Services.AddSingleton<PlayerDeathService>();
         builder.Services.AddSingleton<V113PlayerTickHandler>();
         builder.Services.AddHostedService<WorldTickHostedService>();
 

@@ -65,6 +65,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly StorageService _storageService;
     private readonly CombatService _combatService;
     private readonly SkillService _skillService;
+    private readonly PlayerDeathService _playerDeaths;
     private readonly ISkillBookCatalog _skillBookCatalog;
     private readonly DropService _dropService;
     private readonly FameService _fameService;
@@ -158,9 +159,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113NoteHandler noteHandler,
         V113FamilyHandler familyHandler,
         V113EventMiniGameHandler eventMiniGameHandler,
-        V113ChannelOptions options)
+        V113ChannelOptions options,
+        PlayerDeathService playerDeaths)
     {
         _log = log;
+        _playerDeaths = playerDeaths;
         _charService = charService;
         _accounts = accounts;
         _onlinePlayers = onlinePlayers;
@@ -3427,7 +3430,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
+        var wasAlive = player.IsAlive;
         var applied = request.Damage > 0 ? player.TakeDamage(request.Damage) : (short)0;
+        if (wasAlive && !player.IsAlive)
+        {
+            // P076：對照 Java PlayerStats.setHp 死亡分支 → playerDead（經驗值/護身符），HP 更新在其後。
+            foreach (var packet in V113DeathPackets.Build(player, _playerDeaths.OnPlayerDied(player)))
+            {
+                await session.SendAsync(packet, ct);
+            }
+        }
+
         if (applied > 0)
         {
             await session.SendAsync(

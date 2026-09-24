@@ -1,3 +1,4 @@
+using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Application.Skills;
 using Maple.Core.World;
@@ -18,12 +19,18 @@ public sealed class V113PlayerTickHandler
 {
     private readonly SkillService _skills;
     private readonly FieldHazardService _hazards;
+    private readonly PlayerDeathService _deaths;
     private readonly IMapSessionRegistry _mapRegistry;
 
-    public V113PlayerTickHandler(SkillService skills, FieldHazardService hazards, IMapSessionRegistry mapRegistry)
+    public V113PlayerTickHandler(
+        SkillService skills,
+        FieldHazardService hazards,
+        PlayerDeathService deaths,
+        IMapSessionRegistry mapRegistry)
     {
         _skills = skills;
         _hazards = hazards;
+        _deaths = deaths;
         _mapRegistry = mapRegistry;
     }
 
@@ -57,7 +64,11 @@ public sealed class V113PlayerTickHandler
             var entry = entries.First(e => ReferenceEquals(e.Player, player));
             if (!player.IsAlive)
             {
-                await SendBestEffortAsync(entry, V113StatsPackets.EnableActions(), ct).ConfigureAwait(false);
+                // P076：由活轉死 → 死亡懲罰（enableActions + 護身符/經驗值封包），HP 更新留在最後。
+                foreach (var packet in V113DeathPackets.Build(player, _deaths.OnPlayerDied(player)))
+                {
+                    await SendBestEffortAsync(entry, packet, ct).ConfigureAwait(false);
+                }
             }
 
             await SendBestEffortAsync(

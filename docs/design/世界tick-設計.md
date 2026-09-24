@@ -28,5 +28,5 @@ Java `World.Respawn`（`WorldTimer.register(new Respawn(), 3000)`）每 3 秒巡
 ## 尚未移植（候選）
 
 - 異常狀態（disease）到期、寵物飢餓／限時寵物、坐騎疲勞、Dragon Blood/Berserk、`doRecovery`。
-- 死亡懲罰（Java `playerDead`：經驗值損失、護身符、取消特定 buff）目前任何死亡路徑都沒有處理。
+- 死亡懲罰：P076 已移植 `playerDead` 經驗值區塊（護身符/經驗值損失），怪物打死與地圖扣血兩條路徑都接上；靈魂之石、取消 buff、事件副本、裝備耐久尚未移植。
 - Java 的 `numTimes % N` 以 tick 次數計時；MapleForge 傾向改用各物件自己的時間戳（可測、不依賴排程器次數）。

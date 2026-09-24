@@ -1665,5 +1665,16 @@ writeShort(seconds)   // 0 = 冷卻結束
 
 語義：`SPECIAL_MOVE` 施放有冷卻的技能且 `SkillService.Cast` 實際登記冷卻時送出（海盜船 5221006 施放時不登記，對照 Java）；冷卻中被拒改回 `UPDATE_STATS` `EnableActions`。P072 起 `CLOSE_RANGE_ATTACK`/`RANGED_ATTACK`/`MAGIC_ATTACK` 也走同款冷卻區塊（技能種類檢查後、廣播前；冷卻中整次攻擊丟棄）。證據層級：Java source + Adapters focused tests；**unverified**（真 v113 client 圖示冷卻 UI 未 smoke）。
 
+### 死亡序列與護身符 `SHOW_ITEM_GAIN_INCHAT(0xC7)` mode 6（P076）
+
+對照 Java `PlayerStats.setHp` 死亡分支 + `MapleCharacter.playerDead` 經驗值區塊，MapleForge 在玩家由活轉死時（`TAKE_DAMAGE` 被怪打死、P075 地圖持續扣血）依序送：
+
+1. `UPDATE_STATS` `EnableActions`
+2. （有護身符時）`MODIFY_INVENTORY_ITEM(0x1B)` 數量/移除 + `useCharm`：`writeShort(0xC7) writeByte(6) writeByte(1) writeByte(charmsLeft) writeByte(daysLeft=0)`
+3. `UPDATE_STATS` EXP（Java 一律送，初心者免懲罰也送）
+4. `UPDATE_STATS` HP（呼叫端原本的 HP 更新）
+
+證據層級：Java source + Adapters focused tests；**unverified**。Java `removeById(..., fromDrop=true)` 的背包更新首位元組為 1，MapleForge 沿用既有 `ModifyInventoryQuantity`（首位元組 0），待真客戶端確認是否有差。
+
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*
