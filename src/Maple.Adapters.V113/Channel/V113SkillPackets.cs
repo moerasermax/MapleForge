@@ -20,7 +20,8 @@ internal sealed record V113SkillHandleResult(
     byte[]? Packet,
     SkillCastResult? Cast,
     CancelBuffResult? Cancel,
-    byte[]? CooldownPacket = null);
+    byte[]? CooldownPacket = null,
+    byte[]? StatsPacket = null);
 
 /// <summary>v113 技能/buff 封包。對照 Java PlayerHandler.SpecialMove/CancelBuffHandler 與 MaplePacketCreator.giveBuff/cancelBuff。</summary>
 internal static class V113SkillPackets
@@ -168,6 +169,7 @@ internal static class V113SkillMoveHandler
         DateTimeOffset now)
     {
         var request = V113SkillPackets.ParseSpecialMove(reader);
+        var mpBefore = player.Mp;
         var result = skillService.Cast(player, request.SkillId, request.SkillLevel, now);
         var packet = result.Status == SkillCastStatus.Success && result.AppliedBuff is not null && result.Effect is not null
             ? V113SkillPackets.GiveBuff(request.SkillId, result.AppliedBuff.DurationMilliseconds, result.AppliedBuff.Stats, result.Effect)
@@ -181,7 +183,26 @@ internal static class V113SkillMoveHandler
                 ? V113SkillPackets.SkillCooldown(request.SkillId, result.CooldownStartedSeconds)
                 : null;
 
-        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket);
+        // P078：對照 Java SpecialMove 開頭（死亡 → enableActions）與 MapleStatEffect.applyTo（成功套用後一律
+        // updatePlayerStats(HP[, MP 有變動才帶], itemReaction=true)，讓客戶端 HP/MP 同步並解鎖動作）。
+        var statsPacket = result.Status switch
+        {
+            SkillCastStatus.Dead => V113StatsPackets.EnableActions(),
+            SkillCastStatus.Success => V113StatsPackets.UpdateStats(BuildCastStatUpdates(player, mpBefore), itemReaction: true),
+            _ => null,
+        };
+
+        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket);
+    }
+
+    private static IEnumerable<PlayerStatUpdate> BuildCastStatUpdates(Player player, short mpBefore)
+    {
+        if (player.Mp != mpBefore)
+        {
+            yield return new PlayerStatUpdate(PlayerStatKind.Mp, player.Mp);
+        }
+
+        yield return new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp);
     }
 
     /// <summary>

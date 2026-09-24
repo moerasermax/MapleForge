@@ -2969,14 +2969,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
-        if (handled.Packet is not null)
-        {
-            await session.SendAsync(handled.Packet, ct);
-        }
-
+        // 封包順序對照 Java SpecialMove：skillCooldown（套用前）→ applyTo 的 HP/MP 更新 → buff。
         if (handled.CooldownPacket is not null)
         {
             await session.SendAsync(handled.CooldownPacket, ct);
+        }
+
+        if (handled.StatsPacket is not null)
+        {
+            await session.SendAsync(handled.StatsPacket, ct);
+        }
+
+        if (handled.Packet is not null)
+        {
+            await session.SendAsync(handled.Packet, ct);
         }
 
         if (handled.Cast is { Status: not SkillCastStatus.Success } cast)

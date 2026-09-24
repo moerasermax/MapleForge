@@ -83,6 +83,50 @@ public sealed class ChannelSkillPacketTests
         Assert.Equal(SkillCastStatus.Success, handled.Cast?.Status);
         Assert.NotNull(handled.Packet);
         Assert.Equal(19, player.Mp);
+        // P078：Java applyTo 成功後 updatePlayerStats(MP 有變動 + HP, itemReaction=true)。
+        Assert.Equal(
+            V113StatsPackets.UpdateStats(
+                new[] { new PlayerStatUpdate(PlayerStatKind.Mp, 19), new PlayerStatUpdate(PlayerStatKind.Hp, 50) },
+                itemReaction: true),
+            handled.StatsPacket);
+    }
+
+    [Fact]
+    public void SkillMoveHandler_DeadPlayer_SendsEnableActions()
+    {
+        var player = MakePlayer();
+        player.ChangeSkillLevel(2001002, level: 1, masterLevel: 20);
+        player.TakeDamage(player.Hp);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { MagicGuardSkill() }));
+
+        var handled = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(2001002, level: 1), offset: 2),
+            player,
+            service,
+            new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(SkillCastStatus.Dead, handled.Cast?.Status);
+        Assert.Equal(V113StatsPackets.EnableActions(), handled.StatsPacket);
+        Assert.Null(handled.Packet);
+    }
+
+    [Fact]
+    public void SkillMoveHandler_NotEnoughMp_SendsNoStatsPacket()
+    {
+        // Java applyTo：stat.getMp() + mpchange < 0 → return false，不送任何封包。
+        var player = MakePlayer();
+        player.ChangeSkillLevel(2001002, level: 1, masterLevel: 20);
+        player.UseMp(25);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { MagicGuardSkill() }));
+
+        var handled = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(2001002, level: 1), offset: 2),
+            player,
+            service,
+            new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(SkillCastStatus.NotEnoughMp, handled.Cast?.Status);
+        Assert.Null(handled.StatsPacket);
     }
 
     [Fact]
