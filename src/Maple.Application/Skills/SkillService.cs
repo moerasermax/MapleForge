@@ -169,6 +169,29 @@ public sealed class SkillService
         return new AttackCooldownResult(AttackCooldownStatus.Started, effect.CooldownSeconds);
     }
 
+    /// <summary>
+    /// P077：攻擊技能是否可用（對照 Java <c>AttackInfo.getAttackEffect</c>：武陵/金字塔技能強制視為等級 1；
+    /// 其他技能以 <c>getLinkedSkill</c> 對應後的等級判斷，<c>skillLevel &lt;= 0</c> 回 null → 整次攻擊丟棄）。
+    /// 技能 ID 0（普攻）一樣會得到 false，近戰/遠程呼叫端應先略過 0（Java 只在 <c>attack.skill != 0</c> 時檢查），
+    /// 魔法攻擊則不略過（Java <c>MagicDamage</c> 無此判斷）。
+    /// </summary>
+    public static bool HasAttackSkillLevel(Player player, int skillId)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return IsMulungSkill(skillId) || IsPyramidSkill(skillId) || player.GetSkillLevel(GetLinkedSkillId(skillId)) > 0;
+    }
+
+    /// <summary>對照 Java <c>GameConstants.isMulungSkill</c>。</summary>
+    public static bool IsMulungSkill(int skillId)
+        => skillId is 1009 or 1010 or 1011
+            or 10001009 or 10001010 or 10001011
+            or 20001009 or 20001010 or 20001011
+            or 20011009 or 20011010 or 20011011;
+
+    /// <summary>對照 Java <c>GameConstants.isPyramidSkill</c>。</summary>
+    public static bool IsPyramidSkill(int skillId)
+        => skillId is 1020 or 10001020 or 20001020 or 20011020;
+
     /// <summary>對照 Java <c>GameConstants.getLinkedSkill</c>：衍生技能共用本體技能的等級。</summary>
     public static int GetLinkedSkillId(int skillId)
         => skillId switch

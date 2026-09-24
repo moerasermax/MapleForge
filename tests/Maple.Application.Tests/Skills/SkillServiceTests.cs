@@ -140,6 +140,30 @@ public sealed class SkillServiceTests
         Assert.False(player.SkillIsCooling(21110002, now.AddSeconds(1)));
     }
 
+    [Fact]
+    public void HasAttackSkillLevel_RequiresLearnedSkill_ExceptMulungAndPyramid()
+    {
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(1001004, level: 1, masterLevel: 20);
+
+        Assert.True(SkillService.HasAttackSkillLevel(player, 1001004));
+        Assert.False(SkillService.HasAttackSkillLevel(player, 1001005)); // 未學
+        Assert.False(SkillService.HasAttackSkillLevel(player, 0));       // 技能 0 等級恆為 0（魔法攻擊 Java 也會丟棄）
+        Assert.True(SkillService.HasAttackSkillLevel(player, 1009));     // 武陵技能：Java 強制等級 1
+        Assert.True(SkillService.HasAttackSkillLevel(player, 20001020)); // 金字塔技能
+    }
+
+    [Fact]
+    public void HasAttackSkillLevel_LinkedSkill_UsesBaseSkillLevel()
+    {
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(21120002, level: 1, masterLevel: 30);
+
+        Assert.True(SkillService.HasAttackSkillLevel(player, 21120009));
+        Assert.True(SkillService.HasAttackSkillLevel(player, 21120010));
+        Assert.False(SkillService.HasAttackSkillLevel(player, 21110007)); // 本體 21110002 未學
+    }
+
     private static MapleSkill AttackCooldownSkill(int skillId, int seconds)
         => new()
         {

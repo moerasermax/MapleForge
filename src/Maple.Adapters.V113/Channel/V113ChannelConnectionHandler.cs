@@ -3232,6 +3232,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        // P077：對照 Java closeRangeAttack 的 attack.skill != 0 → getAttackEffect == null → return（未學技能）。
+        if (attack.SkillId != 0 && !EnsureAttackSkillLearned(player, attack.SkillId, "近戰"))
+        {
+            return;
+        }
+
         if (!await CheckAttackCooldownAsync(player, attack.SkillId, session, ct))
         {
             return;
@@ -3281,6 +3287,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             _log.LogWarning(
                 "[Channel] 玩家 {Name} 遠程攻擊技能種類不符 skill={Skill}", player.Character.Name, attack.SkillId);
+            return;
+        }
+
+        // P077：對照 Java rangedAttack 的 attack.skill != 0 → getAttackEffect == null → return（未學技能）。
+        if (attack.SkillId != 0 && !EnsureAttackSkillLearned(player, attack.SkillId, "遠程"))
+        {
             return;
         }
 
@@ -3355,6 +3367,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        // P077：對照 Java MagicDamage 的 getAttackEffect == null → return（未學技能；魔法攻擊不略過技能 0）。
+        if (!EnsureAttackSkillLearned(player, attack.SkillId, "魔法"))
+        {
+            return;
+        }
+
         if (!await CheckAttackCooldownAsync(player, attack.SkillId, session, ct))
         {
             return;
@@ -3380,6 +3398,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// 對照 Java 三個攻擊 handler 共用的冷卻區塊（在技能種類檢查之後、廣播/傷害/消耗之前）：
     /// 冷卻中送 enableActions 並丟棄整次攻擊（回 false）；登記冷卻則送 COOLDOWN 封包。
     /// </summary>
+    /// <summary>P077：未學該攻擊技能時記錄並回 false（呼叫端丟棄整次攻擊，Java 不回任何封包）。</summary>
+    private bool EnsureAttackSkillLearned(Player player, int skillId, string kind)
+    {
+        if (SkillService.HasAttackSkillLevel(player, skillId))
+        {
+            return true;
+        }
+
+        _log.LogWarning("[Channel] 玩家 {Name} 使用未學習的{Kind}攻擊技能 skill={Skill}", player.Character.Name, kind, skillId);
+        return false;
+    }
+
     private async Task<bool> CheckAttackCooldownAsync(Player player, int skillId, MapleSession session, CancellationToken ct)
     {
         var (blocked, packet) = V113SkillMoveHandler.HandleAttackCooldown(player, skillId, _skillService, DateTimeOffset.UtcNow);
