@@ -1,3 +1,4 @@
+using Maple.Application.Combat;
 using Maple.Core.IO;
 using Maple.Core.World;
 
@@ -10,9 +11,17 @@ namespace Maple.Adapters.V113.Channel;
 /// </summary>
 internal static class V113DeathPackets
 {
-    public static IReadOnlyList<byte[]> Build(Player player, DeathPenaltyResult penalty)
+    public static IReadOnlyList<byte[]> Build(Player player, PlayerDeathOutcome outcome)
     {
         var packets = new List<byte[]> { V113StatsPackets.EnableActions() };
+
+        // P090：playerDead 前段取消的 buff（dispelSkill(0) + MORPH/MONSTER_RIDING/SUMMON/PUPPET）。
+        foreach (var cancellation in outcome.CancelledBuffs)
+        {
+            packets.Add(V113SkillPackets.CancelBuff(cancellation.Stats));
+        }
+
+        var penalty = outcome.Penalty;
         if (penalty.Kind == DeathPenaltyKind.CharmConsumed)
         {
             foreach (var mutation in penalty.CharmMutations)

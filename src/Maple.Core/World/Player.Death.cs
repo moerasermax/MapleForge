@@ -1,4 +1,5 @@
 using Maple.Core.Inventory;
+using Maple.Core.Skills;
 
 namespace Maple.Core.World;
 
@@ -26,6 +27,48 @@ public sealed partial class Player
 
     /// <summary>強效護身符（Java <c>5130002</c>）。</summary>
     public const int SuperSafetyCharmItemId = 5130002;
+
+    /// <summary>Java <c>dispelSkill(0)</c> 會取消的技能來源（召喚/傀儡/分身類）。</summary>
+    private static readonly HashSet<int> DeathDispelSkillIds =
+    [
+        4331003, 4331002, 4341002, 22131001, 1321007, 2121005, 2221005,
+        2311006, 2321003, 3111002, 3111005, 3211002, 3211005, 4111002,
+    ];
+
+    private static readonly MapleBuffStat[] DeathCancelledStats =
+    [
+        MapleBuffStat.MORPH, MapleBuffStat.MONSTER_RIDING, MapleBuffStat.SUMMON, MapleBuffStat.PUPPET,
+    ];
+
+    /// <summary>
+    /// P090：對照 Java <c>MapleCharacter.playerDead</c> 的 buff 區塊：<c>dispelSkill(0)</c>（依 buff stat 列舉順序找第一個
+    /// 來源在清單內的 buff，取消整個 effect 後停止）→ <c>cancelEffectFromBuffStat</c> MORPH / MONSTER_RIDING / SUMMON / PUPPET
+    /// （各自取消持有該 stat 的整個 effect）。回傳所有取消結果，呼叫端送 cancelBuff 與召喚獸副作用。
+    /// </summary>
+    public IReadOnlyList<PlayerBuffCancellation> CancelBuffsOnDeath()
+    {
+        var result = new List<PlayerBuffCancellation>();
+        lock (_skillsGate)
+        {
+            var dispel = _activeBuffs.Values
+                .OrderBy(static b => (int)b.Stat)
+                .FirstOrDefault(static b => DeathDispelSkillIds.Contains(b.SourceId));
+            if (dispel is not null)
+            {
+                result.AddRange(CancelBuffBySource(dispel.SourceId));
+            }
+
+            foreach (var stat in DeathCancelledStats)
+            {
+                if (_activeBuffs.TryGetValue(stat, out var holder))
+                {
+                    result.AddRange(CancelBuffBySource(holder.SourceId));
+                }
+            }
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// P076：對照 Java <c>MapleCharacter.playerDead</c> 的經驗值區塊。初心者系職業免懲罰；否則先消耗護身符、

@@ -1,5 +1,6 @@
 using Maple.Core.Characters;
 using Maple.Core.Inventory;
+using Maple.Core.Skills;
 using Maple.Core.World;
 
 namespace Maple.Core.Tests.World;
@@ -89,6 +90,46 @@ public sealed class PlayerDeathPenaltyTests
         Assert.Equal(DeathPenaltyKind.ExpLost, fourth.Kind);
         Assert.Equal(829, player.Character.Exp);
     }
+
+    [Fact]
+    public void CancelBuffsOnDeath_CancelsDispelListSummonMorphRidingPuppet_KeepsOthers()
+    {
+        // P090：對照 Java playerDead 的 dispelSkill(0) + cancelEffectFromBuffStat(MORPH/MONSTER_RIDING/SUMMON/PUPPET)。
+        var player = NewPlayer(job: 100, level: 10, exp: 1000);
+        player.Character.Stats.Hp = 100;
+        var now = DateTimeOffset.UnixEpoch;
+        Buff(player, 3111005, now, MapleBuffStat.SUMMON);              // 召喚（在 dispel 清單，也持有 SUMMON）
+        Buff(player, 5111005, now, MapleBuffStat.MORPH);               // 變身
+        Buff(player, 1004, now, MapleBuffStat.MONSTER_RIDING);         // 騎寵
+        Buff(player, 2001002, now, MapleBuffStat.MAGIC_GUARD);         // 一般 buff，保留
+
+        var cancelled = player.CancelBuffsOnDeath();
+
+        Assert.Equal(new[] { 3111005, 5111005, 1004 }.Order(), cancelled.Select(c => c.SourceId).Order());
+        var remaining = Assert.Single(player.ActiveBuffs);
+        Assert.Equal(MapleBuffStat.MAGIC_GUARD, remaining.Stat);
+    }
+
+    [Fact]
+    public void CancelBuffsOnDeath_NoMatchingBuffs_ReturnsEmpty()
+    {
+        var player = NewPlayer(job: 100, level: 10, exp: 1000);
+        player.Character.Stats.Hp = 100;
+        Buff(player, 2001002, DateTimeOffset.UnixEpoch, MapleBuffStat.MAGIC_GUARD);
+
+        Assert.Empty(player.CancelBuffsOnDeath());
+        Assert.Single(player.ActiveBuffs);
+    }
+
+    private static void Buff(Player player, int sourceId, DateTimeOffset now, MapleBuffStat stat)
+        => player.ApplySkillEffect(new MapleStatEffect
+        {
+            SourceId = sourceId,
+            Level = 1,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = new[] { new BuffStatValue(stat, 1) },
+        }, now);
 
     private static Player NewPlayer(short job, byte level, int exp)
         => new(new Character

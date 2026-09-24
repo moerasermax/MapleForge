@@ -78,10 +78,14 @@ public sealed class V113PlayerTickHandler
             if (!player.IsAlive)
             {
                 // P076：由活轉死 → 死亡懲罰（enableActions + 護身符/經驗值封包），HP 更新留在最後。
-                foreach (var packet in V113DeathPackets.Build(player, _deaths.OnPlayerDied(player)))
+                // P090：playerDead 前段取消的 buff 連帶移除召喚獸。
+                var outcome = _deaths.OnPlayerDied(player);
+                foreach (var packet in V113DeathPackets.Build(player, outcome))
                 {
                     await SendBestEffortAsync(entry, packet, ct).ConfigureAwait(false);
                 }
+
+                await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct).ConfigureAwait(false);
             }
 
             await SendBestEffortAsync(

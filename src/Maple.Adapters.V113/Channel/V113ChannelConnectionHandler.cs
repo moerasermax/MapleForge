@@ -3656,10 +3656,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (wasAlive && !player.IsAlive)
         {
             // P076：對照 Java PlayerStats.setHp 死亡分支 → playerDead（經驗值/護身符），HP 更新在其後。
-            foreach (var packet in V113DeathPackets.Build(player, _playerDeaths.OnPlayerDied(player)))
+            // P090：playerDead 前段取消的 buff 連帶移除召喚獸。
+            var outcome = _playerDeaths.OnPlayerDied(player);
+            foreach (var packet in V113DeathPackets.Build(player, outcome))
             {
                 await session.SendAsync(packet, ct);
             }
+
+            await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct);
         }
 
         if (applied > 0)
