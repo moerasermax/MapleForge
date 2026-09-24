@@ -87,6 +87,36 @@ public sealed class DoorServiceOpenDoorTests
         Assert.Same(second.Door, service.GetDoorByOwner(101010000, 1));
     }
 
+    [Fact]
+    public void CloseDoor_ReturnsDoorAndForgetsIt_ThenNull()
+    {
+        // P088：對照 Java removeDoor + clearDoors。
+        var service = new DoorService();
+        var door = service.TryOpenDoor(NewPlayer(1), Target, Town, DoorPos).Door;
+
+        Assert.Same(door, service.CloseDoor(1));
+        Assert.Null(service.GetDoorByOwner(101010000, 1));
+        Assert.Null(service.GetDoorByOwner(101000000, 1));
+        Assert.Null(service.CloseDoor(1));
+    }
+
+    [Fact]
+    public void CloseDoor_FreesPortalForPartyMember()
+    {
+        var parties = new InMemoryPartyRegistry();
+        var leader = NewPlayer(1);
+        var member = NewPlayer(2);
+        var created = parties.CreateParty(PartyMember.FromCharacter(leader.Character, channelIndex: 1));
+        parties.JoinParty(created.Party!.Id, PartyMember.FromCharacter(member.Character, channelIndex: 1));
+        var service = new DoorService(parties);
+        service.TryOpenDoor(leader, Target, Town, DoorPos);
+
+        service.CloseDoor(1);
+        var memberDoor = service.TryOpenDoor(member, Target, Town, DoorPos);
+
+        Assert.Equal(new Position(500, 50, 0, 0), memberDoor.Door!.TownPortalPosition);
+    }
+
     [Theory]
     [InlineData(2311002, true)]
     [InlineData(8001, true)]

@@ -370,7 +370,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 await target.SendAsync(V113SkillPackets.CancelBuff(cancellation.Stats), token);
             }
 
-            await RemoveCancelledSummonsAsync(player, currentField, cancellations, target, token);
+            await ApplyBuffCancellationSideEffectsAsync(player, currentField, cancellations, target, token);
         }
 
         try
@@ -1726,6 +1726,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 }
 
                 await DetachSummonsOnLeaveAsync(player, currentField, player.Character.MapId, session: null, CancellationToken.None);
+            }
+
+            if (player is not null)
+            {
+                await CloseMagicDoorAsync(player.Character.Id, CancellationToken.None); // P088：Java changeRemoval → removeDoor
             }
 
             // Cleanup: remove from map, notify others
@@ -3109,6 +3114,30 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    /// <summary>
+    /// P088：對照 Java <c>MapleCharacter.removeDoor</c> + <c>MapleDoor.sendDestroyData</c>：目標地圖所有人、以及人在村莊的
+    /// 主人本人，收到 <c>removeDoor(owner, false)</c> + <c>spawnPortal(999999999, 999999999)</c>。隊伍 partyPortal 重設未移植。
+    /// </summary>
+    private async Task CloseMagicDoorAsync(int ownerId, CancellationToken ct)
+    {
+        if (_doorService.CloseDoor(ownerId) is not { } door)
+        {
+            return;
+        }
+
+        var recipients = _mapRegistry.GetAll(door.TargetMapId)
+            .Concat(_mapRegistry.GetAll(door.TownMapId).Where(e => e.CharId == ownerId));
+        foreach (var entry in recipients)
+        {
+            try
+            {
+                await entry.SendPacket(V113DoorPackets.RemoveDoor(ownerId), ct);
+                await entry.SendPacket(V113DoorPackets.RemoveTownPortal(), ct);
+            }
+            catch { /* session 可能正在關 */ }
+        }
+    }
+
     private async Task HandleCancelBuffAsync(PacketReader reader, Player player, FieldInstance? field, MapleSession session, CancellationToken ct)
     {
         V113SkillHandleResult handled;
@@ -3128,7 +3157,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         if (handled.Cancel is { Status: CancelBuffStatus.Success } cancel)
         {
-            await RemoveCancelledSummonsAsync(player, field, cancel.Cancellations, session, ct);
+            await ApplyBuffCancellationSideEffectsAsync(player, field, cancel.Cancellations, session, ct);
         }
 
         if (handled.Cancel?.Status == CancelBuffStatus.ChargeSkill)
@@ -3179,15 +3208,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         return detached.Carried;
     }
 
-    /// <summary>P082：SUMMON/PUPPET buff 結束 → 移除召喚獸並全圖廣播 removeSummon(summon, true)（Java deregisterBuffStats）。</summary>
-    private async Task RemoveCancelledSummonsAsync(
+    /// <summary>
+    /// P082：SUMMON/PUPPET buff 結束 → 移除召喚獸並全圖廣播 removeSummon(summon, true)（Java deregisterBuffStats）。
+    /// P088：時空門 buff 結束 → 關門（Java cancelEffect 的 isMagicDoor() 分支 → removeDoor）。
+    /// </summary>
+    private async Task ApplyBuffCancellationSideEffectsAsync(
         Player player,
         FieldInstance? field,
         IReadOnlyList<PlayerBuffCancellation> cancellations,
         MapleSession session,
         CancellationToken ct)
     {
-        if (field is null || cancellations.Count == 0)
+        if (cancellations.Count == 0)
+        {
+            return;
+        }
+
+        if (cancellations.Any(static c => DoorService.IsMagicDoorSkill(c.SourceId)))
+        {
+            await CloseMagicDoorAsync(player.Character.Id, ct);
+        }
+
+        if (field is null)
         {
             return;
         }
@@ -3978,6 +4020,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         await DetachSummonsOnLeaveAsync(player, currentField, player.Character.MapId, session: null, ct);
+        await CloseMagicDoorAsync(player.Character.Id, ct); // P088：Java changeRemoval → removeDoor
 
         _partySearchHandler.NotifyMapLeave(player);
 

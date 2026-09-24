@@ -98,6 +98,17 @@ public sealed class DoorService
         }
     }
 
+    /// <summary>P088：關門並回傳被關的門（沒有門回 null），供呼叫端送 destroy data（Java <c>MapleCharacter.removeDoor</c>）。</summary>
+    public Door? CloseDoor(int ownerId)
+    {
+        lock (_gate)
+        {
+            var door = _doorsByOwner.GetValueOrDefault(ownerId);
+            RemoveDoorLocked(ownerId);
+            return door;
+        }
+    }
+
     public void RemoveDoor(int ownerId)
     {
         lock (_gate)
