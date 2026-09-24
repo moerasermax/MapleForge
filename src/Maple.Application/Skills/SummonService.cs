@@ -59,6 +59,37 @@ public sealed class SummonService
         return new SummonSpawnResult(summon, replaced);
     }
 
+    /// <summary>
+    /// P082：SUMMON/PUPPET buff 取消或到期時移除對應召喚獸（對照 Java <c>MapleCharacter.deregisterBuffStats</c>：
+    /// SUMMON/PUPPET 分支以 buff 來源技能 ID 找 <c>summons.get(sourceId)</c> → <c>removeSummon(summon, true)</c> →
+    /// <c>map.removeMapObject</c>）。回傳被移除的召喚獸，呼叫端廣播。呼叫端負責 <c>lock(field)</c>。
+    /// </summary>
+    public IReadOnlyList<Summon> RemoveForCancelledBuffs(FieldInstance field, int ownerId, IEnumerable<PlayerBuffCancellation> cancellations)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(cancellations);
+
+        var sourceIds = cancellations
+            .Where(static c => c.Stats.Contains(MapleBuffStat.SUMMON) || c.Stats.Contains(MapleBuffStat.PUPPET))
+            .Select(static c => c.SourceId)
+            .ToHashSet();
+        if (sourceIds.Count == 0)
+        {
+            return Array.Empty<Summon>();
+        }
+
+        var removed = field.Objects
+            .OfType<Summon>()
+            .Where(s => s.OwnerId == ownerId && sourceIds.Contains(s.SkillId))
+            .ToArray();
+        foreach (var summon in removed)
+        {
+            field.Remove(summon.ObjectId);
+        }
+
+        return removed;
+    }
+
     private static int AllocateObjectId(FieldInstance field)
     {
         var next = Math.Max(SummonObjectIdBase, field.Objects.Select(static o => o.ObjectId).DefaultIfEmpty(0).Max() + 1);

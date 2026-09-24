@@ -361,11 +361,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             if (player is null) return;
 
-            var packets = V113SkillMoveHandler.CancelExpiredBuffs(player, _skillService, DateTimeOffset.UtcNow);
-            foreach (var packet in packets)
+            var cancellations = _skillService.CancelExpiredBuffs(player, DateTimeOffset.UtcNow);
+            foreach (var cancellation in cancellations)
             {
-                await target.SendAsync(packet, token);
+                await target.SendAsync(V113SkillPackets.CancelBuff(cancellation.Stats), token);
             }
+
+            await RemoveCancelledSummonsAsync(player, currentField, cancellations, target, token);
         }
 
         try
@@ -801,7 +803,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.CancelBuff:
                         if (player is null) break;
-                        await HandleCancelBuffAsync(reader, player, s, token);
+                        await HandleCancelBuffAsync(reader, player, currentField, s, token);
                         break;
 
                     case V113ChannelRecvOp.QuestAction:
@@ -3022,7 +3024,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
-    private async Task HandleCancelBuffAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    private async Task HandleCancelBuffAsync(PacketReader reader, Player player, FieldInstance? field, MapleSession session, CancellationToken ct)
     {
         V113SkillHandleResult handled;
         try
@@ -3039,9 +3041,39 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(handled.Packet, ct);
         }
 
+        if (handled.Cancel is { Status: CancelBuffStatus.Success } cancel)
+        {
+            await RemoveCancelledSummonsAsync(player, field, cancel.Cancellations, session, ct);
+        }
+
         if (handled.Cancel?.Status == CancelBuffStatus.ChargeSkill)
         {
             _log.LogDebug("[Channel] CANCEL_BUFF charge skill cancel broadcast not wired source={SourceId}", handled.SourceId);
+        }
+    }
+
+    /// <summary>P082：SUMMON/PUPPET buff 結束 → 移除召喚獸並全圖廣播 removeSummon(summon, true)（Java deregisterBuffStats）。</summary>
+    private async Task RemoveCancelledSummonsAsync(
+        Player player,
+        FieldInstance? field,
+        IReadOnlyList<PlayerBuffCancellation> cancellations,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (field is null || cancellations.Count == 0)
+        {
+            return;
+        }
+
+        IReadOnlyList<Summon> removed;
+        lock (field)
+        {
+            removed = _summonService.RemoveForCancelledBuffs(field, player.Character.Id, cancellations);
+        }
+
+        foreach (var summon in removed)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, V113SummonPackets.RemoveSummon(summon, animated: true), ct);
         }
     }
 

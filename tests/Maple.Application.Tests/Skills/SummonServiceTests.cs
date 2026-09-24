@@ -64,6 +64,55 @@ public sealed class SummonServiceTests
         Assert.NotEqual(mine.ObjectId, recast.Summon.ObjectId);
     }
 
+    [Fact]
+    public void RemoveForCancelledBuffs_SummonOrPuppetStat_RemovesMatchingOwnerSummonOnly()
+    {
+        // P082：對照 Java deregisterBuffStats 的 SUMMON/PUPPET 分支。
+        var field = new FieldInstance(100000000);
+        var service = new SummonService();
+        var effect = new MapleStatEffect { X = 10 };
+        var hawk = service.TrySpawn(field, NewPlayer(7), 3111005, 1, effect, Pos)!.Summon;
+        var octopus = service.TrySpawn(field, NewPlayer(7), 5211001, 1, effect, Pos)!.Summon;
+        var othersHawk = service.TrySpawn(field, NewPlayer(8), 3111005, 1, effect, Pos)!.Summon;
+
+        var removed = service.RemoveForCancelledBuffs(field, ownerId: 7, new[]
+        {
+            new PlayerBuffCancellation(3111005, new[] { MapleBuffStat.SUMMON }),
+            new PlayerBuffCancellation(2001002, new[] { MapleBuffStat.MAGIC_GUARD }),
+        });
+
+        Assert.Equal(new[] { hawk }, removed);
+        Assert.Null(field.Get(hawk.ObjectId));
+        Assert.Same(octopus, field.Get(octopus.ObjectId));
+        Assert.Same(othersHawk, field.Get(othersHawk.ObjectId));
+    }
+
+    [Fact]
+    public void RemoveForCancelledBuffs_PuppetStat_RemovesPuppet()
+    {
+        var field = new FieldInstance(100000000);
+        var service = new SummonService();
+        var puppet = service.TrySpawn(field, NewPlayer(7), 3111002, 1, new MapleStatEffect { X = 100 }, Pos)!.Summon;
+
+        var removed = service.RemoveForCancelledBuffs(field, 7, new[] { new PlayerBuffCancellation(3111002, new[] { MapleBuffStat.PUPPET }) });
+
+        Assert.Equal(new[] { puppet }, removed);
+    }
+
+    [Fact]
+    public void RemoveForCancelledBuffs_NonSummonStats_RemovesNothing()
+    {
+        var field = new FieldInstance(100000000);
+        var service = new SummonService();
+        var hawk = service.TrySpawn(field, NewPlayer(7), 3111005, 1, new MapleStatEffect { X = 10 }, Pos)!.Summon;
+
+        // 同一來源 ID 但沒有 SUMMON/PUPPET stat（Java 只在這兩個 stat 分支移除召喚獸）。
+        var removed = service.RemoveForCancelledBuffs(field, 7, new[] { new PlayerBuffCancellation(3111005, new[] { MapleBuffStat.WATK }) });
+
+        Assert.Empty(removed);
+        Assert.Same(hawk, field.Get(hawk.ObjectId));
+    }
+
     [Theory]
     [InlineData(5211001, SummonMovementType.Stationary)]
     [InlineData(2311006, SummonMovementType.CircleFollow)]
