@@ -6,6 +6,17 @@ namespace Maple.Adapters.V113.Tests.Channel;
 
 public sealed class SummonPacketTests
 {
+    [Theory]
+    [InlineData(SummonMovementType.Stationary, 0)]
+    [InlineData(SummonMovementType.Follow, 1)]
+    [InlineData(SummonMovementType.WalkStationary, 2)]
+    [InlineData(SummonMovementType.CircleFollow, 3)]
+    [InlineData(SummonMovementType.CircleStationary, 4)]
+    public void ToWireMovementType_MatchesJavaSummonMovementTypeValues(SummonMovementType type, byte expected)
+    {
+        Assert.Equal(expected, V113SummonPackets.ToWireMovementType(type));
+    }
+
     [Fact]
     public void Opcodes_MatchTaskTable()
     {
@@ -37,7 +48,7 @@ public sealed class SummonPacketTests
         Assert.Equal((short)200, r.ReadShort());
         Assert.Equal((byte)4, r.ReadByte());
         Assert.Equal((short)0, r.ReadShort());
-        Assert.Equal((byte)SummonMovementType.Follow, r.ReadByte());
+        Assert.Equal(1, r.ReadByte()); // P080：Java SummonMovementType.FOLLOW 線上值為 1（原斷言用 Core 列舉值 2，與 Java 不符）
         Assert.Equal((byte)2, r.ReadByte());
         Assert.Equal((byte)0, r.ReadByte());
         Assert.All(r.ReadBytes(r.Remaining), b => Assert.Equal((byte)0, b));

@@ -98,7 +98,7 @@ internal static class V113SummonPackets
         w.WriteShort(summon.Position.Y);
         w.WriteByte(GetFacingByte(summon, facingLeft));
         w.WriteShort(0);
-        w.WriteByte((byte)summon.MovementType);
+        w.WriteByte(ToWireMovementType(summon.MovementType));
         w.WriteByte(GetSummonType(summon.SkillId, summon.IsPuppet));
         w.WriteByte(0);
         w.WriteZeroBytes(20);
@@ -172,6 +172,21 @@ internal static class V113SummonPackets
         w.WriteByte(0);
         return w.ToArray();
     }
+
+    /// <summary>
+    /// P080：對照 Java <c>server.maps.SummonMovementType</c> 線上值（STATIONARY=0、FOLLOW=1、WALK_STATIONARY=2、
+    /// CIRCLE_FOLLOW=3、CIRCLE_STATIONARY=4）。原本直接寫 Core 列舉數值（1/2/4），與 Java 全部錯開一格。
+    /// </summary>
+    internal static byte ToWireMovementType(SummonMovementType type)
+        => type switch
+        {
+            SummonMovementType.Stationary => 0,
+            SummonMovementType.Follow => 1,
+            SummonMovementType.WalkStationary => 2,
+            SummonMovementType.CircleFollow => 3,
+            SummonMovementType.CircleStationary => 4,
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
+        };
 
     private static byte GetFacingByte(Summon summon, bool facingLeft)
     {
