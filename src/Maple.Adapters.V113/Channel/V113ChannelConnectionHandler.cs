@@ -2141,7 +2141,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
-        await DetachSummonsOnLeaveAsync(player, currentField, oldMapId, session, ct);
+        var carriedSummons = await DetachSummonsOnLeaveAsync(player, currentField, oldMapId, session, ct);
 
         if (removedFromOldMap)
         {
@@ -2175,6 +2175,22 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SendFieldMonstersAsync(field, session, ct);
         await SendFieldDropsAsync(field, session, ct);
         await V113ReactorHandler.SendFieldReactorsAsync(field, session, ct);
+
+        // P085：對照 Java MapleMap.addPlayer 的 SUMMON 分支——跟隨型召喚獸在落地位置重新出生並廣播（含自己）。
+        foreach (var carried in carriedSummons)
+        {
+            Summon? reattached;
+            lock (field)
+            {
+                reattached = _summonService.Reattach(field, player, carried, player.Position);
+            }
+
+            if (reattached is not null)
+            {
+                await BroadcastPacketToMapAsync(chr, session, V113SummonPackets.SpawnSummon(reattached, chr.Level), ct);
+            }
+        }
+
         _log.LogInformation("[Channel] 角色 {Name} warp → 地圖 {Map}", chr.Name, mapId);
         return field;
     }

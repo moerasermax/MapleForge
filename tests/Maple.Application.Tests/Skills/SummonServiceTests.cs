@@ -134,6 +134,50 @@ public sealed class SummonServiceTests
         Assert.Equal(new[] { others }, field.Objects.OfType<Summon>());
     }
 
+    [Fact]
+    public void Reattach_SummonBuffStillActive_SpawnsInNewFieldAtPosition()
+    {
+        // P085：對照 Java MapleMap.addPlayer 的 getStatForBuff(SUMMON) 分支。
+        var owner = NewPlayer(7);
+        var dragonEffect = new MapleStatEffect
+        {
+            SourceId = 2311006,
+            Level = 1,
+            X = 40,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = new[] { new BuffStatValue(MapleBuffStat.SUMMON, 1) },
+        };
+        owner.ApplySkillEffect(dragonEffect, DateTimeOffset.UtcNow);
+        var service = new SummonService();
+        var oldField = new FieldInstance(100000000);
+        var dragon = service.TrySpawn(oldField, owner, 2311006, 1, dragonEffect, Pos)!.Summon;
+        var carried = service.DetachOwnerSummons(oldField, 7).Carried.Single();
+        var newField = new FieldInstance(101000000);
+        var landing = new Position(-300, 50, 0, 0);
+
+        var reattached = service.Reattach(newField, owner, carried, landing);
+
+        Assert.NotNull(reattached);
+        Assert.Same(reattached, newField.Get(reattached!.ObjectId));
+        Assert.Equal((2311006, (short)40, SummonMovementType.CircleFollow, landing), (reattached.SkillId, reattached.Hp, reattached.MovementType, reattached.Position));
+        Assert.Same(dragon, carried);
+    }
+
+    [Fact]
+    public void Reattach_SummonBuffGone_ReturnsNull()
+    {
+        var owner = NewPlayer(7);
+        var service = new SummonService();
+        var oldField = new FieldInstance(100000000);
+        service.TrySpawn(oldField, owner, 2311006, 1, new MapleStatEffect { X = 40 }, Pos);
+        var carried = service.DetachOwnerSummons(oldField, 7).Carried.Single();
+        var newField = new FieldInstance(101000000);
+
+        Assert.Null(service.Reattach(newField, owner, carried, Pos));
+        Assert.Empty(newField.Objects);
+    }
+
     [Theory]
     [InlineData(5211001, SummonMovementType.Stationary)]
     [InlineData(2311006, SummonMovementType.CircleFollow)]

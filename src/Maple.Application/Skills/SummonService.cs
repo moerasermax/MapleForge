@@ -129,6 +129,35 @@ public sealed class SummonService
         return new DetachedSummons(cancelled, carried);
     }
 
+    /// <summary>
+    /// P085：跟隨型召喚獸隨主人進入新 field。對照 Java <c>MapleMap.addPlayer</c>：<c>getStatForBuff(SUMMON)</c> 仍在
+    /// → <c>summon.setPosition(chr.getPosition())</c> → <c>spawnSummon</c>（新地圖重新分配物件 ID）。buff 已不在則回 null。
+    /// 呼叫端負責 <c>lock(field)</c>。
+    /// </summary>
+    public Summon? Reattach(FieldInstance field, Player owner, Summon carried, Position position)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(carried);
+
+        var buffActive = owner.ActiveBuffs.Any(b => b.SourceId == carried.SkillId && b.Stat == MapleBuffStat.SUMMON);
+        if (!buffActive || carried.OwnerId != owner.Character.Id)
+        {
+            return null;
+        }
+
+        var summon = new Summon(
+            AllocateObjectId(field),
+            carried.SkillId,
+            carried.SkillLevel,
+            carried.OwnerId,
+            carried.Hp,
+            carried.MovementType,
+            position);
+        field.Add(summon);
+        return summon;
+    }
+
     private static int AllocateObjectId(FieldInstance field)
     {
         var next = Math.Max(SummonObjectIdBase, field.Objects.Select(static o => o.ObjectId).DefaultIfEmpty(0).Max() + 1);
