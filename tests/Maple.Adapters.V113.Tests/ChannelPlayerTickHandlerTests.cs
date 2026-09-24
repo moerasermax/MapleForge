@@ -80,6 +80,58 @@ public sealed class ChannelPlayerTickHandlerTests
         Assert.Equal(new[] { V113StatsPackets.EnableActions(), expUpdate, hpUpdate0 }, received.Where(r => r.CharId == 2).Select(r => r.Packet));
     }
 
+    [Fact]
+    public async Task TickPlayersAsync_ExpiredSummonBuff_CancelsBuffAndRemovesSummonForWholeMap()
+    {
+        // P089：閒置玩家的 buff 也要到期（Java BuffTimer），連帶移除召喚獸（Java deregisterBuffStats）。
+        var (handler, registry, field) = Build();
+        var owner = NewPlayer(1, "Owner");
+        var watcher = NewPlayer(2, "Watcher");
+        var effect = new Core.Skills.MapleStatEffect
+        {
+            SourceId = 3111005,
+            Level = 1,
+            X = 30,
+            IsOverTime = true,
+            DurationMilliseconds = 10_000,
+            Statups = new[] { new Core.Skills.BuffStatValue(Core.Skills.MapleBuffStat.SUMMON, 1) },
+        };
+        owner.ApplySkillEffect(effect, Now.AddSeconds(-11));
+        var summon = new SummonService().TrySpawn(field, owner, 3111005, 1, effect, new Position(0, 0, 0, 0))!.Summon;
+        var received = Register(registry, field, owner, watcher);
+
+        await handler.TickPlayersAsync(field, Now, CancellationToken.None);
+
+        var removeSummon = V113SummonPackets.RemoveSummon(summon, animated: true);
+        Assert.Equal(
+            new[] { V113SkillPackets.CancelBuff(new[] { Core.Skills.MapleBuffStat.SUMMON }), removeSummon },
+            received.Where(r => r.CharId == 1).Select(r => r.Packet));
+        Assert.Equal(new[] { removeSummon }, received.Where(r => r.CharId == 2).Select(r => r.Packet));
+        Assert.Null(field.Get(summon.ObjectId));
+        Assert.Empty(owner.ActiveBuffs);
+    }
+
+    [Fact]
+    public async Task TickPlayersAsync_BuffNotYetExpired_SendsNothing()
+    {
+        var (handler, registry, field) = Build();
+        var owner = NewPlayer(1, "Owner");
+        owner.ApplySkillEffect(new Core.Skills.MapleStatEffect
+        {
+            SourceId = 2001002,
+            Level = 1,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = new[] { new Core.Skills.BuffStatValue(Core.Skills.MapleBuffStat.MAGIC_GUARD, 10) },
+        }, Now.AddSeconds(-5));
+        var received = Register(registry, field, owner);
+
+        await handler.TickPlayersAsync(field, Now, CancellationToken.None);
+
+        Assert.Empty(received);
+        Assert.Single(owner.ActiveBuffs);
+    }
+
     private static (V113PlayerTickHandler Handler, InMemoryMapSessionRegistry Registry, FieldInstance Field) Build()
     {
         var registry = new InMemoryMapSessionRegistry();
@@ -87,6 +139,7 @@ public sealed class ChannelPlayerTickHandlerTests
             new SkillService(new InMemorySkillCatalog(Array.Empty<Core.Skills.MapleSkill>())),
             new FieldHazardService(),
             new PlayerDeathService(new MapService(new NullDataProvider())),
+            new V113BuffCancellationEffects(new SummonService(), new DoorService(), registry),
             registry);
         return (handler, registry, new FieldInstance(100000000));
     }

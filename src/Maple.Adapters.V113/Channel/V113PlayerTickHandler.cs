@@ -12,7 +12,9 @@ namespace Maple.Adapters.V113.Channel;
 ///
 /// 目前處理項目：技能冷卻到期 → 移除冷卻 + 送 <c>skillCooldown(skillId, 0)</c> 給該玩家本人（P073）；
 /// 地圖持續扣血 → 扣 HP 並送 HP 更新，扣到 0 先送 <c>enableActions</c>（對照 Java <c>PlayerStats.setHp</c>
-/// 死亡分支再 <c>updateSingleStat(HP)</c>，P075）。
+/// 死亡分支再 <c>updateSingleStat(HP)</c>，P075）；buff 到期 → 送 <c>cancelBuff</c> + 召喚獸/時空門副作用
+/// （對照 Java 每個 buff 各自的 <c>BuffTimer</c> 排程取消，這裡以 3 秒 tick 近似；原本只在玩家送封包時才檢查，
+/// 完全閒置的玩家 buff 永遠不會到期，P089）。
 /// 跟 <see cref="V113MobRespawnHandler"/> 一樣是薄封裝，排程節奏不歸它管。
 /// </summary>
 public sealed class V113PlayerTickHandler
@@ -20,17 +22,20 @@ public sealed class V113PlayerTickHandler
     private readonly SkillService _skills;
     private readonly FieldHazardService _hazards;
     private readonly PlayerDeathService _deaths;
+    private readonly V113BuffCancellationEffects _buffEffects;
     private readonly IMapSessionRegistry _mapRegistry;
 
     public V113PlayerTickHandler(
         SkillService skills,
         FieldHazardService hazards,
         PlayerDeathService deaths,
+        V113BuffCancellationEffects buffEffects,
         IMapSessionRegistry mapRegistry)
     {
         _skills = skills;
         _hazards = hazards;
         _deaths = deaths;
+        _buffEffects = buffEffects;
         _mapRegistry = mapRegistry;
     }
 
@@ -46,6 +51,14 @@ public sealed class V113PlayerTickHandler
             {
                 await SendBestEffortAsync(entry, V113SkillPackets.SkillCooldown(skillId, 0), ct).ConfigureAwait(false);
             }
+
+            var cancellations = _skills.CancelExpiredBuffs(entry.Player, now);
+            foreach (var cancellation in cancellations)
+            {
+                await SendBestEffortAsync(entry, V113SkillPackets.CancelBuff(cancellation.Stats), ct).ConfigureAwait(false);
+            }
+
+            await _buffEffects.ApplyAsync(entry.Player, field, cancellations, ct).ConfigureAwait(false);
         }
 
         if (field.HpDecay is null || entries.Count == 0)

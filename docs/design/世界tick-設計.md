@@ -24,6 +24,7 @@ Java `World.Respawn`（`WorldTimer.register(new Respawn(), 3000)`）每 3 秒巡
 | 怪物重生 | `map.respawn(false)` | `V113MobRespawnHandler` → `CombatService.RespawnMonsters` | P064-067 |
 | 技能冷卻到期 | `handleCooldowns` 冷卻迴圈 + `skillCooldown(skil, 0)` | `V113PlayerTickHandler` → `SkillService.ExpireSkillCooldowns` | P073 |
 | 地圖持續扣血 | `setHPDec`/`canHurt()` + `handleCooldowns` hurt 分支 | 資料：`MapData.DecHp/DecHpInterval/ProtectItem` + `FieldHpDecay`（field 建立時 `MapService.InitializeFieldEnvironment`）；扣血：`V113PlayerTickHandler` → `FieldHazardService.ApplyHpDecay`，送 HP 更新，扣到 0 先送 `enableActions` | P074-075 |
+| buff 到期（含召喚獸/時空門副作用） | 每個 buff 各自的 `BuffTimer` 排程 `cancelEffect`（非 `handleCooldowns`） | `V113PlayerTickHandler` → `SkillService.CancelExpiredBuffs` + `V113BuffCancellationEffects`（3 秒 tick 近似；玩家送封包時的既有檢查保留） | P089 |
 
 ## 尚未移植（候選）
 

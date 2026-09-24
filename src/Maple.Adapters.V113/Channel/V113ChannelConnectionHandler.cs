@@ -68,6 +68,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly PlayerDeathService _playerDeaths;
     private readonly SummonService _summonService;
     private readonly DoorService _doorService;
+    private readonly V113BuffCancellationEffects _buffEffects;
     private readonly ISkillBookCatalog _skillBookCatalog;
     private readonly DropService _dropService;
     private readonly FameService _fameService;
@@ -164,9 +165,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113ChannelOptions options,
         PlayerDeathService playerDeaths,
         SummonService summonService,
-        DoorService doorService)
+        DoorService doorService,
+        V113BuffCancellationEffects buffEffects)
     {
         _log = log;
+        _buffEffects = buffEffects;
         _doorService = doorService;
         _playerDeaths = playerDeaths;
         _summonService = summonService;
@@ -3114,29 +3117,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
-    /// <summary>
-    /// P088：對照 Java <c>MapleCharacter.removeDoor</c> + <c>MapleDoor.sendDestroyData</c>：目標地圖所有人、以及人在村莊的
-    /// 主人本人，收到 <c>removeDoor(owner, false)</c> + <c>spawnPortal(999999999, 999999999)</c>。隊伍 partyPortal 重設未移植。
-    /// </summary>
-    private async Task CloseMagicDoorAsync(int ownerId, CancellationToken ct)
-    {
-        if (_doorService.CloseDoor(ownerId) is not { } door)
-        {
-            return;
-        }
-
-        var recipients = _mapRegistry.GetAll(door.TargetMapId)
-            .Concat(_mapRegistry.GetAll(door.TownMapId).Where(e => e.CharId == ownerId));
-        foreach (var entry in recipients)
-        {
-            try
-            {
-                await entry.SendPacket(V113DoorPackets.RemoveDoor(ownerId), ct);
-                await entry.SendPacket(V113DoorPackets.RemoveTownPortal(), ct);
-            }
-            catch { /* session 可能正在關 */ }
-        }
-    }
+    private Task CloseMagicDoorAsync(int ownerId, CancellationToken ct)
+        => _buffEffects.CloseMagicDoorAsync(ownerId, ct);
 
     private async Task HandleCancelBuffAsync(PacketReader reader, Player player, FieldInstance? field, MapleSession session, CancellationToken ct)
     {
@@ -3208,43 +3190,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         return detached.Carried;
     }
 
-    /// <summary>
-    /// P082：SUMMON/PUPPET buff 結束 → 移除召喚獸並全圖廣播 removeSummon(summon, true)（Java deregisterBuffStats）。
-    /// P088：時空門 buff 結束 → 關門（Java cancelEffect 的 isMagicDoor() 分支 → removeDoor）。
-    /// </summary>
-    private async Task ApplyBuffCancellationSideEffectsAsync(
+    /// <summary>buff 結束的召喚獸/時空門副作用（P082/P088，P089 起委派 <see cref="V113BuffCancellationEffects"/>）。</summary>
+    private Task ApplyBuffCancellationSideEffectsAsync(
         Player player,
         FieldInstance? field,
         IReadOnlyList<PlayerBuffCancellation> cancellations,
         MapleSession session,
         CancellationToken ct)
-    {
-        if (cancellations.Count == 0)
-        {
-            return;
-        }
-
-        if (cancellations.Any(static c => DoorService.IsMagicDoorSkill(c.SourceId)))
-        {
-            await CloseMagicDoorAsync(player.Character.Id, ct);
-        }
-
-        if (field is null)
-        {
-            return;
-        }
-
-        IReadOnlyList<Summon> removed;
-        lock (field)
-        {
-            removed = _summonService.RemoveForCancelledBuffs(field, player.Character.Id, cancellations);
-        }
-
-        foreach (var summon in removed)
-        {
-            await BroadcastPacketToMapAsync(player.Character, session, V113SummonPackets.RemoveSummon(summon, animated: true), ct);
-        }
-    }
+        => _buffEffects.ApplyAsync(player, field, cancellations, ct);
 
     private async Task HandleItemPickupAsync(
         PacketReader reader,
