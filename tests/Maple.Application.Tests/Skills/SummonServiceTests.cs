@@ -113,6 +113,27 @@ public sealed class SummonServiceTests
         Assert.Same(hawk, field.Get(hawk.ObjectId));
     }
 
+    [Fact]
+    public void DetachOwnerSummons_SplitsStationaryAndPuppetFromFollowers()
+    {
+        // P083：對照 Java MapleMap.removePlayer——原地型/傀儡取消 buff，跟隨型靜默移出帶走。
+        var field = new FieldInstance(100000000);
+        var service = new SummonService();
+        var effect = new MapleStatEffect { X = 10 };
+        var octopus = service.TrySpawn(field, NewPlayer(7), 5211001, 1, effect, Pos)!.Summon;   // Stationary
+        var gull = service.TrySpawn(field, NewPlayer(7), 5211002, 1, effect, Pos)!.Summon;      // CircleStationary
+        var puppet = service.TrySpawn(field, NewPlayer(7), 3111002, 1, effect, Pos)!.Summon;    // Puppet
+        var dragon = service.TrySpawn(field, NewPlayer(7), 2311006, 1, effect, Pos)!.Summon;    // CircleFollow
+        var ifrit = service.TrySpawn(field, NewPlayer(7), 2221005, 1, effect, Pos)!.Summon;     // Follow
+        var others = service.TrySpawn(field, NewPlayer(8), 2311006, 1, effect, Pos)!.Summon;
+
+        var detached = service.DetachOwnerSummons(field, ownerId: 7);
+
+        Assert.Equal(new[] { octopus, gull, puppet }.OrderBy(s => s.ObjectId), detached.Cancelled.OrderBy(s => s.ObjectId));
+        Assert.Equal(new[] { dragon, ifrit }.OrderBy(s => s.ObjectId), detached.Carried.OrderBy(s => s.ObjectId));
+        Assert.Equal(new[] { others }, field.Objects.OfType<Summon>());
+    }
+
     [Theory]
     [InlineData(5211001, SummonMovementType.Stationary)]
     [InlineData(2311006, SummonMovementType.CircleFollow)]

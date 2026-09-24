@@ -1720,6 +1720,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 {
                     currentField.Remove(player.ObjectId);
                 }
+
+                await DetachSummonsOnLeaveAsync(player, currentField, player.Character.MapId, session: null, CancellationToken.None);
             }
 
             // Cleanup: remove from map, notify others
@@ -2137,6 +2139,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 currentField.Remove(player.ObjectId);
             }
         }
+
+        await DetachSummonsOnLeaveAsync(player, currentField, oldMapId, session, ct);
 
         if (removedFromOldMap)
         {
@@ -3052,6 +3056,48 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    /// <summary>
+    /// P083：主人離開地圖時卸下召喚獸（對照 Java <c>MapleMap.removePlayer</c>）。原地型/傀儡：取消其 buff
+    /// （有 session 時送 CancelBuff 給本人）並對舊地圖其他人廣播 removeSummon；跟隨型只靜默移出並回傳，供換圖後重新出生。
+    /// </summary>
+    private async Task<IReadOnlyList<Summon>> DetachSummonsOnLeaveAsync(
+        Player player,
+        FieldInstance? field,
+        int oldMapId,
+        MapleSession? session,
+        CancellationToken ct)
+    {
+        if (field is null)
+        {
+            return Array.Empty<Summon>();
+        }
+
+        DetachedSummons detached;
+        lock (field)
+        {
+            detached = _summonService.DetachOwnerSummons(field, player.Character.Id);
+        }
+
+        foreach (var summon in detached.Cancelled)
+        {
+            foreach (var cancellation in player.CancelBuffBySource(summon.SkillId))
+            {
+                if (session is not null)
+                {
+                    await session.SendAsync(V113SkillPackets.CancelBuff(cancellation.Stats), ct);
+                }
+            }
+
+            var removePacket = V113SummonPackets.RemoveSummon(summon, animated: true);
+            foreach (var other in _mapRegistry.GetOthers(oldMapId, player.Character.Id))
+            {
+                try { await other.SendPacket(removePacket, ct); } catch { /* session 可能正在關 */ }
+            }
+        }
+
+        return detached.Carried;
+    }
+
     /// <summary>P082：SUMMON/PUPPET buff 結束 → 移除召喚獸並全圖廣播 removeSummon(summon, true)（Java deregisterBuffStats）。</summary>
     private async Task RemoveCancelledSummonsAsync(
         Player player,
@@ -3849,6 +3895,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 currentField.Remove(player.ObjectId);
             }
         }
+
+        await DetachSummonsOnLeaveAsync(player, currentField, player.Character.MapId, session: null, ct);
 
         _partySearchHandler.NotifyMapLeave(player);
 
