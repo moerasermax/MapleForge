@@ -13,7 +13,9 @@ public enum PetActionStatus
     Unsupported,
 }
 
-public sealed record PetSpawnResult(PetActionStatus Status, Pet? Pet, byte Slot, short CashSlot, bool Despawned = false)
+/// <param name="ReplacedPet">P079：召喚新寵物時被換下的舊寵物（MapleForge 只支援單寵，對照 Java 無「寵物隊長」技能時
+/// 先 <c>unequipPet(getSummonedPet(0))</c> 再召喚）；呼叫端要先廣播舊寵物移除。</param>
+public sealed record PetSpawnResult(PetActionStatus Status, Pet? Pet, byte Slot, short CashSlot, bool Despawned = false, Pet? ReplacedPet = null)
 {
     public bool Success => Status == PetActionStatus.Success;
 }
@@ -102,6 +104,23 @@ public sealed class PetService
             ? (int)cashItem.UniqueId
             : cashItem.ItemId;
 
+        // P079：對照 Java MapleCharacter.spawnPet——同一隻寵物（同一格現金欄道具）已召喚時改為收回
+        // （unequipPet(pet, false, true)）。
+        Pet? replaced = null;
+        lock (_gate)
+        {
+            if (_activePets.TryGetValue(player.Character.Id, out var active))
+            {
+                if (active.CashSlot == cashSlot && active.Pet.ItemId == cashItem.ItemId)
+                {
+                    _activePets.Remove(player.Character.Id);
+                    return new PetSpawnResult(PetActionStatus.Success, active.Pet, ActivePetSlot, cashSlot, Despawned: true);
+                }
+
+                replaced = active.Pet;
+            }
+        }
+
         var pet = new Pet(
             petId,
             cashItem.ItemId,
@@ -117,7 +136,7 @@ public sealed class PetService
             _activePets[player.Character.Id] = new ActivePetState(pet, cashSlot);
         }
 
-        return new PetSpawnResult(PetActionStatus.Success, pet, ActivePetSlot, cashSlot);
+        return new PetSpawnResult(PetActionStatus.Success, pet, ActivePetSlot, cashSlot, ReplacedPet: replaced);
     }
 
     public PetSpawnResult DespawnPet(Player player)

@@ -73,6 +73,15 @@ public sealed class PetPacketTests
     }
 
     [Fact]
+    public void RemovePet_MatchesJavaShowPetRemoveShape()
+    {
+        // P079：對照 Java PetPacket.showPet(chr, pet, remove: true, hunger)。
+        var packet = V113PetPackets.RemovePet(123, 0, hunger: true);
+
+        Assert.Equal(new byte[] { 0xA2, 0x00, 123, 0, 0, 0, 0, 0, 1 }, packet);
+    }
+
+    [Fact]
     public void MovePet_WritesOpcodeAndAppendsRawMovement()
     {
         byte[] rawMovement = [0x01, 0x02, 0x03, 0x04];

@@ -33,6 +33,24 @@ public static class V113PetHandler
             return;
         }
 
+        // P079：對照 Java unequipPet——showPet(remove) 廣播給全圖（含自己）後 enableActions。
+        if (result.Despawned)
+        {
+            var remove = V113PetPackets.RemovePet(player.Character.Id, result.Slot);
+            await session.SendAsync(remove, ct);
+            await broadcast(remove, ct);
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+            return;
+        }
+
+        // P079：換召另一隻寵物時先移除舊寵物（MapleForge 只支援單寵）。
+        if (result.ReplacedPet is not null)
+        {
+            var remove = V113PetPackets.RemovePet(player.Character.Id, result.Slot);
+            await session.SendAsync(remove, ct);
+            await broadcast(remove, ct);
+        }
+
         var packet = V113PetPackets.SpawnPet(player.Character.Id, result.Slot, result.Pet);
         await session.SendAsync(packet, ct);
         await broadcast(packet, ct);

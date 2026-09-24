@@ -48,7 +48,43 @@ public sealed class PetServiceTests
         Assert.Equal(PetActionStatus.InvalidItem, result.Status);
     }
 
+    [Fact]
+    public void SpawnPet_SamePetAgain_TogglesDespawn()
+    {
+        // P079：對照 Java spawnPet 的 pet.getSummoned() → unequipPet（收回）。
+        var player = NewPlayer(hp: 50);
+        player.Inventory.By(InventoryType.Cash).Put(new Item { Slot = 1, ItemId = 5000000, Quantity = 1 });
+        var service = new PetService();
+
+        var first = service.SpawnPet(player, cashSlot: 1, lead: false);
+        var second = service.SpawnPet(player, cashSlot: 1, lead: false);
+
+        Assert.True(first.Success);
+        Assert.False(first.Despawned);
+        Assert.True(second.Success);
+        Assert.True(second.Despawned);
+        Assert.Same(first.Pet, second.Pet);
+        Assert.Null(service.GetActivePet(player));
+    }
+
+    [Fact]
+    public void SpawnPet_DifferentPetWhileOneActive_ReportsReplacedPet()
+    {
+        var player = NewPlayer(hp: 50);
+        player.Inventory.By(InventoryType.Cash).Put(new Item { Slot = 1, ItemId = 5000000, Quantity = 1 });
+        player.Inventory.By(InventoryType.Cash).Put(new Item { Slot = 2, ItemId = 5000001, Quantity = 1 });
+        var service = new PetService();
+
+        var first = service.SpawnPet(player, cashSlot: 1, lead: false);
+        var second = service.SpawnPet(player, cashSlot: 2, lead: false);
+
+        Assert.False(second.Despawned);
+        Assert.Same(first.Pet, second.ReplacedPet);
+        Assert.Equal(5000001, service.GetActivePet(player)?.ItemId);
+    }
+
     private static Player NewPlayer(short hp)
+
         => new(
             new Character
             {
