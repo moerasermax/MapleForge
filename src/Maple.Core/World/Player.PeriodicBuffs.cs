@@ -13,8 +13,30 @@ public sealed partial class Player
     /// <summary>Java <c>canBlood</c>：<c>lastDragonBloodTime + 4000 &lt; now</c>。</summary>
     public static readonly TimeSpan DragonBloodInterval = TimeSpan.FromMilliseconds(4_000);
 
+    /// <summary>Java <c>canBerserk</c>：<c>lastBerserkTime + 10000 &lt; now</c>。</summary>
+    public static readonly TimeSpan BerserkInterval = TimeSpan.FromMilliseconds(10_000);
+
     private DateTimeOffset? _lastRecoveryAt;
     private DateTimeOffset? _lastDragonBloodAt;
+    private DateTimeOffset? _lastBerserkAt;
+
+    /// <summary>P094：距離上次狂戰士檢查是否已超過 10 秒（Java <c>lastBerserkTime</c> 初值 0 → 第一次一定通過）。</summary>
+    public bool CanCheckBerserk(DateTimeOffset now)
+    {
+        lock (_skillsGate)
+        {
+            return _lastBerserkAt is not { } last || last + BerserkInterval < now;
+        }
+    }
+
+    /// <summary>P094：記錄這次狂戰士檢查時間（Java <c>lastBerserkTime = now</c>）。</summary>
+    public void MarkBerserkChecked(DateTimeOffset now)
+    {
+        lock (_skillsGate)
+        {
+            _lastBerserkAt = now;
+        }
+    }
 
     /// <summary>
     /// P093：龍之魂（DRAGONBLOOD buff）週期扣血。對照 Java <c>registerEffect</c>（<c>prepareDragonBlood</c>）+

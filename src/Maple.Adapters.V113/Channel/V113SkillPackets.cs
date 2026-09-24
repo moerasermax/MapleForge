@@ -110,7 +110,7 @@ internal static class V113SkillPackets
 
     /// <summary>P093：對照 Java <c>showOwnBuffEffect(skillid, effectid)</c>（direction 3 不寫）：
     /// <c>SHOW_ITEM_GAIN_INCHAT(0xC7)</c> + effectId + skillId + 1 + 1。</summary>
-    public static byte[] ShowOwnBuffEffect(int skillId, byte effectId)
+    public static byte[] ShowOwnBuffEffect(int skillId, byte effectId, byte direction = 3)
     {
         var w = new PacketWriter(10);
         w.WriteShort(V113ChannelSendOp.ShowItemGainInChat);
@@ -118,20 +118,31 @@ internal static class V113SkillPackets
         w.WriteInt(skillId);
         w.WriteByte(1);
         w.WriteByte(1);
+        // P094：Java `if (direction != 3 || skillid == 1320006) write(direction)`。
+        if (direction != 3 || skillId == SkillService.BerserkSkillId)
+        {
+            w.WriteByte(direction);
+        }
+
         return w.ToArray();
     }
 
     /// <summary>P093：對照 Java <c>showBuffeffect(cid, skillid, effectid)</c>：
     /// <c>SHOW_FOREIGN_EFFECT(0xBF)</c> + cid + effectId + skillId + 1 + 1。</summary>
-    public static byte[] ShowForeignBuffEffect(int characterId, int skillId, byte effectId)
+    public static byte[] ShowForeignBuffEffect(int characterId, int skillId, byte effectId, byte direction = 3)
     {
-        var w = new PacketWriter(14);
+        var w = new PacketWriter(15);
         w.WriteShort(V113ChannelSendOp.ShowForeignEffect);
         w.WriteInt(characterId);
         w.WriteByte(effectId);
         w.WriteInt(skillId);
         w.WriteByte(1);
         w.WriteByte(1);
+        if (direction != 3 || skillId == SkillService.BerserkSkillId)
+        {
+            w.WriteByte(direction);
+        }
+
         return w.ToArray();
     }
 

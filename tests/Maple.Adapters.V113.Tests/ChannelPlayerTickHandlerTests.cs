@@ -169,6 +169,19 @@ public sealed class ChannelPlayerTickHandlerTests
     }
 
     [Fact]
+    public void BerserkEffectPackets_AlwaysWriteDirection()
+    {
+        // P094：Java showOwnBuffEffect/showBuffeffect 對 1320006 一定寫 direction byte。
+        var own = V113SkillPackets.ShowOwnBuffEffect(SkillService.BerserkSkillId, 1, 0);
+        var foreign = V113SkillPackets.ShowForeignBuffEffect(7, SkillService.BerserkSkillId, 1, 1);
+
+        Assert.Equal(10, own.Length);
+        Assert.Equal(0, own[^1]);
+        Assert.Equal(14, foreign.Length);
+        Assert.Equal(1, foreign[^1]);
+    }
+
+    [Fact]
     public void HealPackets_MatchJavaLayouts()
     {
         Assert.Equal(new byte[] { 0xC7, 0x00, 6, 10, 0, 0, 0 }, V113StatsPackets.ShowOwnHpHealed(10));

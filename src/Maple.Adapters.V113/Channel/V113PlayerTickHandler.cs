@@ -64,6 +64,7 @@ public sealed class V113PlayerTickHandler
             {
                 // Java handleCooldowns 的 isAlive 區塊順序：Dragon Blood → Berserk → Recovery → hurt。
                 await TickDragonBloodAsync(entry, field, entries, now, ct).ConfigureAwait(false);
+                await TickBerserkAsync(entry, entries, now, ct).ConfigureAwait(false);
                 await TickRecoveryAsync(entry, field, entries, now, ct).ConfigureAwait(false);
             }
         }
@@ -142,6 +143,36 @@ public sealed class V113PlayerTickHandler
         }
 
         var foreign = V113SkillPackets.ShowForeignBuffEffect(player.Character.Id, tick.SourceId, 5);
+        foreach (var other in entries.Where(e => e.CharId != entry.CharId))
+        {
+            await SendBestEffortAsync(other, foreign, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// P094：狂戰士狀態特效。對照 Java <c>doBerserk</c>：<c>showOwnBuffEffect(1320006, 1, berserk ? 1 : 0)</c> 給本人，
+    /// 沒有 MORPH 時 <c>showBuffeffect(id, 1320006, 1, berserk ? 1 : 0)</c> 給同圖其他人。
+    /// </summary>
+    private async Task TickBerserkAsync(
+        MapPlayerEntry entry,
+        IReadOnlyList<MapPlayerEntry> entries,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var player = entry.Player;
+        if (_skills.TryCheckBerserk(player, now) is not { } berserk)
+        {
+            return;
+        }
+
+        var direction = (byte)(berserk ? 1 : 0);
+        await SendBestEffortAsync(entry, V113SkillPackets.ShowOwnBuffEffect(SkillService.BerserkSkillId, 1, direction), ct).ConfigureAwait(false);
+        if (player.ActiveBuffs.Any(static b => b.Stat == Core.Skills.MapleBuffStat.MORPH))
+        {
+            return;
+        }
+
+        var foreign = V113SkillPackets.ShowForeignBuffEffect(player.Character.Id, SkillService.BerserkSkillId, 1, direction);
         foreach (var other in entries.Where(e => e.CharId != entry.CharId))
         {
             await SendBestEffortAsync(other, foreign, ct).ConfigureAwait(false);

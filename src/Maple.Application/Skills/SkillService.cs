@@ -73,6 +73,9 @@ public sealed class SkillService
     /// <summary>槍神「海盜船」（Java <c>槍神.海盜船</c>）：施放時不登記冷卻。</summary>
     public const int CorsairBattleshipSkillId = 5221006;
 
+    /// <summary>黑騎士「狂戰士之怒」被動（Java <c>SkillFactory.getSkill(1320006)</c>）。</summary>
+    public const int BerserkSkillId = 1320006;
+
     /// <summary>拳霸「時間置換」（Java <c>isTimeLeap()</c>：<c>sourceid == 5121010</c>）。</summary>
     public const int TimeLeapSkillId = 5121010;
 
@@ -250,6 +253,30 @@ public sealed class SkillService
     {
         ArgumentNullException.ThrowIfNull(player);
         return player.Character.Job is 131 or 132 ? player.TryDragonBlood(now) : null;
+    }
+
+    /// <summary>
+    /// P094：狂戰士狀態檢查（對照 Java <c>canBerserk</c> + <c>doBerserk</c>）：只對職業 132、每 10 秒一次；
+    /// 1320006 等級 ≥ 1 時回傳 <c>hp &lt;= maxHp * x / 100</c> 的結果（呼叫端送特效），否則回 null（Java 設 -1，下次繼續檢查）。
+    /// </summary>
+    public bool? TryCheckBerserk(Player player, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (player.Character.Job != 132 || !player.CanCheckBerserk(now))
+        {
+            return null;
+        }
+
+        var level = player.GetSkillLevel(BerserkSkillId);
+        var effect = level >= 1 ? _skills.GetSkill(BerserkSkillId)?.GetEffect(level) : null;
+        if (effect is null)
+        {
+            return null;
+        }
+
+        player.MarkBerserkChecked(now);
+        return player.Hp <= player.MaxHp * (effect.X / 100.0);
     }
 
     /// <summary>世界 tick 冷卻到期（對照 Java <c>World.handleCooldowns</c>）：回傳本次移除的技能 ID。</summary>

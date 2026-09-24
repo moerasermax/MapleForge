@@ -27,9 +27,10 @@ Java `World.Respawn`（`WorldTimer.register(new Respawn(), 3000)`）每 3 秒巡
 | buff 到期（含召喚獸/時空門副作用） | 每個 buff 各自的 `BuffTimer` 排程 `cancelEffect`（非 `handleCooldowns`） | `V113PlayerTickHandler` → `SkillService.CancelExpiredBuffs` + `V113BuffCancellationEffects`（3 秒 tick 近似；玩家送封包時的既有檢查保留） | P089 |
 | 回復術週期回血 | `handleCooldowns` 的 `canRecover(now)` + `doRecovery`（每 5 秒，滿血取消 buff） | `V113PlayerTickHandler` → `SkillService.TryRecover` → `Player.TryRecover`（計時起點 = buff 套用時間） | P092 |
 | 龍之魂週期扣血 | `handleCooldowns` 的 job 131/132 + `canBlood(now)` + `doDragonBlood`（每 4 秒，`hp - x <= 1` 取消 buff） | `V113PlayerTickHandler` → `SkillService.TryDragonBlood` → `Player.TryDragonBlood`；`showOwnBuffEffect`/`showBuffeffect`(effect 5) | P093 |
+| 狂戰士狀態特效 | `handleCooldowns` 的 job 132 + `canBerserk()` + `doBerserk`（每 10 秒，`hp <= maxHp * x%`） | `V113PlayerTickHandler` → `SkillService.TryCheckBerserk`；`showOwnBuffEffect(1320006, 1, dir)` | P094 |
 
 ## 尚未移植（候選）
 
-- 異常狀態（disease）到期、寵物飢餓／限時寵物、坐騎疲勞、Berserk（職業 132 的 HP 門檻特效）。
+- 異常狀態（disease）到期、寵物飢餓／限時寵物、坐騎疲勞。
 - 死亡懲罰：P076 已移植 `playerDead` 經驗值區塊（護身符/經驗值損失），怪物打死與地圖扣血兩條路徑都接上；靈魂之石、取消 buff、事件副本、裝備耐久尚未移植。
 - Java 的 `numTimes % N` 以 tick 次數計時；MapleForge 傾向改用各物件自己的時間戳（可測、不依賴排程器次數）。

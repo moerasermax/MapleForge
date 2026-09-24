@@ -191,6 +191,41 @@ public sealed class SkillServiceTests
         Assert.Equal(drains, tick is not null);
     }
 
+    [Fact]
+    public void TryCheckBerserk_Job132_ReportsThresholdEveryTenSeconds()
+    {
+        // P094：對照 Java canBerserk（10 秒）+ doBerserk（hp <= maxHp * x / 100）。
+        var player = MakePlayer(mp: 50, job: 132);
+        player.Character.Stats.MaxHp = 1000;
+        player.Character.Stats.Hp = 400;
+        player.ChangeSkillLevel(SkillService.BerserkSkillId, level: 1, masterLevel: 30);
+        var service = new SkillService(new InMemorySkillCatalog(new[]
+        {
+            new MapleSkill { Id = SkillService.BerserkSkillId, Effects = new[] { new MapleStatEffect { SourceId = SkillService.BerserkSkillId, Level = 1, X = 50 } } },
+        }));
+        var start = DateTimeOffset.UnixEpoch;
+
+        Assert.True(service.TryCheckBerserk(player, start));             // 400 <= 500
+        Assert.Null(service.TryCheckBerserk(player, start.AddSeconds(10))); // 剛好 10 秒：Java 用 <
+        player.Character.Stats.Hp = 900;
+        Assert.False(service.TryCheckBerserk(player, start.AddSeconds(11)));
+    }
+
+    [Fact]
+    public void TryCheckBerserk_WrongJobOrUnlearned_ReturnsNull()
+    {
+        var service = new SkillService(new InMemorySkillCatalog(new[]
+        {
+            new MapleSkill { Id = SkillService.BerserkSkillId, Effects = new[] { new MapleStatEffect { Level = 1, X = 50 } } },
+        }));
+        var paladin = MakePlayer(mp: 50, job: 122);
+        paladin.ChangeSkillLevel(SkillService.BerserkSkillId, level: 1, masterLevel: 30);
+        var unlearned = MakePlayer(mp: 50, job: 132);
+
+        Assert.Null(service.TryCheckBerserk(paladin, DateTimeOffset.UnixEpoch));
+        Assert.Null(service.TryCheckBerserk(unlearned, DateTimeOffset.UnixEpoch));
+    }
+
     private static MapleSkill AttackCooldownSkill(int skillId, int seconds)
         => new()
         {
