@@ -184,6 +184,25 @@ internal static class V113SkillMoveHandler
         return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket);
     }
 
+    /// <summary>
+    /// 攻擊技能冷卻（對照 Java 三個攻擊 handler 的冷卻區塊）：冷卻中回 <c>Blocked=true</c> +
+    /// <c>EnableActions</c>（整次攻擊丟棄）；登記冷卻回 <c>COOLDOWN</c> 封包；其他情況兩者皆空。
+    /// </summary>
+    public static (bool Blocked, byte[]? Packet) HandleAttackCooldown(
+        Player player,
+        int skillId,
+        SkillService skillService,
+        DateTimeOffset now)
+    {
+        var result = skillService.TryStartAttackCooldown(player, skillId, now);
+        return result.Status switch
+        {
+            AttackCooldownStatus.OnCooldown => (true, V113StatsPackets.EnableActions()),
+            AttackCooldownStatus.Started => (false, V113SkillPackets.SkillCooldown(skillId, result.Seconds)),
+            _ => (false, null),
+        };
+    }
+
     public static V113SkillHandleResult HandleCancelBuff(
         PacketReader reader,
         Player player,

@@ -41,6 +41,18 @@ public sealed record SkillCastResult(
     PlayerBuffChange? AppliedBuff,
     int CooldownStartedSeconds = 0);
 
+public enum AttackCooldownStatus
+{
+    /// <summary>普攻、未知技能、未學技能、無效果或技能本身沒有冷卻：不影響攻擊。</summary>
+    NotApplicable,
+    /// <summary>技能冷卻中：整次攻擊應丟棄。</summary>
+    OnCooldown,
+    /// <summary>已登記冷卻，呼叫端應通知客戶端冷卻秒數。</summary>
+    Started,
+}
+
+public sealed record AttackCooldownResult(AttackCooldownStatus Status, int Seconds);
+
 public sealed record CancelBuffResult(
     CancelBuffStatus Status,
     int SourceId,
@@ -124,6 +136,48 @@ public sealed class SkillService
 
         return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted);
     }
+
+    /// <summary>
+    /// 攻擊技能（近戰/遠程/魔法）的冷卻檢查與登記。對照 Java <c>PlayerHandler.closeRangeAttack</c>/
+    /// <c>rangedAttack</c>/<c>MagicDamage</c> 共用的冷卻區塊：技能等級以 <c>GameConstants.getLinkedSkill</c>
+    /// 對應後的技能查詢，冷卻則以客戶端送來的原技能 ID 為鍵；冷卻中整次攻擊丟棄，否則登記冷卻。
+    /// </summary>
+    public AttackCooldownResult TryStartAttackCooldown(Player player, int skillId, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (skillId == 0)
+        {
+            return new AttackCooldownResult(AttackCooldownStatus.NotApplicable, 0);
+        }
+
+        var linkedSkillId = GetLinkedSkillId(skillId);
+        var skill = _skills.GetSkill(linkedSkillId);
+        var level = player.GetSkillLevel(linkedSkillId);
+        var effect = skill is null || level <= 0 ? null : skill.GetEffect(level);
+        if (effect is null || effect.CooldownSeconds <= 0)
+        {
+            return new AttackCooldownResult(AttackCooldownStatus.NotApplicable, 0);
+        }
+
+        if (player.SkillIsCooling(skillId, now))
+        {
+            return new AttackCooldownResult(AttackCooldownStatus.OnCooldown, 0);
+        }
+
+        player.AddSkillCooldown(skillId, now, effect.CooldownSeconds);
+        return new AttackCooldownResult(AttackCooldownStatus.Started, effect.CooldownSeconds);
+    }
+
+    /// <summary>對照 Java <c>GameConstants.getLinkedSkill</c>：衍生技能共用本體技能的等級。</summary>
+    public static int GetLinkedSkillId(int skillId)
+        => skillId switch
+        {
+            21110007 or 21110008 => 21110002,
+            21120009 or 21120010 => 21120002,
+            4321001 => 4321000,
+            _ => skillId,
+        };
 
     public CancelBuffResult CancelBuff(Player player, int sourceId)
     {

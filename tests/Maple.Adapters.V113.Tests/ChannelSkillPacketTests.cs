@@ -154,6 +154,26 @@ public sealed class ChannelSkillPacketTests
         Assert.False(player.SkillIsCooling(SkillService.CorsairBattleshipSkillId, now.AddSeconds(1)));
     }
 
+    [Fact]
+    public void HandleAttackCooldown_SendsCooldownThenBlocksWithEnableActions()
+    {
+        var player = MakePlayer();
+        player.ChangeSkillLevel(CooldownSkillId, level: 1, masterLevel: 10);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { CooldownSkill(CooldownSkillId) }));
+        var now = new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.Zero);
+
+        var (firstBlocked, firstPacket) = V113SkillMoveHandler.HandleAttackCooldown(player, CooldownSkillId, service, now);
+        var (secondBlocked, secondPacket) = V113SkillMoveHandler.HandleAttackCooldown(player, CooldownSkillId, service, now.AddSeconds(1));
+        var (normalBlocked, normalPacket) = V113SkillMoveHandler.HandleAttackCooldown(player, 0, service, now);
+
+        Assert.False(firstBlocked);
+        Assert.Equal(V113SkillPackets.SkillCooldown(CooldownSkillId, 30), firstPacket);
+        Assert.True(secondBlocked);
+        Assert.Equal(V113StatsPackets.EnableActions(), secondPacket);
+        Assert.False(normalBlocked);
+        Assert.Null(normalPacket);
+    }
+
     private const int CooldownSkillId = 1121010;
 
     private static MapleSkill CooldownSkill(int skillId)

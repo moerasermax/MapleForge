@@ -3227,6 +3227,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        if (!await CheckAttackCooldownAsync(player, attack.SkillId, session, ct))
+        {
+            return;
+        }
+
         var attackBroadcast = V113CombatPackets.CloseRangeAttackBroadcast(player.Character.Id, attack, player.Character.Level);
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
@@ -3271,6 +3276,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             _log.LogWarning(
                 "[Channel] 玩家 {Name} 遠程攻擊技能種類不符 skill={Skill}", player.Character.Name, attack.SkillId);
+            return;
+        }
+
+        if (!await CheckAttackCooldownAsync(player, attack.SkillId, session, ct))
+        {
             return;
         }
 
@@ -3340,6 +3350,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        if (!await CheckAttackCooldownAsync(player, attack.SkillId, session, ct))
+        {
+            return;
+        }
+
         CombatAttackResult result;
         lock (field)
         {
@@ -3354,6 +3369,26 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
         await SendCombatHitsAsync(result.Hits, player, session, ct);
+    }
+
+    /// <summary>
+    /// 對照 Java 三個攻擊 handler 共用的冷卻區塊（在技能種類檢查之後、廣播/傷害/消耗之前）：
+    /// 冷卻中送 enableActions 並丟棄整次攻擊（回 false）；登記冷卻則送 COOLDOWN 封包。
+    /// </summary>
+    private async Task<bool> CheckAttackCooldownAsync(Player player, int skillId, MapleSession session, CancellationToken ct)
+    {
+        var (blocked, packet) = V113SkillMoveHandler.HandleAttackCooldown(player, skillId, _skillService, DateTimeOffset.UtcNow);
+        if (packet is not null)
+        {
+            await session.SendAsync(packet, ct);
+        }
+
+        if (blocked)
+        {
+            _log.LogDebug("[Channel] 攻擊技能冷卻中，丟棄攻擊 skill={SkillId}", skillId);
+        }
+
+        return !blocked;
     }
 
     private async Task HandleTakeDamageAsync(

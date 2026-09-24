@@ -82,6 +82,74 @@ public sealed class SkillServiceTests
         Assert.Empty(player.ActiveBuffs);
     }
 
+    [Fact]
+    public void TryStartAttackCooldown_StartsThenBlocksUntilExpired()
+    {
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(1121008, level: 1, masterLevel: 10);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { AttackCooldownSkill(1121008, seconds: 10) }));
+        var now = new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.Zero);
+
+        var first = service.TryStartAttackCooldown(player, 1121008, now);
+        var cooling = service.TryStartAttackCooldown(player, 1121008, now.AddSeconds(9));
+        var afterExpiry = service.TryStartAttackCooldown(player, 1121008, now.AddSeconds(11));
+
+        Assert.Equal(new AttackCooldownResult(AttackCooldownStatus.Started, 10), first);
+        Assert.Equal(AttackCooldownStatus.OnCooldown, cooling.Status);
+        Assert.Equal(AttackCooldownStatus.Started, afterExpiry.Status);
+    }
+
+    [Theory]
+    [InlineData(0)]          // 普攻
+    [InlineData(1001004)]    // 目錄沒有的技能
+    public void TryStartAttackCooldown_NormalAttackOrUnknownSkill_NotApplicable(int skillId)
+    {
+        var player = MakePlayer(mp: 50);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { AttackCooldownSkill(1121008, seconds: 10) }));
+
+        var result = service.TryStartAttackCooldown(player, skillId, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(AttackCooldownStatus.NotApplicable, result.Status);
+    }
+
+    [Fact]
+    public void TryStartAttackCooldown_UnlearnedSkill_NotApplicable()
+    {
+        var player = MakePlayer(mp: 50);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { AttackCooldownSkill(1121008, seconds: 10) }));
+
+        var result = service.TryStartAttackCooldown(player, 1121008, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(AttackCooldownStatus.NotApplicable, result.Status);
+        Assert.False(player.SkillIsCooling(1121008, DateTimeOffset.UnixEpoch));
+    }
+
+    [Fact]
+    public void TryStartAttackCooldown_LinkedSkill_UsesBaseSkillLevelButKeysCooldownOnOriginalId()
+    {
+        // 對照 Java GameConstants.getLinkedSkill：21110007 的等級取自 21110002，冷卻以 21110007 為鍵。
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(21110002, level: 1, masterLevel: 20);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { AttackCooldownSkill(21110002, seconds: 5) }));
+        var now = DateTimeOffset.UnixEpoch;
+
+        var result = service.TryStartAttackCooldown(player, 21110007, now);
+
+        Assert.Equal(new AttackCooldownResult(AttackCooldownStatus.Started, 5), result);
+        Assert.True(player.SkillIsCooling(21110007, now.AddSeconds(1)));
+        Assert.False(player.SkillIsCooling(21110002, now.AddSeconds(1)));
+    }
+
+    private static MapleSkill AttackCooldownSkill(int skillId, int seconds)
+        => new()
+        {
+            Id = skillId,
+            Effects = new[]
+            {
+                new MapleStatEffect { SourceId = skillId, Level = 1, CooldownSeconds = seconds },
+            },
+        };
+
     private static MapleSkill MagicGuardSkill()
         => new()
         {

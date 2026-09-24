@@ -1663,7 +1663,7 @@ writeInt(skillId)
 writeShort(seconds)   // 0 = 冷卻結束
 ```
 
-語義：`SPECIAL_MOVE` 施放有冷卻的技能且 `SkillService.Cast` 實際登記冷卻時送出（海盜船 5221006 施放時不登記，對照 Java）；冷卻中被拒改回 `UPDATE_STATS` `EnableActions`。證據層級：Java source + Adapters focused tests；**unverified**（真 v113 client 圖示冷卻 UI 未 smoke）。
+語義：`SPECIAL_MOVE` 施放有冷卻的技能且 `SkillService.Cast` 實際登記冷卻時送出（海盜船 5221006 施放時不登記，對照 Java）；冷卻中被拒改回 `UPDATE_STATS` `EnableActions`。P072 起 `CLOSE_RANGE_ATTACK`/`RANGED_ATTACK`/`MAGIC_ATTACK` 也走同款冷卻區塊（技能種類檢查後、廣播前；冷卻中整次攻擊丟棄）。證據層級：Java source + Adapters focused tests；**unverified**（真 v113 client 圖示冷卻 UI 未 smoke）。
 
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*
