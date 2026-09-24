@@ -106,6 +106,27 @@ internal static class V113MapPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// P091：UPDATE_CHAR_LOOK（0xBE）。對照 Java <c>MaplePacketCreator.updateCharLook</c>：
+    /// <c>int charId + byte 1 + addCharLook(mega=false) + addRingInfo(戀人/友誼戒) + addMarriageRingLook + int 0</c>。
+    /// MapleForge 尚未建模戀人/友誼戒清單，<c>addRingInfo</c> 依 Java 空清單版型寫 <c>byte 0 + int 0</c>。
+    /// **unverified**：未經真客戶端確認（另見 SpawnPlayer 戒指區塊與 Java 長度差異的待驗證註記）。
+    /// </summary>
+    public static byte[] UpdateCharLook(Player player)
+    {
+        var chr = player.Character;
+        var w = new PacketWriter(64);
+        w.WriteShort(V113ChannelSendOp.UpdateCharLook);
+        w.WriteInt(chr.Id);
+        w.WriteByte(1);
+        AddCharLook(w, chr);
+        w.WriteByte(0);   // addRingInfo：rings.size() > 0 ? 1 : 0
+        w.WriteInt(0);    // addRingInfo：rings.size()
+        w.WriteBytes(V113RingPackets.MarriageRingLook(player));
+        w.WriteInt(0);
+        return w.ToArray();
+    }
+
     /// <summary>REMOVE_PLAYER_FROM_MAP (0x9A)。</summary>
     public static byte[] RemovePlayer(int charId)
     {

@@ -238,6 +238,7 @@ internal static class V113ChannelSendOp
     public const short UpdatePartyMemberHp = unchecked((short)0xC2);
     public const short CancelChair = unchecked((short)0xC6);
     public const short CurrentMapWarp = unchecked((short)0xC8);
+    public const short UpdateCharLook = unchecked((short)0xBE); // UPDATE_CHAR_LOOK（send.properties 0xBE，P091）
     public const short UpdateQuestInfo = unchecked((short)0xCC);
     public const short PetFlagChange = unchecked((short)0xCE);
     public const short UseSkillBook = 0x31;

@@ -2951,6 +2951,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(result.Packet, ct);
         }
 
+        // P091：對照 Java MapleInventoryManipulator.equip/unequip → chr.equipChanged() →
+        // map.broadcastMessage(this, updateCharLook(this), false)（不含自己）。
+        if (result.Success && result.Operation is V113InventoryMoveOperation.Equip or V113InventoryMoveOperation.Unequip)
+        {
+            await BroadcastPacketToOthersAsync(player.Character, V113MapPackets.UpdateCharLook(player), ct);
+        }
+
         if (result.Success)
         {
             _log.LogDebug("[Channel] ITEM_MOVE {Operation} type={Type} src={Src} dst={Dst}",

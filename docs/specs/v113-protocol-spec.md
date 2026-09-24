@@ -1676,5 +1676,21 @@ writeShort(seconds)   // 0 = 冷卻結束
 
 證據層級：Java source + Adapters focused tests；**unverified**。Java `removeById(..., fromDrop=true)` 的背包更新首位元組為 1，MapleForge 沿用既有 `ModifyInventoryQuantity`（首位元組 0），待真客戶端確認是否有差。
 
+### 換裝外觀同步 `UPDATE_CHAR_LOOK(0xBE)`（P091）
+
+對照 Java `MaplePacketCreator.updateCharLook` 與 `MapleCharacter.equipChanged`（`map.broadcastMessage(this, …, false)`，不含自己）：
+
+```text
+writeShort(0xBE) writeInt(charId) writeByte(1)
+addCharLook(mega=false)
+addRingInfo：writeByte(rings>0) writeInt(rings.size) [ring×n]   // MapleForge 目前恆空
+addMarriageRingLook：writeByte(has) [int charId, int partnerId, int ringId]
+writeInt(0)
+```
+
+語義：`ITEM_MOVE` 裝備/脫裝成功後廣播給同圖其他玩家。證據層級：Java source + Adapters focused tests；**unverified**。
+
+**待真客戶端確認（候選）**：`SPAWN_PLAYER` 尾段 MapleForge 寫 `short 0 ×2`（4 bytes）當兩段戒指資訊，Java `spawnPlayerMapobject` 用 `MaplePacketCreator.addRingInfo`（每段 `byte + int` = 5 bytes，共 10 bytes）。全為 0 時差異不易察覺，但有婚戒時 `addMarriageRingLook` 位移可能不同；需 capture 判定客戶端實際讀法後再決定是否修正。
+
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*
