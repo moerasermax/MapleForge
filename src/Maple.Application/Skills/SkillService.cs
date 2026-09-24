@@ -245,6 +245,13 @@ public sealed class SkillService
         return player.TryRecover(now);
     }
 
+    /// <summary>P093：世界 tick 龍之魂週期扣血，只對職業 131/132（對照 Java <c>handleCooldowns</c> 的 job 判斷 + <c>doDragonBlood</c>）。</summary>
+    public PeriodicBuffTick? TryDragonBlood(Player player, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return player.Character.Job is 131 or 132 ? player.TryDragonBlood(now) : null;
+    }
+
     /// <summary>世界 tick 冷卻到期（對照 Java <c>World.handleCooldowns</c>）：回傳本次移除的技能 ID。</summary>
     public IReadOnlyList<int> ExpireSkillCooldowns(Player player, DateTimeOffset now)
     {

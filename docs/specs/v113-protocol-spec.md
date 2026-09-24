@@ -1699,5 +1699,12 @@ writeInt(0)
 
 用於回復術（RECOVERY）世界 tick 回血。證據層級：Java source + Adapters focused tests；**unverified**。
 
+### buff 特效 `showOwnBuffEffect` / `showBuffeffect`（P093）
+
+- 本人：`SHOW_ITEM_GAIN_INCHAT(0xC7)` + `byte effectId` + `int skillId` + `byte 1` + `byte 1`（direction=3 不寫；Java 另有 1320006 例外寫 direction）。
+- 他人：`SHOW_FOREIGN_EFFECT(0xBF)` + `int charId` + `byte effectId` + `int skillId` + `byte 1` + `byte 1`。
+
+用於龍之魂扣血（effectId 5）。證據層級：Java source + Adapters focused tests；**unverified**。
+
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

@@ -43,6 +43,43 @@ public sealed class PlayerPeriodicBuffTests
         Assert.Null(NewPlayer(hp: 50).TryRecover(Start.AddHours(1)));
     }
 
+    [Fact]
+    public void TryDragonBlood_DrainsEveryFourSecondsStrictly()
+    {
+        var player = NewPlayer(hp: 100);
+        ApplyBuff(player, 1311008, MapleBuffStat.DRAGONBLOOD, x: 20);
+
+        Assert.Null(player.TryDragonBlood(Start.AddSeconds(4)));
+        var tick = player.TryDragonBlood(Start.AddSeconds(5));
+        Assert.Equal((-20, 1311008), (tick!.HpDelta, tick.SourceId));
+        Assert.Equal(80, player.Hp);
+    }
+
+    [Fact]
+    public void TryDragonBlood_HpWouldDropToOneOrBelow_CancelsBuffWithoutDrain()
+    {
+        // Java：stats.getHp() - x <= 1 → cancelEffectFromBuffStat(DRAGONBLOOD)。
+        var player = NewPlayer(hp: 21);
+        ApplyBuff(player, 1311008, MapleBuffStat.DRAGONBLOOD, x: 20);
+
+        var tick = player.TryDragonBlood(Start.AddSeconds(5));
+
+        Assert.Equal(0, tick!.HpDelta);
+        Assert.Single(tick.Cancellations);
+        Assert.Equal(21, player.Hp);
+        Assert.Empty(player.ActiveBuffs);
+    }
+
+    private static void ApplyBuff(Player player, int sourceId, MapleBuffStat stat, int x)
+        => player.ApplySkillEffect(new MapleStatEffect
+        {
+            SourceId = sourceId,
+            Level = 1,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = new[] { new BuffStatValue(stat, x) },
+        }, Start);
+
     private static void ApplyRecovery(Player player, int x)
         => player.ApplySkillEffect(new MapleStatEffect
         {

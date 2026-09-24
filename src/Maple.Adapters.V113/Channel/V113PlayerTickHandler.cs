@@ -62,6 +62,8 @@ public sealed class V113PlayerTickHandler
 
             if (entry.Player.IsAlive)
             {
+                // Java handleCooldowns 的 isAlive 區塊順序：Dragon Blood → Berserk → Recovery → hurt。
+                await TickDragonBloodAsync(entry, field, entries, now, ct).ConfigureAwait(false);
                 await TickRecoveryAsync(entry, field, entries, now, ct).ConfigureAwait(false);
             }
         }
@@ -97,6 +99,52 @@ public sealed class V113PlayerTickHandler
                 entry,
                 V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp) }),
                 ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// P093：龍之魂週期扣血。對照 Java <c>doDragonBlood</c>：<c>addHP(-x)</c>（HP 更新給本人）→ <c>showOwnBuffEffect(src, 5)</c>
+    /// 給本人 → 沒有 MORPH buff 時 <c>showBuffeffect(id, src, 5)</c> 給同圖其他人；HP 不足則取消 DRAGONBLOOD。
+    /// </summary>
+    private async Task TickDragonBloodAsync(
+        MapPlayerEntry entry,
+        FieldInstance field,
+        IReadOnlyList<MapPlayerEntry> entries,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var player = entry.Player;
+        if (_skills.TryDragonBlood(player, now) is not { } tick)
+        {
+            return;
+        }
+
+        foreach (var cancellation in tick.Cancellations)
+        {
+            await SendBestEffortAsync(entry, V113SkillPackets.CancelBuff(cancellation.Stats), ct).ConfigureAwait(false);
+        }
+
+        await _buffEffects.ApplyAsync(player, field, tick.Cancellations, ct).ConfigureAwait(false);
+
+        if (tick.HpDelta >= 0)
+        {
+            return;
+        }
+
+        await SendBestEffortAsync(
+            entry,
+            V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp) }),
+            ct).ConfigureAwait(false);
+        await SendBestEffortAsync(entry, V113SkillPackets.ShowOwnBuffEffect(tick.SourceId, 5), ct).ConfigureAwait(false);
+        if (player.ActiveBuffs.Any(static b => b.Stat == Core.Skills.MapleBuffStat.MORPH))
+        {
+            return;
+        }
+
+        var foreign = V113SkillPackets.ShowForeignBuffEffect(player.Character.Id, tick.SourceId, 5);
+        foreach (var other in entries.Where(e => e.CharId != entry.CharId))
+        {
+            await SendBestEffortAsync(other, foreign, ct).ConfigureAwait(false);
         }
     }
 

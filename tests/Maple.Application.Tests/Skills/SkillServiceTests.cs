@@ -164,6 +164,33 @@ public sealed class SkillServiceTests
         Assert.False(SkillService.HasAttackSkillLevel(player, 21110007)); // 本體 21110002 未學
     }
 
+    [Theory]
+    [InlineData((short)131, true)]
+    [InlineData((short)132, true)]
+    [InlineData((short)130, false)]
+    [InlineData((short)111, false)]
+    public void TryDragonBlood_OnlyDragonKnightJobs(short job, bool drains)
+    {
+        // P093：Java handleCooldowns 只對 job 131/132 呼叫 doDragonBlood。
+        var player = MakePlayer(mp: 50, job: job);
+        player.Character.Stats.Hp = 100;
+        player.Character.Stats.MaxHp = 100;
+        var start = DateTimeOffset.UnixEpoch;
+        player.ApplySkillEffect(new MapleStatEffect
+        {
+            SourceId = 1311008,
+            Level = 1,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = new[] { new BuffStatValue(MapleBuffStat.DRAGONBLOOD, 20) },
+        }, start);
+        var service = new SkillService(new InMemorySkillCatalog(Array.Empty<MapleSkill>()));
+
+        var tick = service.TryDragonBlood(player, start.AddSeconds(5));
+
+        Assert.Equal(drains, tick is not null);
+    }
+
     private static MapleSkill AttackCooldownSkill(int skillId, int seconds)
         => new()
         {

@@ -108,6 +108,33 @@ internal static class V113SkillPackets
         return w.ToArray();
     }
 
+    /// <summary>P093：對照 Java <c>showOwnBuffEffect(skillid, effectid)</c>（direction 3 不寫）：
+    /// <c>SHOW_ITEM_GAIN_INCHAT(0xC7)</c> + effectId + skillId + 1 + 1。</summary>
+    public static byte[] ShowOwnBuffEffect(int skillId, byte effectId)
+    {
+        var w = new PacketWriter(10);
+        w.WriteShort(V113ChannelSendOp.ShowItemGainInChat);
+        w.WriteByte(effectId);
+        w.WriteInt(skillId);
+        w.WriteByte(1);
+        w.WriteByte(1);
+        return w.ToArray();
+    }
+
+    /// <summary>P093：對照 Java <c>showBuffeffect(cid, skillid, effectid)</c>：
+    /// <c>SHOW_FOREIGN_EFFECT(0xBF)</c> + cid + effectId + skillId + 1 + 1。</summary>
+    public static byte[] ShowForeignBuffEffect(int characterId, int skillId, byte effectId)
+    {
+        var w = new PacketWriter(14);
+        w.WriteShort(V113ChannelSendOp.ShowForeignEffect);
+        w.WriteInt(characterId);
+        w.WriteByte(effectId);
+        w.WriteInt(skillId);
+        w.WriteByte(1);
+        w.WriteByte(1);
+        return w.ToArray();
+    }
+
     public static byte[] UpdateSkill(CharacterSkillRecord skill)
     {
         var w = new PacketWriter(32);

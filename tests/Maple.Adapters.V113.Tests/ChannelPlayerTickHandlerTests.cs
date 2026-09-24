@@ -162,6 +162,13 @@ public sealed class ChannelPlayerTickHandlerTests
     }
 
     [Fact]
+    public void BuffEffectPackets_MatchJavaLayouts()
+    {
+        Assert.Equal(new byte[] { 0xC7, 0x00, 5, 0x20, 0x01, 0x14, 0x00, 1, 1 }, V113SkillPackets.ShowOwnBuffEffect(1311008, 5));
+        Assert.Equal(new byte[] { 0xBF, 0x00, 7, 0, 0, 0, 5, 0x20, 0x01, 0x14, 0x00, 1, 1 }, V113SkillPackets.ShowForeignBuffEffect(7, 1311008, 5));
+    }
+
+    [Fact]
     public void HealPackets_MatchJavaLayouts()
     {
         Assert.Equal(new byte[] { 0xC7, 0x00, 6, 10, 0, 0, 0 }, V113StatsPackets.ShowOwnHpHealed(10));

@@ -3,14 +3,54 @@ using Maple.Core.Skills;
 namespace Maple.Core.World;
 
 /// <summary>P092：週期性 buff 效果的一次 tick 結果。</summary>
-public sealed record PeriodicBuffTick(int HpDelta, IReadOnlyList<PlayerBuffCancellation> Cancellations);
+public sealed record PeriodicBuffTick(int HpDelta, IReadOnlyList<PlayerBuffCancellation> Cancellations, int SourceId = 0);
 
 public sealed partial class Player
 {
     /// <summary>Java <c>canRecover</c>：<c>lastRecoveryTime + 5000 &lt; now</c>。</summary>
     public static readonly TimeSpan RecoveryInterval = TimeSpan.FromMilliseconds(5_000);
 
+    /// <summary>Java <c>canBlood</c>：<c>lastDragonBloodTime + 4000 &lt; now</c>。</summary>
+    public static readonly TimeSpan DragonBloodInterval = TimeSpan.FromMilliseconds(4_000);
+
     private DateTimeOffset? _lastRecoveryAt;
+    private DateTimeOffset? _lastDragonBloodAt;
+
+    /// <summary>
+    /// P093：龍之魂（DRAGONBLOOD buff）週期扣血。對照 Java <c>registerEffect</c>（<c>prepareDragonBlood</c>）+
+    /// <c>canBlood(now)</c> + <c>doDragonBlood</c>：到期重設計時；<c>hp - x &lt;= 1</c> → 取消 DRAGONBLOOD；否則 <c>addHP(-x)</c>。
+    /// 職業 131/132 與「活著」的判斷由呼叫端負責（Java 在 <c>handleCooldowns</c> 內檢查）。
+    /// </summary>
+    public PeriodicBuffTick? TryDragonBlood(DateTimeOffset now)
+    {
+        ActiveBuffStat? blood;
+        lock (_skillsGate)
+        {
+            blood = _activeBuffs.GetValueOrDefault(MapleBuffStat.DRAGONBLOOD);
+            if (blood is null)
+            {
+                _lastDragonBloodAt = null;
+                return null;
+            }
+
+            var last = _lastDragonBloodAt is { } l && l >= blood.StartedAt ? l : blood.StartedAt;
+            if (last + DragonBloodInterval >= now)
+            {
+                _lastDragonBloodAt = last;
+                return null;
+            }
+
+            _lastDragonBloodAt = now;
+        }
+
+        if (Character.Stats.Hp - blood.Value <= 1)
+        {
+            return new PeriodicBuffTick(0, CancelBuffBySource(blood.SourceId), blood.SourceId);
+        }
+
+        Character.Stats.Hp = (short)(Character.Stats.Hp - blood.Value);
+        return new PeriodicBuffTick(-blood.Value, Array.Empty<PlayerBuffCancellation>(), blood.SourceId);
+    }
 
     /// <summary>
     /// P092：回復術（RECOVERY buff）週期回血。對照 Java <c>MapleCharacter.registerEffect</c>（套用時 <c>prepareRecovery</c>
