@@ -38,7 +38,8 @@ public sealed record SkillCastResult(
     int SkillId,
     MapleSkill? Skill,
     MapleStatEffect? Effect,
-    PlayerBuffChange? AppliedBuff);
+    PlayerBuffChange? AppliedBuff,
+    int CooldownStartedSeconds = 0);
 
 public sealed record CancelBuffResult(
     CancelBuffStatus Status,
@@ -56,6 +57,9 @@ public sealed record AranComboResult(
 
 public sealed class SkillService
 {
+    /// <summary>槍神「海盜船」（Java <c>槍神.海盜船</c>）：施放時不登記冷卻。</summary>
+    public const int CorsairBattleshipSkillId = 5221006;
+
     private readonly ISkillCatalog _skills;
 
     public SkillService(ISkillCatalog skills)
@@ -109,12 +113,16 @@ public sealed class SkillService
             _ => SkillCastStatus.NoEffect,
         };
 
-        if (status == SkillCastStatus.Success && effect.CooldownSeconds > 0)
+        // 對照 Java PlayerHandler.SpecialMove：有冷卻的技能施放時登記冷卻（呼叫端據此送 COOLDOWN
+        // 封包）；海盜船例外——Java 施放時不登記，船被打爆時才由 MapleCharacter 登記冷卻。
+        var cooldownStarted = 0;
+        if (status == SkillCastStatus.Success && effect.CooldownSeconds > 0 && skillId != CorsairBattleshipSkillId)
         {
             player.AddSkillCooldown(skillId, now, effect.CooldownSeconds);
+            cooldownStarted = effect.CooldownSeconds;
         }
 
-        return new SkillCastResult(status, skillId, skill, effect, applied.Buff);
+        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted);
     }
 
     public CancelBuffResult CancelBuff(Player player, int sourceId)

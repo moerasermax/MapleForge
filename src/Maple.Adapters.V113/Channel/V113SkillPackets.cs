@@ -19,7 +19,8 @@ internal sealed record V113SkillHandleResult(
     int SourceId,
     byte[]? Packet,
     SkillCastResult? Cast,
-    CancelBuffResult? Cancel);
+    CancelBuffResult? Cancel,
+    byte[]? CooldownPacket = null);
 
 /// <summary>v113 技能/buff 封包。對照 Java PlayerHandler.SpecialMove/CancelBuffHandler 與 MaplePacketCreator.giveBuff/cancelBuff。</summary>
 internal static class V113SkillPackets
@@ -36,6 +37,7 @@ internal static class V113SkillPackets
     public const short RemoteCancelSkillEffectOp = unchecked((short)0xB7);
     public const short GiveForeignBuffOp = unchecked((short)0xC0);
     public const short CancelForeignBuffOp = unchecked((short)0xC1);
+    public const short CooldownOp = unchecked((short)0xE3); // COOLDOWN（send.properties 0xE3）
 
     public static V113SpecialMoveRequest ParseSpecialMove(PacketReader reader)
     {
@@ -89,6 +91,17 @@ internal static class V113SkillPackets
         w.WriteShort(CancelBuffOp);
         WriteBuffMask(w, stats);
         w.WriteByte(3);
+        return w.ToArray();
+    }
+
+    /// <summary>對照 Java <c>MaplePacketCreator.skillCooldown(sid, time)</c>：通知客戶端技能冷卻秒數，
+    /// <c>seconds == 0</c> 表示冷卻結束。</summary>
+    public static byte[] SkillCooldown(int skillId, int seconds)
+    {
+        var w = new PacketWriter(8);
+        w.WriteShort(CooldownOp);
+        w.WriteInt(skillId);
+        w.WriteShort((short)seconds);
         return w.ToArray();
     }
 
@@ -160,7 +173,15 @@ internal static class V113SkillMoveHandler
             ? V113SkillPackets.GiveBuff(request.SkillId, result.AppliedBuff.DurationMilliseconds, result.AppliedBuff.Stats, result.Effect)
             : null;
 
-        return new V113SkillHandleResult(request.SkillId, packet, result, null);
+        // 對照 Java PlayerHandler.SpecialMove：冷卻中被拒回 enableActions 解鎖客戶端；
+        // 成功登記冷卻則送 skillCooldown(skillId, 秒數) 讓客戶端圖示進入冷卻。
+        var cooldownPacket = result.Status == SkillCastStatus.OnCooldown
+            ? V113StatsPackets.EnableActions()
+            : result.CooldownStartedSeconds > 0
+                ? V113SkillPackets.SkillCooldown(request.SkillId, result.CooldownStartedSeconds)
+                : null;
+
+        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket);
     }
 
     public static V113SkillHandleResult HandleCancelBuff(

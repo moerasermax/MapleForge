@@ -2969,6 +2969,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(handled.Packet, ct);
         }
 
+        if (handled.CooldownPacket is not null)
+        {
+            await session.SendAsync(handled.CooldownPacket, ct);
+        }
+
         if (handled.Cast is { Status: not SkillCastStatus.Success } cast)
         {
             _log.LogDebug("[Channel] SPECIAL_MOVE ignored skill={SkillId} status={Status}", cast.SkillId, cast.Status);

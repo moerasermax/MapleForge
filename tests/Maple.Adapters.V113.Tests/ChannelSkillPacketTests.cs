@@ -86,6 +86,93 @@ public sealed class ChannelSkillPacketTests
     }
 
     [Fact]
+    public void SkillCooldown_MatchesJavaSkillCooldownShape()
+    {
+        var r = new PacketReader(V113SkillPackets.SkillCooldown(1121010, 60));
+
+        Assert.Equal(V113SkillPackets.CooldownOp, r.ReadShort());
+        Assert.Equal(1121010, r.ReadInt());
+        Assert.Equal(60, r.ReadShort());
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
+    public void SkillMoveHandler_CooldownSkill_SendsCooldownThenEnableActionsWhileCooling()
+    {
+        var player = MakePlayer();
+        player.ChangeSkillLevel(CooldownSkillId, level: 1, masterLevel: 10);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { CooldownSkill(CooldownSkillId) }));
+        var now = new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.Zero);
+
+        var first = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(CooldownSkillId, level: 1), offset: 2), player, service, now);
+
+        Assert.Equal(SkillCastStatus.Success, first.Cast?.Status);
+        Assert.NotNull(first.CooldownPacket);
+        var r = new PacketReader(first.CooldownPacket!);
+        Assert.Equal(V113SkillPackets.CooldownOp, r.ReadShort());
+        Assert.Equal(CooldownSkillId, r.ReadInt());
+        Assert.Equal(30, r.ReadShort());
+
+        var second = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(CooldownSkillId, level: 1), offset: 2), player, service, now.AddSeconds(5));
+
+        Assert.Equal(SkillCastStatus.OnCooldown, second.Cast?.Status);
+        Assert.Equal(V113StatsPackets.EnableActions(), second.CooldownPacket);
+    }
+
+    [Fact]
+    public void SkillMoveHandler_NoCooldownSkill_SendsNoCooldownPacket()
+    {
+        var player = MakePlayer();
+        player.ChangeSkillLevel(2001002, level: 1, masterLevel: 20);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { MagicGuardSkill() }));
+
+        var handled = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(2001002, level: 1), offset: 2),
+            player,
+            service,
+            new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(SkillCastStatus.Success, handled.Cast?.Status);
+        Assert.Null(handled.CooldownPacket);
+    }
+
+    [Fact]
+    public void SkillMoveHandler_Battleship_DoesNotStartCooldownOnCast()
+    {
+        var player = MakePlayer();
+        player.ChangeSkillLevel(SkillService.CorsairBattleshipSkillId, level: 1, masterLevel: 10);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { CooldownSkill(SkillService.CorsairBattleshipSkillId) }));
+        var now = new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.Zero);
+
+        var handled = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(SkillService.CorsairBattleshipSkillId, level: 1), offset: 2), player, service, now);
+
+        Assert.Equal(SkillCastStatus.Success, handled.Cast?.Status);
+        Assert.Null(handled.CooldownPacket);
+        Assert.False(player.SkillIsCooling(SkillService.CorsairBattleshipSkillId, now.AddSeconds(1)));
+    }
+
+    private const int CooldownSkillId = 1121010;
+
+    private static MapleSkill CooldownSkill(int skillId)
+        => new()
+        {
+            Id = skillId,
+            Effects = new[]
+            {
+                new MapleStatEffect
+                {
+                    SourceId = skillId,
+                    Level = 1,
+                    MpCon = 1,
+                    CooldownSeconds = 30,
+                },
+            },
+        };
+
+    [Fact]
     public void AddCharacterSkillInfo_WritesFourthJobMasterLevelOnlyWhenNeeded()
     {
         var chr = new Character();
