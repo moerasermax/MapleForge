@@ -13,6 +13,10 @@ internal static class V113BroadcastPackets
     public static byte[] PopupMessage(string message)
         => BroadcastMessage(type: 1, channel: 0, [message], ear: false, item: null);
 
+    /// <summary>對照 Java <c>MapleCharacter.dropMessage(5, msg)</c>（<c>serverNotice(5, msg)</c>）：聊天欄系統提示。</summary>
+    public static byte[] ChatNotice(string message)
+        => BroadcastMessage(type: 5, channel: 0, [message], ear: false, item: null);
+
     public static byte[] Megaphone(string message)
         => BroadcastMessage(type: 2, channel: 0, [message], ear: false, item: null);
 

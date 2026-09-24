@@ -67,6 +67,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly SkillService _skillService;
     private readonly PlayerDeathService _playerDeaths;
     private readonly SummonService _summonService;
+    private readonly DoorService _doorService;
     private readonly ISkillBookCatalog _skillBookCatalog;
     private readonly DropService _dropService;
     private readonly FameService _fameService;
@@ -162,9 +163,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113EventMiniGameHandler eventMiniGameHandler,
         V113ChannelOptions options,
         PlayerDeathService playerDeaths,
-        SummonService summonService)
+        SummonService summonService,
+        DoorService doorService)
     {
         _log = log;
+        _doorService = doorService;
         _playerDeaths = playerDeaths;
         _summonService = summonService;
         _charService = charService;
@@ -3051,9 +3054,58 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
+        if (handled.Cast is { Status: SkillCastStatus.Success } && DoorService.IsMagicDoorSkill(handled.SourceId))
+        {
+            await OpenMagicDoorAsync(player, handled.Request, session, ct);
+        }
+
         if (handled.Cast is { Status: not SkillCastStatus.Success } cast)
         {
             _log.LogDebug("[Channel] SPECIAL_MOVE ignored skill={SkillId} status={Status}", cast.SkillId, cast.Status);
+        }
+    }
+
+    /// <summary>
+    /// P087：對照 Java <c>MapleStatEffect.applyTo</c> 的 <c>isMagicDoor()</c> 分支——建門成功後依
+    /// <c>MapleDoor.sendSpawnData</c> 對目標地圖玩家送 <c>spawnDoor(owner, targetPos, true)</c> +
+    /// <c>spawnPortal(town, target, targetPos)</c>；村莊沒空位時聊天欄提示。重複施放先對舊門送 destroy data。
+    /// 隊伍成員的 <c>partyPortal</c>（PARTY_OPERATION 0x24）尚未移植。
+    /// </summary>
+    private async Task OpenMagicDoorAsync(Player player, V113SpecialMoveRequest? request, MapleSession session, CancellationToken ct)
+    {
+        var targetMap = _mapService.LoadMap(player.Character.MapId);
+        var townMap = _mapService.LoadMap(targetMap.ReturnMapId);
+        var targetPosition = request is { X: { } x, Y: { } y }
+            ? new Position(x, y, 0, 0)
+            : player.Position;
+        var opened = _doorService.TryOpenDoor(player, targetMap, townMap, targetPosition);
+        if (opened.Door is not { } door)
+        {
+            await session.SendAsync(V113BroadcastPackets.ChatNotice("無法使用時空門，村莊不可容納。"), ct);
+            return;
+        }
+
+        if (opened.Replaced is { } old)
+        {
+            foreach (var entry in _mapRegistry.GetAll(old.TargetMapId))
+            {
+                try
+                {
+                    await entry.SendPacket(V113DoorPackets.RemoveDoor(old.OwnerId), ct);
+                    await entry.SendPacket(V113DoorPackets.RemoveTownPortal(), ct);
+                }
+                catch { /* session 可能正在關 */ }
+            }
+        }
+
+        foreach (var entry in _mapRegistry.GetAll(door.TargetMapId))
+        {
+            try
+            {
+                await entry.SendPacket(V113DoorPackets.SpawnDoor(door.OwnerId, door.TargetPosition, town: true), ct);
+                await entry.SendPacket(V113DoorPackets.SpawnPortal(door.TownMapId, door.TargetMapId, door.TargetPosition), ct);
+            }
+            catch { /* session 可能正在關 */ }
         }
     }
 
