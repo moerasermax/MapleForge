@@ -266,6 +266,7 @@ public static class MapleServerHost
         // 世界 tick 排程器（M4-2：掉落物過期 P063 + 怪物重生 P067 + 逐玩家處理 P073）。
         builder.Services.AddSingleton<V113DropExpiryHandler>();
         builder.Services.AddSingleton<V113MobRespawnHandler>();
+        builder.Services.AddSingleton<FieldHazardService>();
         builder.Services.AddSingleton<V113PlayerTickHandler>();
         builder.Services.AddHostedService<WorldTickHostedService>();
 

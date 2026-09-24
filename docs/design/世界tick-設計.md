@@ -23,9 +23,10 @@ Java `World.Respawn`（`WorldTimer.register(new Respawn(), 3000)`）每 3 秒巡
 | 掉落物轉 FFA | `item.shouldFFA()` | 同上 → `DropService.PromoteFfaDrops` | P069 |
 | 怪物重生 | `map.respawn(false)` | `V113MobRespawnHandler` → `CombatService.RespawnMonsters` | P064-067 |
 | 技能冷卻到期 | `handleCooldowns` 冷卻迴圈 + `skillCooldown(skil, 0)` | `V113PlayerTickHandler` → `SkillService.ExpireSkillCooldowns` | P073 |
-| 地圖持續扣血（資料層） | `setHPDec`/`canHurt()` | `MapData.DecHp/DecHpInterval/ProtectItem` + `FieldHpDecay`（field 建立時 `MapService.InitializeFieldEnvironment`） | P074（尚未扣血） |
+| 地圖持續扣血 | `setHPDec`/`canHurt()` + `handleCooldowns` hurt 分支 | 資料：`MapData.DecHp/DecHpInterval/ProtectItem` + `FieldHpDecay`（field 建立時 `MapService.InitializeFieldEnvironment`）；扣血：`V113PlayerTickHandler` → `FieldHazardService.ApplyHpDecay`，送 HP 更新，扣到 0 先送 `enableActions` | P074-075 |
 
 ## 尚未移植（候選）
 
-- 異常狀態（disease）到期、寵物飢餓／限時寵物、坐騎疲勞、Dragon Blood/Berserk、`doRecovery`、地圖持續扣血。
+- 異常狀態（disease）到期、寵物飢餓／限時寵物、坐騎疲勞、Dragon Blood/Berserk、`doRecovery`。
+- 死亡懲罰（Java `playerDead`：經驗值損失、護身符、取消特定 buff）目前任何死亡路徑都沒有處理。
 - Java 的 `numTimes % N` 以 tick 次數計時；MapleForge 傾向改用各物件自己的時間戳（可測、不依賴排程器次數）。
