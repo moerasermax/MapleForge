@@ -21,7 +21,8 @@ internal sealed record V113SkillHandleResult(
     SkillCastResult? Cast,
     CancelBuffResult? Cancel,
     byte[]? CooldownPacket = null,
-    byte[]? StatsPacket = null);
+    byte[]? StatsPacket = null,
+    V113SpecialMoveRequest? Request = null);
 
 /// <summary>v113 技能/buff 封包。對照 Java PlayerHandler.SpecialMove/CancelBuffHandler 與 MaplePacketCreator.giveBuff/cancelBuff。</summary>
 internal static class V113SkillPackets
@@ -192,7 +193,7 @@ internal static class V113SkillMoveHandler
             _ => null,
         };
 
-        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket);
+        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket, request);
     }
 
     private static IEnumerable<PlayerStatUpdate> BuildCastStatUpdates(Player player, short mpBefore)

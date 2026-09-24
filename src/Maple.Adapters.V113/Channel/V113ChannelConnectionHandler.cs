@@ -66,6 +66,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly CombatService _combatService;
     private readonly SkillService _skillService;
     private readonly PlayerDeathService _playerDeaths;
+    private readonly SummonService _summonService;
     private readonly ISkillBookCatalog _skillBookCatalog;
     private readonly DropService _dropService;
     private readonly FameService _fameService;
@@ -160,10 +161,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113FamilyHandler familyHandler,
         V113EventMiniGameHandler eventMiniGameHandler,
         V113ChannelOptions options,
-        PlayerDeathService playerDeaths)
+        PlayerDeathService playerDeaths,
+        SummonService summonService)
     {
         _log = log;
         _playerDeaths = playerDeaths;
+        _summonService = summonService;
         _charService = charService;
         _accounts = accounts;
         _onlinePlayers = onlinePlayers;
@@ -793,7 +796,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.SpecialMove:
                         if (player is null) break;
-                        await HandleSpecialMoveAsync(reader, player, s, token);
+                        await HandleSpecialMoveAsync(reader, player, currentField, s, token);
                         break;
 
                     case V113ChannelRecvOp.CancelBuff:
@@ -2957,7 +2960,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await session.SendAsync(V113StatsPackets.EnableActions(), ct);
     }
 
-    private async Task HandleSpecialMoveAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
+    private async Task HandleSpecialMoveAsync(PacketReader reader, Player player, FieldInstance? field, MapleSession session, CancellationToken ct)
     {
         V113SkillHandleResult handled;
         try
@@ -2983,6 +2986,34 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (handled.Packet is not null)
         {
             await session.SendAsync(handled.Packet, ct);
+        }
+
+        // P081：對照 Java applyTo 在 buff 之後建立召喚獸（map.spawnSummon 廣播全圖含自己）；
+        // 重複施放先移除舊召喚獸（deregisterBuffStats → removeSummon(summon, true)）。
+        if (field is not null && handled.Cast is { Status: SkillCastStatus.Success, Effect: { } effect })
+        {
+            var position = handled.Request is { X: { } x, Y: { } y }
+                ? new Position(x, y, player.Position.Stance, player.Position.Foothold)
+                : player.Position;
+            SummonSpawnResult? spawned;
+            lock (field)
+            {
+                spawned = _summonService.TrySpawn(field, player, handled.SourceId, (byte)player.GetSkillLevel(handled.SourceId), effect, position);
+            }
+
+            if (spawned is not null)
+            {
+                if (spawned.Replaced is not null)
+                {
+                    await BroadcastPacketToMapAsync(player.Character, session, V113SummonPackets.RemoveSummon(spawned.Replaced, animated: true), ct);
+                }
+
+                await BroadcastPacketToMapAsync(
+                    player.Character,
+                    session,
+                    V113SummonPackets.SpawnSummon(spawned.Summon, player.Character.Level),
+                    ct);
+            }
         }
 
         if (handled.Cast is { Status: not SkillCastStatus.Success } cast)
