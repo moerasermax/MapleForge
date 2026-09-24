@@ -34,6 +34,9 @@ public sealed class MapService
         var returnMapId = GetInt(info, "returnMap", mapId);
         var town = GetInt(info, "town", 0) != 0;
         var fieldLimit = GetLong(info, "fieldLimit", 0);
+        var decHp = GetInt(info, "decHP", 0);
+        var decHpInterval = GetInt(info, "decHPInterval", 10_000);
+        var protectItem = GetInt(info, "protectItem", 0);
 
         var portals = LoadPortals(mapImg["portal"]);
         var footholds = LoadFootholds(mapImg["foothold"]);
@@ -46,11 +49,25 @@ public sealed class MapService
             ReturnMapId = returnMapId,
             Town = town,
             FieldLimit = fieldLimit,
+            DecHp = decHp,
+            DecHpInterval = decHpInterval,
+            ProtectItem = protectItem,
             Portals = portals,
             Footholds = footholds,
             Npcs = npcs,
             Monsters = monsters,
         };
+    }
+
+    /// <summary>
+    /// P074：field 建立時初始化地圖環境的執行期狀態（目前只有持續扣血 <see cref="FieldHpDecay"/>）。
+    /// 對照 Java <c>MapleMapFactory</c> 建圖時 <c>setHPDec/setHPDecInterval/setHPDecProtect</c>。
+    /// 呼叫端負責 <c>lock(field)</c>。
+    /// </summary>
+    public void InitializeFieldEnvironment(FieldInstance field, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        field.HpDecay = FieldHpDecay.Create(LoadMap(field.MapId), now);
     }
 
     /// <summary>Returns whether static map data exists for the map id.</summary>

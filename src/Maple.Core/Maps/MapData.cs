@@ -15,6 +15,15 @@ public sealed class MapData
     /// 跳躍/移動技能/召喚袋/秘密門/傳送石等，見 <see cref="FieldLimitType"/>。預設 0（無限制）。</summary>
     public long FieldLimit { get; init; }
 
+    /// <summary>對照 Java <c>MapleMap.decHP</c>（WZ <c>info/decHP</c>，預設 0）：每個扣血週期扣多少 HP（寒冷/高溫/水中地圖）。</summary>
+    public int DecHp { get; init; }
+
+    /// <summary>對照 Java <c>MapleMap.decHPInterval</c>（WZ <c>info/decHPInterval</c>，預設 10000 毫秒）。</summary>
+    public int DecHpInterval { get; init; } = 10_000;
+
+    /// <summary>對照 Java <c>MapleMap.protectItem</c>（WZ <c>info/protectItem</c>，預設 0）：穿著此裝備可免扣血。</summary>
+    public int ProtectItem { get; init; }
+
     public IReadOnlyList<MapPortal> Portals { get; init; } = Array.Empty<MapPortal>();
     public IReadOnlyList<MapFoothold> Footholds { get; init; } = Array.Empty<MapFoothold>();
 

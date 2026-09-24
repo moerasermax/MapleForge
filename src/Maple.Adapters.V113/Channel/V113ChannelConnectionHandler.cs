@@ -1778,6 +1778,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                 var reactors = _reactorService.SpawnMapReactors(field, mapId);
                 _log.LogInformation("[Channel] 地圖 {Map} 初始化 {Count} 個 reactor", mapId, reactors.Count);
+
+                _mapService.InitializeFieldEnvironment(field, DateTimeOffset.UtcNow);
             }
 
             field.Add(player);

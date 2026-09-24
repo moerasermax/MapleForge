@@ -33,6 +33,32 @@ public sealed class MapServiceFieldLimitTests
     }
 
     [Fact]
+    public void LoadMap_ReadsHpDecayFields_AndDefaultsIntervalTo10Seconds()
+    {
+        var withDecay = new MapService(new FakeMapDataProvider(fieldLimit: null, decHp: 20, decHpInterval: 5000, protectItem: 1072000))
+            .LoadMap(100000000);
+        var withoutDecay = new MapService(new FakeMapDataProvider(fieldLimit: null)).LoadMap(100000000);
+
+        Assert.Equal((20, 5000, 1072000), (withDecay.DecHp, withDecay.DecHpInterval, withDecay.ProtectItem));
+        Assert.Equal((0, 10_000, 0), (withoutDecay.DecHp, withoutDecay.DecHpInterval, withoutDecay.ProtectItem));
+    }
+
+    [Fact]
+    public void InitializeFieldEnvironment_SetsHpDecayOnlyForDecHpMaps()
+    {
+        var now = new DateTimeOffset(2026, 9, 24, 0, 0, 0, TimeSpan.Zero);
+        var cold = new Maple.Core.World.FieldInstance(100000000);
+        var normal = new Maple.Core.World.FieldInstance(100000000);
+
+        new MapService(new FakeMapDataProvider(fieldLimit: null, decHp: 20)).InitializeFieldEnvironment(cold, now);
+        new MapService(new FakeMapDataProvider(fieldLimit: null)).InitializeFieldEnvironment(normal, now);
+
+        Assert.Equal(20, cold.HpDecay?.DecHp);
+        Assert.Equal(now, cold.HpDecay?.LastHurtAt);
+        Assert.Null(normal.HpDecay);
+    }
+
+    [Fact]
     public void FieldLimitType_VipRock_ChecksBitCorrectly()
     {
         Assert.True(FieldLimitType.VipRock.Check(0x40));
@@ -45,7 +71,7 @@ public sealed class MapServiceFieldLimitTests
     {
         private readonly IDataNode _mapImg;
 
-        public FakeMapDataProvider(long? fieldLimit)
+        public FakeMapDataProvider(long? fieldLimit, int? decHp = null, int? decHpInterval = null, int? protectItem = null)
         {
             var infoChildren = new Dictionary<string, IDataNode>
             {
@@ -56,6 +82,10 @@ public sealed class MapServiceFieldLimitTests
             {
                 infoChildren["fieldLimit"] = new Node("fieldLimit", (int)value);
             }
+
+            if (decHp is { } dec) infoChildren["decHP"] = new Node("decHP", dec);
+            if (decHpInterval is { } interval) infoChildren["decHPInterval"] = new Node("decHPInterval", interval);
+            if (protectItem is { } protect) infoChildren["protectItem"] = new Node("protectItem", protect);
 
             _mapImg = new Node("100000000.img", children: new Dictionary<string, IDataNode>
             {

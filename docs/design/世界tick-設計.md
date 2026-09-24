@@ -23,6 +23,7 @@ Java `World.Respawn`（`WorldTimer.register(new Respawn(), 3000)`）每 3 秒巡
 | 掉落物轉 FFA | `item.shouldFFA()` | 同上 → `DropService.PromoteFfaDrops` | P069 |
 | 怪物重生 | `map.respawn(false)` | `V113MobRespawnHandler` → `CombatService.RespawnMonsters` | P064-067 |
 | 技能冷卻到期 | `handleCooldowns` 冷卻迴圈 + `skillCooldown(skil, 0)` | `V113PlayerTickHandler` → `SkillService.ExpireSkillCooldowns` | P073 |
+| 地圖持續扣血（資料層） | `setHPDec`/`canHurt()` | `MapData.DecHp/DecHpInterval/ProtectItem` + `FieldHpDecay`（field 建立時 `MapService.InitializeFieldEnvironment`） | P074（尚未扣血） |
 
 ## 尚未移植（候選）
 

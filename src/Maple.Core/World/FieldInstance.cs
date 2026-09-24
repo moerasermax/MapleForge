@@ -19,6 +19,10 @@ public sealed class FieldInstance
     /// 一併填入（跟場上物件一樣，領域變更要由呼叫端 <c>lock(field)</c> 序列化）。</summary>
     public List<MobSpawnPoint> SpawnPoints { get; } = new();
 
+    /// <summary>P074：地圖持續扣血狀態（寒冷/高溫/水中地圖），沒有扣血設定的地圖為 null。
+    /// 由 <c>MapService.InitializeFieldEnvironment</c> 在 field 建立時填入。</summary>
+    public FieldHpDecay? HpDecay { get; set; }
+
     /// <summary>加入/取代一個場上物件（以 ObjectId 為鍵）。</summary>
     public void Add(IFieldObject obj) => _objects[obj.ObjectId] = obj;
 
