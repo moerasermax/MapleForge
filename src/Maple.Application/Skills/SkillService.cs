@@ -39,7 +39,8 @@ public sealed record SkillCastResult(
     MapleSkill? Skill,
     MapleStatEffect? Effect,
     PlayerBuffChange? AppliedBuff,
-    int CooldownStartedSeconds = 0);
+    int CooldownStartedSeconds = 0,
+    IReadOnlyList<int>? ResetCooldownSkillIds = null);
 
 public enum AttackCooldownStatus
 {
@@ -71,6 +72,9 @@ public sealed class SkillService
 {
     /// <summary>槍神「海盜船」（Java <c>槍神.海盜船</c>）：施放時不登記冷卻。</summary>
     public const int CorsairBattleshipSkillId = 5221006;
+
+    /// <summary>拳霸「時間置換」（Java <c>isTimeLeap()</c>：<c>sourceid == 5121010</c>）。</summary>
+    public const int TimeLeapSkillId = 5121010;
 
     private readonly ISkillCatalog _skills;
 
@@ -134,7 +138,12 @@ public sealed class SkillService
             cooldownStarted = effect.CooldownSeconds;
         }
 
-        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted);
+        // P086：對照 Java applyTo 的 isTimeLeap() 分支——清除自己以外的所有冷卻（呼叫端逐一送 skillCooldown(id, 0)）。
+        IReadOnlyList<int>? reset = status == SkillCastStatus.Success && skillId == TimeLeapSkillId
+            ? player.ResetSkillCooldownsExcept(TimeLeapSkillId)
+            : null;
+
+        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted, reset);
     }
 
     /// <summary>

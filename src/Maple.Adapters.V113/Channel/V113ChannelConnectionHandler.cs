@@ -3018,6 +3018,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(handled.Packet, ct);
         }
 
+        foreach (var resetPacket in handled.CooldownResetPackets ?? Array.Empty<byte[]>())
+        {
+            await session.SendAsync(resetPacket, ct);
+        }
+
         // P081：對照 Java applyTo 在 buff 之後建立召喚獸（map.spawnSummon 廣播全圖含自己）；
         // 重複施放先移除舊召喚獸（deregisterBuffStats → removeSummon(summon, true)）。
         if (field is not null && handled.Cast is { Status: SkillCastStatus.Success, Effect: { } effect })

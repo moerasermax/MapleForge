@@ -22,7 +22,8 @@ internal sealed record V113SkillHandleResult(
     CancelBuffResult? Cancel,
     byte[]? CooldownPacket = null,
     byte[]? StatsPacket = null,
-    V113SpecialMoveRequest? Request = null);
+    V113SpecialMoveRequest? Request = null,
+    IReadOnlyList<byte[]>? CooldownResetPackets = null);
 
 /// <summary>v113 技能/buff 封包。對照 Java PlayerHandler.SpecialMove/CancelBuffHandler 與 MaplePacketCreator.giveBuff/cancelBuff。</summary>
 internal static class V113SkillPackets
@@ -193,7 +194,12 @@ internal static class V113SkillMoveHandler
             _ => null,
         };
 
-        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket, request);
+        // P086：時間置換清掉的冷卻逐一送 skillCooldown(id, 0)。
+        var resetPackets = result.ResetCooldownSkillIds?
+            .Select(static id => V113SkillPackets.SkillCooldown(id, 0))
+            .ToArray();
+
+        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket, request, resetPackets);
     }
 
     private static IEnumerable<PlayerStatUpdate> BuildCastStatUpdates(Player player, short mpBefore)

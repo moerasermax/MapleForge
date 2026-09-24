@@ -107,6 +107,22 @@ public sealed partial class Player
         }
     }
 
+    /// <summary>P086：移除除了 <paramref name="keepSkillId"/> 以外的所有技能冷卻並回傳其技能 ID
+    /// （對照 Java <c>MapleStatEffect.applyTo</c> 的 <c>isTimeLeap()</c> 分支）。</summary>
+    public IReadOnlyList<int> ResetSkillCooldownsExcept(int keepSkillId)
+    {
+        lock (_skillsGate)
+        {
+            var reset = _skillCooldowns.Keys.Where(id => id != keepSkillId).ToArray();
+            foreach (var skillId in reset)
+            {
+                _skillCooldowns.Remove(skillId);
+            }
+
+            return reset;
+        }
+    }
+
     public void AddSkillCooldown(int skillId, DateTimeOffset now, int seconds)
     {
         if (seconds <= 0)

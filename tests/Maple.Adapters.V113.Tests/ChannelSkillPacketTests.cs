@@ -218,6 +218,45 @@ public sealed class ChannelSkillPacketTests
         Assert.Null(normalPacket);
     }
 
+    [Fact]
+    public void SkillMoveHandler_TimeLeap_ResetsOtherCooldownsAndSendsZeroCooldowns()
+    {
+        // P086：對照 Java MapleStatEffect.applyTo 的 isTimeLeap() 分支。
+        var player = MakePlayer();
+        player.ChangeSkillLevel(SkillService.TimeLeapSkillId, level: 1, masterLevel: 10);
+        var now = new DateTimeOffset(2026, 9, 25, 1, 0, 0, TimeSpan.Zero);
+        player.AddSkillCooldown(1121010, now, seconds: 60);
+        player.AddSkillCooldown(5121003, now, seconds: 30);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { CooldownSkill(SkillService.TimeLeapSkillId) }));
+
+        var handled = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(SkillService.TimeLeapSkillId, level: 1), offset: 2), player, service, now);
+
+        Assert.Equal(SkillCastStatus.Success, handled.Cast?.Status);
+        Assert.Equal(
+            new[] { V113SkillPackets.SkillCooldown(1121010, 0), V113SkillPackets.SkillCooldown(5121003, 0) }.OrderBy(Convert.ToBase64String),
+            handled.CooldownResetPackets!.OrderBy(Convert.ToBase64String));
+        Assert.False(player.SkillIsCooling(1121010, now.AddSeconds(1)));
+        Assert.False(player.SkillIsCooling(5121003, now.AddSeconds(1)));
+        Assert.True(player.SkillIsCooling(SkillService.TimeLeapSkillId, now.AddSeconds(1))); // 自己的冷卻保留
+    }
+
+    [Fact]
+    public void SkillMoveHandler_OtherSkill_DoesNotResetCooldowns()
+    {
+        var player = MakePlayer();
+        player.ChangeSkillLevel(2001002, level: 1, masterLevel: 20);
+        var now = new DateTimeOffset(2026, 9, 25, 1, 0, 0, TimeSpan.Zero);
+        player.AddSkillCooldown(1121010, now, seconds: 60);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { MagicGuardSkill() }));
+
+        var handled = V113SkillMoveHandler.HandleSpecialMove(
+            new PacketReader(BuildSpecialMoveBody(2001002, level: 1), offset: 2), player, service, now);
+
+        Assert.Null(handled.CooldownResetPackets);
+        Assert.True(player.SkillIsCooling(1121010, now.AddSeconds(1)));
+    }
+
     private const int CooldownSkillId = 1121010;
 
     private static MapleSkill CooldownSkill(int skillId)
