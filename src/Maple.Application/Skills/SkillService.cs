@@ -238,6 +238,13 @@ public sealed class SkillService
         return player.CancelExpiredBuffs(now);
     }
 
+    /// <summary>P092：世界 tick 回復術週期回血（對照 Java <c>canRecover</c> + <c>doRecovery</c>）。</summary>
+    public PeriodicBuffTick? TryRecover(Player player, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return player.TryRecover(now);
+    }
+
     /// <summary>世界 tick 冷卻到期（對照 Java <c>World.handleCooldowns</c>）：回傳本次移除的技能 ID。</summary>
     public IReadOnlyList<int> ExpireSkillCooldowns(Player player, DateTimeOffset now)
     {

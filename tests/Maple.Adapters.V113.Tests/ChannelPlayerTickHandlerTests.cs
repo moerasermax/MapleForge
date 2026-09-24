@@ -132,6 +132,42 @@ public sealed class ChannelPlayerTickHandlerTests
         Assert.Single(owner.ActiveBuffs);
     }
 
+    [Fact]
+    public async Task TickPlayersAsync_RecoveryBuff_HealsAndShowsEffectToSelfAndOthers()
+    {
+        // P092：對照 Java doRecovery → healHP(x, true)。
+        var (handler, registry, field) = Build();
+        var healer = NewPlayer(1, "Healer", hp: 50);
+        var watcher = NewPlayer(2, "Watcher", hp: 100);
+        healer.ApplySkillEffect(new Core.Skills.MapleStatEffect
+        {
+            SourceId = 1001,
+            Level = 1,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = new[] { new Core.Skills.BuffStatValue(Core.Skills.MapleBuffStat.RECOVERY, 10) },
+        }, Now.AddSeconds(-6));
+        var received = Register(registry, field, healer, watcher);
+
+        await handler.TickPlayersAsync(field, Now, CancellationToken.None);
+
+        Assert.Equal(
+            new[]
+            {
+                V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, 60) }),
+                V113StatsPackets.ShowOwnHpHealed(10),
+            },
+            received.Where(r => r.CharId == 1).Select(r => r.Packet));
+        Assert.Equal(new[] { V113StatsPackets.ShowHpHealed(1, 10) }, received.Where(r => r.CharId == 2).Select(r => r.Packet));
+    }
+
+    [Fact]
+    public void HealPackets_MatchJavaLayouts()
+    {
+        Assert.Equal(new byte[] { 0xC7, 0x00, 6, 10, 0, 0, 0 }, V113StatsPackets.ShowOwnHpHealed(10));
+        Assert.Equal(new byte[] { 0xBF, 0x00, 1, 0, 0, 0, 6, 10, 0, 0, 0 }, V113StatsPackets.ShowHpHealed(1, 10));
+    }
+
     private static (V113PlayerTickHandler Handler, InMemoryMapSessionRegistry Registry, FieldInstance Field) Build()
     {
         var registry = new InMemoryMapSessionRegistry();

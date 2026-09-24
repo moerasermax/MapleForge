@@ -1692,5 +1692,12 @@ writeInt(0)
 
 **待真客戶端確認（候選）**：`SPAWN_PLAYER` 尾段 MapleForge 寫 `short 0 ×2`（4 bytes）當兩段戒指資訊，Java `spawnPlayerMapobject` 用 `MaplePacketCreator.addRingInfo`（每段 `byte + int` = 5 bytes，共 10 bytes）。全為 0 時差異不易察覺，但有婚戒時 `addMarriageRingLook` 位移可能不同；需 capture 判定客戶端實際讀法後再決定是否修正。
 
+### 回血特效 `showOwnHpHealed` / `showHpHealed`（P092）
+
+- 本人：`SHOW_ITEM_GAIN_INCHAT(0xC7)` + `byte 6` + `int amount`（Java `showOwnHpHealed`）。
+- 他人：`SHOW_FOREIGN_EFFECT(0xBF)` + `int charId` + `byte 6` + `int amount`（Java `showHpHealed`）。
+
+用於回復術（RECOVERY）世界 tick 回血。證據層級：Java source + Adapters focused tests；**unverified**。
+
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

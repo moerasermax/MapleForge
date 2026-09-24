@@ -59,6 +59,11 @@ public sealed class V113PlayerTickHandler
             }
 
             await _buffEffects.ApplyAsync(entry.Player, field, cancellations, ct).ConfigureAwait(false);
+
+            if (entry.Player.IsAlive)
+            {
+                await TickRecoveryAsync(entry, field, entries, now, ct).ConfigureAwait(false);
+            }
         }
 
         if (field.HpDecay is null || entries.Count == 0)
@@ -92,6 +97,47 @@ public sealed class V113PlayerTickHandler
                 entry,
                 V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp) }),
                 ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// P092：回復術週期回血。對照 Java <c>doRecovery</c> → <c>healHP(x, true)</c>：<c>addHP</c>（HP 更新給本人）→
+    /// <c>showOwnHpHealed</c> 給本人 → <c>showHpHealed</c> 給同圖其他人；滿血則取消 RECOVERY buff（cancelBuff 給本人）。
+    /// </summary>
+    private async Task TickRecoveryAsync(
+        MapPlayerEntry entry,
+        FieldInstance field,
+        IReadOnlyList<MapPlayerEntry> entries,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var player = entry.Player;
+        if (_skills.TryRecover(player, now) is not { } tick)
+        {
+            return;
+        }
+
+        foreach (var cancellation in tick.Cancellations)
+        {
+            await SendBestEffortAsync(entry, V113SkillPackets.CancelBuff(cancellation.Stats), ct).ConfigureAwait(false);
+        }
+
+        await _buffEffects.ApplyAsync(player, field, tick.Cancellations, ct).ConfigureAwait(false);
+
+        if (tick.HpDelta <= 0)
+        {
+            return;
+        }
+
+        await SendBestEffortAsync(
+            entry,
+            V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp) }),
+            ct).ConfigureAwait(false);
+        await SendBestEffortAsync(entry, V113StatsPackets.ShowOwnHpHealed(tick.HpDelta), ct).ConfigureAwait(false);
+        var foreign = V113StatsPackets.ShowHpHealed(player.Character.Id, tick.HpDelta);
+        foreach (var other in entries.Where(e => e.CharId != entry.CharId))
+        {
+            await SendBestEffortAsync(other, foreign, ct).ConfigureAwait(false);
         }
     }
 

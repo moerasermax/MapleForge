@@ -66,6 +66,27 @@ internal static class V113StatsPackets
 
     public static byte[] EnableActions() => UpdateStats(Array.Empty<PlayerStatUpdate>(), itemReaction: true);
 
+    /// <summary>P092：對照 Java <c>MaplePacketCreator.showOwnHpHealed(amount)</c>：<c>SHOW_ITEM_GAIN_INCHAT(0xC7)</c> + 6 + int。</summary>
+    public static byte[] ShowOwnHpHealed(int amount)
+    {
+        var w = new PacketWriter(7);
+        w.WriteShort(V113ChannelSendOp.ShowItemGainInChat);
+        w.WriteByte(6);
+        w.WriteInt(amount);
+        return w.ToArray();
+    }
+
+    /// <summary>P092：對照 Java <c>MaplePacketCreator.showHpHealed(cid, amount)</c>：<c>SHOW_FOREIGN_EFFECT(0xBF)</c> + cid + 6 + int。</summary>
+    public static byte[] ShowHpHealed(int characterId, int amount)
+    {
+        var w = new PacketWriter(11);
+        w.WriteShort(V113ChannelSendOp.ShowForeignEffect);
+        w.WriteInt(characterId);
+        w.WriteByte(6);
+        w.WriteInt(amount);
+        return w.ToArray();
+    }
+
     public static byte[] UpdateSkill(int skillId, int level, int masterLevel, long expiration = -1)
     {
         var w = new PacketWriter(28);
