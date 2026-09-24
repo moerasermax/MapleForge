@@ -33,6 +33,13 @@ public sealed class MapData
     /// <summary>地圖靜態怪物出生點（從 WZ life 節點載入）。</summary>
     public IReadOnlyList<MapMonster> Monsters { get; init; } = Array.Empty<MapMonster>();
 
+    /// <summary>
+    /// P084：對照 Java <c>MapleMap.getPortal(id)</c> + 找不到時 <c>getPortal(0)</c>（換圖 <c>changeMap(to, pto)</c>
+    /// 與登入 <c>loadCharFromDB</c> 的 <c>initialSpawnPoint</c> 都這樣取落地點）；地圖沒有任何 portal 時回 null。
+    /// </summary>
+    public MapPortal? GetPortalOrFirst(int portalId)
+        => Portals.FirstOrDefault(p => p.Id == portalId) ?? Portals.FirstOrDefault(p => p.Id == 0) ?? Portals.FirstOrDefault();
+
     /// <summary>依序號取得出生點；找不到時回最近的出生點或 null。</summary>
     public MapPortal? GetSpawnPoint(byte spawnPoint)
     {

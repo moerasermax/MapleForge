@@ -409,8 +409,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                             account = await _accounts.FindByIdAsync(chr.AccountId, token);
 
-                            // 執行期玩家（持有位置；spawn 暫定 0,0，之後接 portal/SpawnPoint）
-                            player = new Player(chr, new Position(0, 0, 0, 0));
+                            // 執行期玩家（持有位置）
+                            // P084：對照 Java loadCharFromDB 的 getPortal(initialSpawnPoint) ?? getPortal(0) → setPosition。
+                            player = new Player(chr, _mapService.GetLandingPosition(chr.MapId, chr.SpawnPoint) ?? new Position(0, 0, 0, 0));
                             if (account is not null)
                             {
                                 player.AttachStorage(account);
@@ -2154,6 +2155,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         chr.MapId = mapId;
         chr.SpawnPoint = (byte)spawnPortalId;   // 客戶端據 SET_FIELD 此 byte 把玩家放到目標 portal
+
+        // P084：對照 Java changeMapInternal 的 setPosition(portal)——伺服器端位置同步到落地點，
+        // 不再沿用舊地圖座標直到客戶端第一次移動（撿物距離等伺服器端判斷依賴它）。
+        if (_mapService.GetLandingPosition(mapId, spawnPortalId) is { } landing)
+        {
+            player.MoveTo(landing);
+        }
 
         var setField = V113ChannelPackets.SetField(chr, _options.ChannelIndex);
         await session.SendAsync(setField, ct);

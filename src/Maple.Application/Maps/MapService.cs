@@ -70,6 +70,13 @@ public sealed class MapService
         field.HpDecay = FieldHpDecay.Create(LoadMap(field.MapId), now);
     }
 
+    /// <summary>P084：玩家落在 <paramref name="portalId"/> 的伺服器端位置（對照 Java <c>setPosition(portal.getPosition())</c>）；
+    /// 查不到任何 portal 時回 null（呼叫端保留原位置）。</summary>
+    public Position? GetLandingPosition(int mapId, int portalId)
+        => LoadMap(mapId).GetPortalOrFirst(portalId) is { } portal
+            ? new Position((short)portal.X, (short)portal.Y, 0, 0)
+            : null;
+
     /// <summary>Returns whether static map data exists for the map id.</summary>
     public bool MapExists(int mapId) => _data.GetAt("Map", GetMapImagePath(mapId)) is not null;
 
