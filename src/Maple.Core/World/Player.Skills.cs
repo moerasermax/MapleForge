@@ -81,6 +81,32 @@ public sealed partial class Player
         }
     }
 
+    /// <summary>
+    /// 移除所有已到期的技能冷卻並回傳其技能 ID（對照 Java <c>World.handleCooldowns</c>：
+    /// <c>startTime + length &lt; now</c> 即 <c>removeCooldown</c>）。
+    /// </summary>
+    public IReadOnlyList<int> RemoveExpiredSkillCooldowns(DateTimeOffset now)
+    {
+        lock (_skillsGate)
+        {
+            if (_skillCooldowns.Count == 0)
+            {
+                return Array.Empty<int>();
+            }
+
+            var expired = _skillCooldowns.Values
+                .Where(c => c.ExpiresAt < now)
+                .Select(static c => c.SkillId)
+                .ToArray();
+            foreach (var skillId in expired)
+            {
+                _skillCooldowns.Remove(skillId);
+            }
+
+            return expired;
+        }
+    }
+
     public void AddSkillCooldown(int skillId, DateTimeOffset now, int seconds)
     {
         if (seconds <= 0)

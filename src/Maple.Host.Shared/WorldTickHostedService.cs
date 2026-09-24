@@ -15,6 +15,7 @@ namespace Maple.Host.Shared;
 /// P067（M4-2 第二個切片第四步）：第二個消費者，怪物重生——沿用 P063 建立的排程器骨架，改成
 /// 通用命名（原本叫 <c>DropExpiryHostedService</c>），單一 tick 依序處理兩者，貼近 Java
 /// <c>handleMap</c> 一次迴圈做多件事的行為，也不需要為每個新消費者另開一個 BackgroundService。
+/// P073：第三個消費者，逐玩家處理（對照 Java <c>handleCooldowns</c>，先做技能冷卻到期）。
 /// </summary>
 internal sealed class WorldTickHostedService : BackgroundService
 {
@@ -23,6 +24,7 @@ internal sealed class WorldTickHostedService : BackgroundService
     private readonly IFieldInstanceRegistry _fields;
     private readonly V113DropExpiryHandler _drops;
     private readonly V113MobRespawnHandler _mobs;
+    private readonly V113PlayerTickHandler _players;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<WorldTickHostedService> _log;
 
@@ -30,12 +32,14 @@ internal sealed class WorldTickHostedService : BackgroundService
         IFieldInstanceRegistry fields,
         V113DropExpiryHandler drops,
         V113MobRespawnHandler mobs,
+        V113PlayerTickHandler players,
         ILogger<WorldTickHostedService> log,
         TimeProvider? timeProvider = null)
     {
         _fields = fields;
         _drops = drops;
         _mobs = mobs;
+        _players = players;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _log = log;
     }
@@ -72,6 +76,19 @@ internal sealed class WorldTickHostedService : BackgroundService
                 catch (Exception ex)
                 {
                     _log.LogWarning(ex, "[WorldTick] 地圖 {MapId} 怪物重生處理失敗，跳過本次繼續巡下一個 field", field.MapId);
+                }
+
+                try
+                {
+                    await _players.TickPlayersAsync(field, now, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "[WorldTick] 地圖 {MapId} 玩家逐人處理失敗，跳過本次繼續巡下一個 field", field.MapId);
                 }
             }
         }
