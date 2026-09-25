@@ -243,10 +243,13 @@ public sealed class DropService : IMobKillHandler
     {
         var spawned = new List<MapDrop>();
         var ownerId = killer.Character.Id;
-        // P070：對照 Java dropFromMonster 的 droptype 公式（isExplosiveReward/isFfaLoot 兩個
-        // 特殊怪物模板旗標 MapleForge 尚未有對應資料，暫不移植，屬另一個獨立範圍的缺口）：
-        // 有隊伍 → 1（隊伍限定，P069 的 FFA 排程器 30 秒後會自動開放）；否則 → 0（限定擊殺者）。
-        var dropType = _parties?.IsCharacterInParty(ownerId) == true ? (byte)1 : (byte)0;
+        // 對照 Java dropFromMonster 的 droptype 公式：
+        // explosiveReward → 3（爆炸式掉落，間距 40，任何人可撿）；publicReward → 2（任何人可撿）（P096）；
+        // 有隊伍 → 1（隊伍限定，P069 的 FFA 排程器 30 秒後會自動開放）；否則 → 0（限定擊殺者）（P070）。
+        var dropType = mob.Stats.ExplosiveReward ? (byte)3
+            : mob.Stats.FfaLoot ? (byte)2
+            : _parties?.IsCharacterInParty(ownerId) == true ? (byte)1
+            : (byte)0;
         var sequence = 1;
 
         foreach (var entry in _catalog.RetrieveDrop(mob.Definition.MonsterId))

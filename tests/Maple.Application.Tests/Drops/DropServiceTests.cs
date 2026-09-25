@@ -246,6 +246,34 @@ public sealed class DropServiceTests
         Assert.All(rewards.SpawnedDrops, d => Assert.Equal((byte)0, d.DropType));
     }
 
+    [Theory]
+    [InlineData(true, false, false, 3)]   // explosiveReward 優先於一切
+    [InlineData(true, true, true, 3)]
+    [InlineData(false, true, true, 2)]    // publicReward 優先於隊伍
+    [InlineData(false, false, true, 1)]
+    [InlineData(false, false, false, 0)]
+    public void OnMobKilled_DropTypeFollowsJavaPrecedence(bool explosive, bool ffa, bool inParty, byte expected)
+    {
+        // P096：對照 Java dropFromMonster：isExplosiveReward ? 3 : isFfaLoot ? 2 : party != null ? 1 : 0。
+        var parties = new InMemoryPartyRegistry();
+        var player = MakePlayer();
+        if (inParty)
+        {
+            parties.CreateParty(PartyMember.FromCharacter(player.Character, channelIndex: 1));
+        }
+
+        var service = MakeDropService(timeProvider: null, parties, new MonsterDropEntry(4000000, 999_999, 3, 3));
+        var field = new FieldInstance(100000100);
+        var mob = MakeMob(level: 1, exp: 7, explosiveReward: explosive, ffaLoot: ffa);
+        field.Add(player);
+        field.Add(mob);
+
+        var rewards = service.OnMobKilled(field, player, mob);
+
+        Assert.NotEmpty(rewards.SpawnedDrops);
+        Assert.All(rewards.SpawnedDrops, d => Assert.Equal(expected, d.DropType));
+    }
+
     [Fact]
     public void TryPickup_PartyMemberOnDropTypeOne_Succeeds()
     {
@@ -498,10 +526,10 @@ public sealed class DropServiceTests
         return new Player(chr, new Position(0, 0, 0, 0));
     }
 
-    private static Mob MakeMob(int hp = 20, short level = 1, int exp = 1)
+    private static Mob MakeMob(int hp = 20, short level = 1, int exp = 1, bool explosiveReward = false, bool ffaLoot = false)
     {
         var def = new MapMonster { MonsterId = 100100, X = 30, Y = 40, Fh = 7 };
-        var stats = new MobStats(100100, hp, MaxMp: 10, Level: level, Exp: exp);
+        var stats = new MobStats(100100, hp, MaxMp: 10, Level: level, Exp: exp, ExplosiveReward: explosiveReward, FfaLoot: ffaLoot);
         return new Mob(def, stats, objectId: 100001);
     }
 

@@ -14,7 +14,10 @@ public sealed record MobStats(
     bool Friendly = false,
     byte HpDisplayType = 3,
     sbyte SelfDestructAnimation = -1,
-    bool Fly = false);
+    bool Fly = false,
+    // P096：對照 Java MapleMonsterStats.isExplosiveReward（WZ info/explosiveReward）與 isFfaLoot（WZ info/publicReward）。
+    bool ExplosiveReward = false,
+    bool FfaLoot = false);
 
 /// <summary>單次怪物傷害套用結果。</summary>
 public sealed record MobDamageResult(

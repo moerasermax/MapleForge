@@ -37,21 +37,37 @@ public sealed class MapServiceMobStatsTests
         Assert.True(stats.Mobile); // move 節點仍讓 Mobile 為 true，只是不飛
     }
 
+    [Fact]
+    public void LoadMobStats_ReadsExplosiveAndPublicRewardFlags()
+    {
+        // P096：對照 Java MapleLifeFactory：explosiveReward / publicReward 大於 0 即為 true。
+        var flagged = new MapService(new FakeMobDataProvider(false, true, explosiveReward: 1, publicReward: 1)).LoadMobStats(100100);
+        var plain = new MapService(new FakeMobDataProvider(false, true)).LoadMobStats(100100);
+
+        Assert.True(flagged!.ExplosiveReward);
+        Assert.True(flagged.FfaLoot);
+        Assert.False(plain!.ExplosiveReward);
+        Assert.False(plain.FfaLoot);
+    }
+
     private sealed class FakeMobDataProvider : IDataProvider
     {
         private readonly IDataNode _mobImg;
 
-        public FakeMobDataProvider(bool hasFlyNode, bool hasMoveNode)
+        public FakeMobDataProvider(bool hasFlyNode, bool hasMoveNode, int? explosiveReward = null, int? publicReward = null)
         {
+            var info = new Dictionary<string, IDataNode>
+            {
+                ["maxHP"] = new Node("maxHP", 100),
+                ["maxMP"] = new Node("maxMP", 50),
+                ["level"] = new Node("level", 5),
+                ["exp"] = new Node("exp", 20),
+            };
+            if (explosiveReward is { } e) info["explosiveReward"] = new Node("explosiveReward", e);
+            if (publicReward is { } p) info["publicReward"] = new Node("publicReward", p);
             var children = new Dictionary<string, IDataNode>
             {
-                ["info"] = new Node("info", children: new Dictionary<string, IDataNode>
-                {
-                    ["maxHP"] = new Node("maxHP", 100),
-                    ["maxMP"] = new Node("maxMP", 50),
-                    ["level"] = new Node("level", 5),
-                    ["exp"] = new Node("exp", 20),
-                }),
+                ["info"] = new Node("info", children: info),
             };
 
             if (hasFlyNode)

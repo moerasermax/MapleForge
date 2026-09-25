@@ -98,6 +98,8 @@ public sealed class MapService
         var friendly = GetInt(info, "damagedByMob", 0) > 0;
         var fly = mobImg?["fly"] is not null;
         var mobile = mobImg?["move"] is not null || fly;
+        var explosiveReward = GetInt(info, "explosiveReward", 0) > 0;
+        var ffaLoot = GetInt(info, "publicReward", 0) > 0;
         var selfDestructAnimation = (sbyte)Math.Clamp(
             GetInt(info["selfDestruction"], "action", -1),
             sbyte.MinValue,
@@ -114,7 +116,9 @@ public sealed class MapService
             Friendly: friendly,
             HpDisplayType: GetHpDisplayType(monsterId, boss, friendly),
             SelfDestructAnimation: selfDestructAnimation,
-            Fly: fly);
+            Fly: fly,
+            ExplosiveReward: explosiveReward,
+            FfaLoot: ffaLoot);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
