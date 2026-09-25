@@ -55,6 +55,22 @@ internal static class V113MessengerPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// P097：對照 Java <c>MaplePacketCreator.updateMessengerPlayer(from, chr, position, channel)</c>：
+    /// MESSENGER + <c>0x07</c> + position + <c>addCharLook(mega=true)</c> + name + short channel。
+    /// </summary>
+    public static byte[] UpdateMessengerPlayer(string from, Character character, int position, int channel)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(SendMessengerOpcode);
+        w.WriteByte(0x07);
+        w.WriteByte(position);
+        WriteCharLook(w, character);
+        w.WriteMapleString(from);
+        w.WriteShort(channel);
+        return w.ToArray();
+    }
+
     public static byte[] JoinMessenger(int position)
     {
         var w = new PacketWriter();

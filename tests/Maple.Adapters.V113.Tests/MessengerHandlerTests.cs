@@ -139,6 +139,40 @@ public sealed class MessengerHandlerTests
         Assert.Empty(hook.SentPackets);
     }
 
+    [Fact]
+    public async Task NotifyLookChanged_SendsUpdateMessengerPlayerToOtherMembersOnly()
+    {
+        // P097：對照 Java equipChanged → World.Messenger.updateMessenger → updateMessengerPlayer（0x07）。
+        var service = new MessengerService(firstMessengerId: 60);
+        var alice = Player(1, "Alice");
+        var bob = Player(2, "Bob");
+        var hook = new FakeMessengerSessionHook();
+        var handler = new V113MessengerHandler(service, hook);
+        var created = service.CreateMessenger(new(alice.Character.Id, alice.Character.Name, ChannelIndex: 0, Position: 0));
+        service.JoinMessenger(created.Id, new(bob.Character.Id, bob.Character.Name, ChannelIndex: 0, Position: 0));
+
+        await handler.NotifyLookChangedAsync(alice, channelIndex: 0, CancellationToken.None);
+
+        var sent = Assert.Single(hook.SentPackets);
+        Assert.Equal(bob.Character.Id, sent.CharacterId);
+        Assert.Equal(V113MessengerPackets.UpdateMessengerPlayer("Alice", alice.Character, 0, 0), sent.Packet);
+        var r = new PacketReader(sent.Packet);
+        r.ReadShort();
+        Assert.Equal(0x07, r.ReadByte());
+        Assert.Equal(0, r.ReadByte());
+    }
+
+    [Fact]
+    public async Task NotifyLookChanged_NotInMessenger_SendsNothing()
+    {
+        var hook = new FakeMessengerSessionHook();
+        var handler = new V113MessengerHandler(new MessengerService(), hook);
+
+        await handler.NotifyLookChangedAsync(Player(1, "Alice"), channelIndex: 0, CancellationToken.None);
+
+        Assert.Empty(hook.SentPackets);
+    }
+
     private static Player Player(int id, string name) =>
         new(
             new Character

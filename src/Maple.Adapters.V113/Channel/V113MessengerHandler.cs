@@ -280,6 +280,31 @@ public sealed class V113MessengerHandler
         }
     }
 
+    /// <summary>
+    /// P097：換裝後更新 Messenger 內其他成員看到的外觀。對照 Java <c>MapleCharacter.equipChanged</c> →
+    /// <c>World.Messenger.updateMessenger</c>：對同聊天室其他成員送 <c>updateMessengerPlayer(name, chr, position, channel)</c>。
+    /// </summary>
+    public async Task NotifyLookChangedAsync(Player player, int channelIndex, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        var messenger = _messengers.GetMessengerForCharacter(player.Character.Id);
+        var self = messenger?.GetMember(player.Character.Id);
+        if (messenger is null || self is null)
+        {
+            return;
+        }
+
+        var packet = V113MessengerPackets.UpdateMessengerPlayer(player.Character.Name, player.Character, self.Position, channelIndex);
+        foreach (var member in messenger.Members.Where(static m => m is not null).Select(static m => m!))
+        {
+            if (member.CharacterId != player.Character.Id)
+            {
+                await TrySendToCharacterAsync(member.CharacterId, packet, ct);
+            }
+        }
+    }
+
     private async Task TrySendToCharacterAsync(int characterId, byte[] packet, CancellationToken ct)
     {
         try

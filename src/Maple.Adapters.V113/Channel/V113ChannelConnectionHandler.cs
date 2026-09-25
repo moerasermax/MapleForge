@@ -2965,6 +2965,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (result.Success && result.Operation is V113InventoryMoveOperation.Equip or V113InventoryMoveOperation.Unequip)
         {
             await BroadcastPacketToOthersAsync(player.Character, V113MapPackets.UpdateCharLook(player), ct);
+            await _messengerHandler.NotifyLookChangedAsync(player, _options.ChannelIndex, ct); // P097：Java equipChanged → updateMessenger
         }
 
         if (result.Success)
