@@ -109,7 +109,7 @@ public sealed class DropService : IMobKillHandler
             return new DropPickupResult(DropPickupStatus.AlreadyPickedUp, drop);
         }
 
-        if (!CanPickUp(player, drop))
+        if (!CanPickUp(player, drop, field.Everlast))
         {
             return new DropPickupResult(DropPickupStatus.NotAllowed, drop);
         }
@@ -161,7 +161,8 @@ public sealed class DropService : IMobKillHandler
         var expired = new List<MapDrop>();
         foreach (var drop in field.Objects.OfType<MapDrop>().ToArray())
         {
-            if (!drop.ShouldExpire(now))
+            // P100：Java spawnItemDrop/spawnMesoDrop 在 everlast 地圖不對玩家掉落 registerExpire。
+            if (!drop.ShouldExpire(now) || (field.Everlast && drop.PlayerDrop))
             {
                 continue;
             }
@@ -191,7 +192,8 @@ public sealed class DropService : IMobKillHandler
         var promoted = new List<MapDrop>();
         foreach (var drop in field.Objects.OfType<MapDrop>().ToArray())
         {
-            if (!drop.ShouldBecomeFfa(now))
+            // P100：Java spawnMesoDrop 在 everlast 地圖不對玩家掉落 registerFFA。
+            if (!drop.ShouldBecomeFfa(now) || (field.Everlast && drop.PlayerDrop))
             {
                 continue;
             }
@@ -314,14 +316,25 @@ public sealed class DropService : IMobKillHandler
         return next;
     }
 
-    private bool CanPickUp(Player player, MapDrop drop)
+    /// <summary>
+    /// 對照 Java <c>InventoryHandler.ItemPickup</c> 的拾取權判斷：
+    /// 非主人時，(非玩家掉落 且 dropType 0) 或 (玩家掉落 且 everlast 地圖) → 擋（P100 補上玩家掉落分支：
+    /// 一般地圖上玩家丟的東西任何人都能撿，原本 MapleForge 把它當 dropType 0 只讓主人撿）；
+    /// 非玩家掉落 dropType 1 → 主人或同隊（P070）；dropType 2/3 → 任何人。
+    /// </summary>
+    private bool CanPickUp(Player player, MapDrop drop, bool everlast)
     {
-        if (drop.DropType >= 2)
+        if (drop.OwnerId == player.Character.Id)
         {
             return true;
         }
 
-        if (drop.OwnerId == player.Character.Id)
+        if (drop.PlayerDrop)
+        {
+            return !everlast;
+        }
+
+        if (drop.DropType >= 2)
         {
             return true;
         }

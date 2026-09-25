@@ -21,6 +21,7 @@ Java `World.Respawn`（`WorldTimer.register(new Respawn(), 3000)`）每 3 秒巡
 |---|---|---|---|
 | 掉落物過期 | `item.shouldExpire()` / `expire(map)` | `V113DropExpiryHandler` → `DropService.ExpireDrops` | P061-063 |
 | 掉落物轉 FFA | `item.shouldFFA()` | 同上 → `DropService.PromoteFfaDrops` | P069 |
+| everlast 地圖例外 | `spawnMesoDrop`/`spawnItemDrop` 的 `if (!everlast)` | 過期與轉 FFA 都跳過 `FieldInstance.Everlast` 上的玩家掉落（怪物掉落照常） | P100 |
 | 怪物重生 | `map.respawn(false)` | `V113MobRespawnHandler` → `CombatService.RespawnMonsters` | P064-067 |
 | 技能冷卻到期 | `handleCooldowns` 冷卻迴圈 + `skillCooldown(skil, 0)` | `V113PlayerTickHandler` → `SkillService.ExpireSkillCooldowns` | P073 |
 | 地圖持續扣血 | `setHPDec`/`canHurt()` + `handleCooldowns` hurt 分支 | 資料：`MapData.DecHp/DecHpInterval/ProtectItem` + `FieldHpDecay`（field 建立時 `MapService.InitializeFieldEnvironment`）；扣血：`V113PlayerTickHandler` → `FieldHazardService.ApplyHpDecay`，送 HP 更新，扣到 0 先送 `enableActions` | P074-075 |

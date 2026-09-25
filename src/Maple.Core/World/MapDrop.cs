@@ -8,8 +8,8 @@ public sealed class MapDrop : IFieldObject
     private bool _pickedUp;
 
     /// <summary>對照 Java <c>MapleMap.spawn*Drop</c>：非 everlast 地圖的掉落物固定 120 秒後過期
-    /// （<c>mdrop.registerExpire(120000)</c>）。MapleForge 目前沒有 everlast 地圖旗標，所有地圖統一
-    /// 套用這個過期時間，Java 的 everlast 特殊地圖例外暫不移植（見 P061 任務歷程）。</summary>
+    /// （<c>mdrop.registerExpire(120000)</c>）。everlast 地圖上「玩家丟的」掉落物不過期、不轉 FFA，
+    /// 由 <c>DropService.ExpireDrops</c>/<c>PromoteFfaDrops</c> 依 <c>FieldInstance.Everlast</c> 排除（P100）。</summary>
     public static readonly TimeSpan ExpireAfter = TimeSpan.FromMilliseconds(120_000);
 
     /// <summary>對照 Java <c>MapleMap.spawn*Drop</c>：<c>dropType</c> 0（限定主人）/1（限定隊伍）的

@@ -169,6 +169,66 @@ public sealed class DropServiceTests
     }
 
     [Theory]
+    [InlineData(false, DropPickupStatus.Success)]     // 一般地圖：玩家丟的楓幣任何人都能撿
+    [InlineData(true, DropPickupStatus.NotAllowed)]   // everlast 地圖：只有主人能撿
+    public void TryPickup_OtherPlayersMesoDrop_DependsOnEverlast(bool everlast, DropPickupStatus expected)
+    {
+        // P100：對照 Java ItemPickup：owner != chr && ((!playerDrop && dropType == 0) || (playerDrop && everlast)) → 擋。
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100) { Everlast = everlast };
+        var dropper = MakePlayer(id: 1);
+        dropper.Character.Meso = 1_000;
+        var picker = MakePlayer(id: 2);
+        field.Add(dropper);
+        field.Add(picker);
+        var drop = service.TryDropMeso(field, dropper, 50).Drop!;
+
+        var result = service.TryPickup(field, picker, drop.ObjectId);
+
+        Assert.Equal(expected, result.Status);
+    }
+
+    [Fact]
+    public void TryPickup_OwnMesoDropOnEverlastMap_Succeeds()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100) { Everlast = true };
+        var dropper = MakePlayer(id: 1);
+        dropper.Character.Meso = 1_000;
+        field.Add(dropper);
+        var drop = service.TryDropMeso(field, dropper, 50).Drop!;
+
+        Assert.Equal(DropPickupStatus.Success, service.TryPickup(field, dropper, drop.ObjectId).Status);
+        Assert.Equal(1_000, dropper.Character.Meso);
+    }
+
+    [Fact]
+    public void EverlastMap_PlayerDropNeverExpiresOrBecomesFfa_MonsterDropStillExpires()
+    {
+        // P100：Java spawnMesoDrop/spawnItemDrop 在 everlast 地圖不 registerExpire/registerFFA；spawnMobDrop 照常。
+        var spawnedAt = new DateTimeOffset(2026, 9, 25, 0, 0, 0, TimeSpan.Zero);
+        var service = MakeDropService(new FakeTimeProvider(spawnedAt));
+        var field = new FieldInstance(100000100) { Everlast = true };
+        var dropper = MakePlayer(id: 1);
+        dropper.Character.Meso = 1_000;
+        field.Add(dropper);
+        var playerDrop = service.TryDropMeso(field, dropper, 50).Drop!;
+        var mobDrop = MapDrop.ForItem(
+            2_000_000, new Item { ItemId = 4000000, Quantity = 1 }, new Position(0, 0, 0, 0), new Position(0, 0, 0, 0),
+            100001, ownerId: 1, dropType: 0, spawnedAt);
+        field.Add(mobDrop);
+        var later = spawnedAt + MapDrop.ExpireAfter + TimeSpan.FromMinutes(1);
+
+        var promoted = service.PromoteFfaDrops(field, later);
+        var expired = service.ExpireDrops(field, later);
+
+        Assert.DoesNotContain(playerDrop, promoted);
+        Assert.Equal((byte)0, playerDrop.DropType);
+        Assert.Equal(new[] { mobDrop }, expired);
+        Assert.Same(playerDrop, field.Get(playerDrop.ObjectId));
+    }
+
+    [Theory]
     [InlineData(9, MesoDropStatus.InvalidAmount)]
     [InlineData(50_001, MesoDropStatus.InvalidAmount)]
     [InlineData(2_000, MesoDropStatus.NotEnoughMeso)]

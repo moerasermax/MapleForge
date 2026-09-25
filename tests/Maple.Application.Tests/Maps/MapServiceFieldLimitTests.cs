@@ -59,6 +59,20 @@ public sealed class MapServiceFieldLimitTests
     }
 
     [Fact]
+    public void LoadMap_ReadsEverlast_AndInitializeFieldEnvironmentCopiesIt()
+    {
+        // P100：對照 Java MapleMapFactory：setEverlast(info/everlast > 0)。
+        var everlastService = new MapService(new FakeMapDataProvider(fieldLimit: null, everlast: 1));
+        var field = new Maple.Core.World.FieldInstance(100000000);
+
+        everlastService.InitializeFieldEnvironment(field, DateTimeOffset.UnixEpoch);
+
+        Assert.True(everlastService.LoadMap(100000000).Everlast);
+        Assert.True(field.Everlast);
+        Assert.False(new MapService(new FakeMapDataProvider(fieldLimit: null)).LoadMap(100000000).Everlast);
+    }
+
+    [Fact]
     public void FieldLimitType_VipRock_ChecksBitCorrectly()
     {
         Assert.True(FieldLimitType.VipRock.Check(0x40));
@@ -71,7 +85,7 @@ public sealed class MapServiceFieldLimitTests
     {
         private readonly IDataNode _mapImg;
 
-        public FakeMapDataProvider(long? fieldLimit, int? decHp = null, int? decHpInterval = null, int? protectItem = null)
+        public FakeMapDataProvider(long? fieldLimit, int? decHp = null, int? decHpInterval = null, int? protectItem = null, int? everlast = null)
         {
             var infoChildren = new Dictionary<string, IDataNode>
             {
@@ -86,6 +100,7 @@ public sealed class MapServiceFieldLimitTests
             if (decHp is { } dec) infoChildren["decHP"] = new Node("decHP", dec);
             if (decHpInterval is { } interval) infoChildren["decHPInterval"] = new Node("decHPInterval", interval);
             if (protectItem is { } protect) infoChildren["protectItem"] = new Node("protectItem", protect);
+            if (everlast is { } ever) infoChildren["everlast"] = new Node("everlast", ever);
 
             _mapImg = new Node("100000000.img", children: new Dictionary<string, IDataNode>
             {

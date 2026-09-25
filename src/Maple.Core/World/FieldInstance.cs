@@ -23,6 +23,10 @@ public sealed class FieldInstance
     /// 由 <c>MapService.InitializeFieldEnvironment</c> 在 field 建立時填入。</summary>
     public FieldHpDecay? HpDecay { get; set; }
 
+    /// <summary>P100：地圖是否為 everlast（Java <c>MapleMap.getEverlast()</c>），影響玩家掉落物的過期與拾取權。
+    /// 由 <c>MapService.InitializeFieldEnvironment</c> 在 field 建立時填入。</summary>
+    public bool Everlast { get; set; }
+
     /// <summary>加入/取代一個場上物件（以 ObjectId 為鍵）。</summary>
     public void Add(IFieldObject obj) => _objects[obj.ObjectId] = obj;
 

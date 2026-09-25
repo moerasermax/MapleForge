@@ -15,6 +15,10 @@ public sealed class MapData
     /// 跳躍/移動技能/召喚袋/秘密門/傳送石等，見 <see cref="FieldLimitType"/>。預設 0（無限制）。</summary>
     public long FieldLimit { get; init; }
 
+    /// <summary>P100：對照 Java <c>MapleMap.everlast</c>（WZ <c>info/everlast</c> &gt; 0）：玩家丟的掉落物不過期、不轉 FFA，
+    /// 且只有主人能撿。</summary>
+    public bool Everlast { get; init; }
+
     /// <summary>對照 Java <c>MapleMap.decHP</c>（WZ <c>info/decHP</c>，預設 0）：每個扣血週期扣多少 HP（寒冷/高溫/水中地圖）。</summary>
     public int DecHp { get; init; }
 

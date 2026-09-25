@@ -34,6 +34,7 @@ public sealed class MapService
         var returnMapId = GetInt(info, "returnMap", mapId);
         var town = GetInt(info, "town", 0) != 0;
         var fieldLimit = GetLong(info, "fieldLimit", 0);
+        var everlast = GetInt(info, "everlast", 0) > 0;
         var decHp = GetInt(info, "decHP", 0);
         var decHpInterval = GetInt(info, "decHPInterval", 10_000);
         var protectItem = GetInt(info, "protectItem", 0);
@@ -49,6 +50,7 @@ public sealed class MapService
             ReturnMapId = returnMapId,
             Town = town,
             FieldLimit = fieldLimit,
+            Everlast = everlast,
             DecHp = decHp,
             DecHpInterval = decHpInterval,
             ProtectItem = protectItem,
@@ -67,7 +69,9 @@ public sealed class MapService
     public void InitializeFieldEnvironment(FieldInstance field, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(field);
-        field.HpDecay = FieldHpDecay.Create(LoadMap(field.MapId), now);
+        var map = LoadMap(field.MapId);
+        field.HpDecay = FieldHpDecay.Create(map, now);
+        field.Everlast = map.Everlast; // P100
     }
 
     /// <summary>P084：玩家落在 <paramref name="portalId"/> 的伺服器端位置（對照 Java <c>setPosition(portal.getPosition())</c>）；
