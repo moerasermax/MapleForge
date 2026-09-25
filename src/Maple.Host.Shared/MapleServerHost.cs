@@ -270,6 +270,7 @@ public static class MapleServerHost
         builder.Services.AddSingleton<PlayerDeathService>();
         builder.Services.AddSingleton<SummonService>();
         builder.Services.AddSingleton<V113BuffCancellationEffects>();
+        builder.Services.AddSingleton<V113PartyHpSync>();
         builder.Services.AddSingleton<V113PlayerTickHandler>();
         builder.Services.AddHostedService<WorldTickHostedService>();
 

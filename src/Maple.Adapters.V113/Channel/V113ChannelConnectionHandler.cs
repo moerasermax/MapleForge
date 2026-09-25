@@ -69,6 +69,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly SummonService _summonService;
     private readonly DoorService _doorService;
     private readonly V113BuffCancellationEffects _buffEffects;
+    private readonly V113PartyHpSync _partyHpSync;
     private readonly ISkillBookCatalog _skillBookCatalog;
     private readonly DropService _dropService;
     private readonly FameService _fameService;
@@ -166,9 +167,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         PlayerDeathService playerDeaths,
         SummonService summonService,
         DoorService doorService,
-        V113BuffCancellationEffects buffEffects)
+        V113BuffCancellationEffects buffEffects,
+        V113PartyHpSync partyHpSync)
     {
         _log = log;
+        _partyHpSync = partyHpSync;
         _buffEffects = buffEffects;
         _doorService = doorService;
         _playerDeaths = playerDeaths;
@@ -782,6 +785,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.HealOverTime:
                         if (player is null) break;
+                        var hpBeforeHeal = player.Hp;
                         var healResult = V113StatsHandlers.HandleHealOverTime(reader, player, _statsService);
                         // 對照 Java PlayerHandler.Heal 的 REGEN_HIGH_HP：只記錄不阻擋，回血已經在
                         // HandleHealOverTime 內套用完成，這裡的檢查結果不影響已經發生的回血。
@@ -792,6 +796,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         }
 
                         await HandleStatsMutationAsync(healResult.Mutation, s, sendSkill: false, token);
+                        if (player.Hp != hpBeforeHeal)
+                        {
+                            await _partyHpSync.BroadcastAsync(player, token); // P095：Java setHp → updatePartyMemberHP
+                        }
+
                         break;
 
                     case V113ChannelRecvOp.DistributeSp:
@@ -3681,6 +3690,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp),
                 }),
                 ct);
+            await _partyHpSync.BroadcastAsync(player, ct); // P095：Java setHp → updatePartyMemberHP
         }
 
         await BroadcastPacketToOthersAsync(

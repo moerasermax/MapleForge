@@ -23,6 +23,7 @@ public sealed class V113PlayerTickHandler
     private readonly FieldHazardService _hazards;
     private readonly PlayerDeathService _deaths;
     private readonly V113BuffCancellationEffects _buffEffects;
+    private readonly V113PartyHpSync? _partyHpSync;
     private readonly IMapSessionRegistry _mapRegistry;
 
     public V113PlayerTickHandler(
@@ -30,8 +31,10 @@ public sealed class V113PlayerTickHandler
         FieldHazardService hazards,
         PlayerDeathService deaths,
         V113BuffCancellationEffects buffEffects,
-        IMapSessionRegistry mapRegistry)
+        IMapSessionRegistry mapRegistry,
+        V113PartyHpSync? partyHpSync = null)
     {
+        _partyHpSync = partyHpSync;
         _skills = skills;
         _hazards = hazards;
         _deaths = deaths;
@@ -100,8 +103,13 @@ public sealed class V113PlayerTickHandler
                 entry,
                 V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp) }),
                 ct).ConfigureAwait(false);
+            await SyncPartyHpAsync(player, ct).ConfigureAwait(false);
         }
     }
+
+    /// <summary>P095：HP 變動後同步隊伍血條（Java setHp → updatePartyMemberHP）。</summary>
+    private Task SyncPartyHpAsync(Player player, CancellationToken ct)
+        => _partyHpSync?.BroadcastAsync(player, ct) ?? Task.CompletedTask;
 
     /// <summary>
     /// P093：龍之魂週期扣血。對照 Java <c>doDragonBlood</c>：<c>addHP(-x)</c>（HP 更新給本人）→ <c>showOwnBuffEffect(src, 5)</c>
@@ -136,6 +144,7 @@ public sealed class V113PlayerTickHandler
             entry,
             V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp) }),
             ct).ConfigureAwait(false);
+        await SyncPartyHpAsync(player, ct).ConfigureAwait(false);
         await SendBestEffortAsync(entry, V113SkillPackets.ShowOwnBuffEffect(tick.SourceId, 5), ct).ConfigureAwait(false);
         if (player.ActiveBuffs.Any(static b => b.Stat == Core.Skills.MapleBuffStat.MORPH))
         {
@@ -212,6 +221,7 @@ public sealed class V113PlayerTickHandler
             entry,
             V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp) }),
             ct).ConfigureAwait(false);
+        await SyncPartyHpAsync(player, ct).ConfigureAwait(false);
         await SendBestEffortAsync(entry, V113StatsPackets.ShowOwnHpHealed(tick.HpDelta), ct).ConfigureAwait(false);
         var foreign = V113StatsPackets.ShowHpHealed(player.Character.Id, tick.HpDelta);
         foreach (var other in entries.Where(e => e.CharId != entry.CharId))
