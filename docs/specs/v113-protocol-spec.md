@@ -1706,5 +1706,10 @@ writeInt(0)
 
 用於龍之魂扣血（effectId 5）。證據層級：Java source + Adapters focused tests；**unverified**。
 
+### Messenger 成員頻道欄位（P097/P098）
+
+- `MESSENGER` mode `0x00`（addMessengerPlayer）與 mode `0x07`（updateMessengerPlayer，P097 新增）尾端 `short channel` 為 **0-based**：Java 寫 `fromchannel - 1`（`c.getChannel()` 1-based）。
+- P098 修正：MapleForge 原本直接寫 1-based 頻道號（比 Java 大一）；現在呼叫端統一傳 1-based，封包邊界 `ToWireChannel` 減一。證據層級：Java source + Adapters focused tests；**unverified**（真客戶端聊天室頻道顯示未 smoke）。
+
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*

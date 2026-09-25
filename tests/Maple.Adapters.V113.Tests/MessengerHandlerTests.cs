@@ -44,11 +44,11 @@ public sealed class MessengerHandlerTests
         var leader = Player(1, "Alice");
         var guest = Player(2, "Bob");
         var hook = new FakeMessengerSessionHook();
-        hook.Register(leader, channelIndex: 0);
+        hook.Register(leader, channelIndex: 1);
         var handler = new V113MessengerHandler(service, hook);
         var selfPackets = new List<byte[]>();
 
-        var created = service.CreateMessenger(new(leader.Character.Id, leader.Character.Name, ChannelIndex: 0, Position: 0));
+        var created = service.CreateMessenger(new(leader.Character.Id, leader.Character.Name, ChannelIndex: 1, Position: 0));
         var request = new PacketWriter()
             .WriteByte((byte)V113MessengerClientMode.Open)
             .WriteInt(created.Id)
@@ -57,7 +57,7 @@ public sealed class MessengerHandlerTests
         await handler.HandleMessengerAsync(
             new PacketReader(request),
             guest,
-            channelIndex: 1,
+            channelIndex: 2,
             SendTo(selfPackets),
             CancellationToken.None);
 
@@ -66,6 +66,7 @@ public sealed class MessengerHandlerTests
 
         var leaderPacket = Assert.Single(hook.SentPackets);
         Assert.Equal(leader.Character.Id, leaderPacket.CharacterId);
+        // P098：頻道以 1-based 傳入，線上值照 Java fromchannel - 1（Bob 在 2 頻 → 1、Alice 在 1 頻 → 0）。
         AssertAddPlayer(leaderPacket.Packet, expectedName: "Bob", expectedPosition: 1, expectedChannel: 1);
 
         Assert.Equal(2, selfPackets.Count);
@@ -151,15 +152,26 @@ public sealed class MessengerHandlerTests
         var created = service.CreateMessenger(new(alice.Character.Id, alice.Character.Name, ChannelIndex: 0, Position: 0));
         service.JoinMessenger(created.Id, new(bob.Character.Id, bob.Character.Name, ChannelIndex: 0, Position: 0));
 
-        await handler.NotifyLookChangedAsync(alice, channelIndex: 0, CancellationToken.None);
+        await handler.NotifyLookChangedAsync(alice, channelIndex: 1, CancellationToken.None);
 
         var sent = Assert.Single(hook.SentPackets);
         Assert.Equal(bob.Character.Id, sent.CharacterId);
-        Assert.Equal(V113MessengerPackets.UpdateMessengerPlayer("Alice", alice.Character, 0, 0), sent.Packet);
+        Assert.Equal(V113MessengerPackets.UpdateMessengerPlayer("Alice", alice.Character, 0, 1), sent.Packet);
+        Assert.Equal(0, BitConverter.ToInt16(sent.Packet, sent.Packet.Length - 2)); // 1 頻 → 線上 0
         var r = new PacketReader(sent.Packet);
         r.ReadShort();
         Assert.Equal(0x07, r.ReadByte());
         Assert.Equal(0, r.ReadByte());
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 1)]
+    [InlineData(20, 19)]
+    public void ToWireChannel_MatchesJavaFromChannelMinusOne(int channelNumber, short expected)
+    {
+        // P098：對照 Java addMessengerPlayer / updateMessengerPlayer 的 fromchannel - 1。
+        Assert.Equal(expected, V113MessengerPackets.ToWireChannel(channelNumber));
     }
 
     [Fact]

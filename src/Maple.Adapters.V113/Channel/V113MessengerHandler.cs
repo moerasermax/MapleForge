@@ -284,6 +284,7 @@ public sealed class V113MessengerHandler
     /// P097：換裝後更新 Messenger 內其他成員看到的外觀。對照 Java <c>MapleCharacter.equipChanged</c> →
     /// <c>World.Messenger.updateMessenger</c>：對同聊天室其他成員送 <c>updateMessengerPlayer(name, chr, position, channel)</c>。
     /// </summary>
+    /// <param name="channelIndex">1-based 頻道號（與 <see cref="HandleMessengerAsync"/> 相同慣例，P098）。</param>
     public async Task NotifyLookChangedAsync(Player player, int channelIndex, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(player);

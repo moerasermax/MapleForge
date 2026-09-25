@@ -31,6 +31,13 @@ internal static class V113MessengerPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// P098：Messenger 封包的頻道欄位。呼叫端一律傳 1-based 頻道號（= Java <c>c.getChannel()</c> / <c>MapleMessengerCharacter.getChannel()</c>），
+    /// 線上值照 Java <c>addMessengerPlayer(…, fromchannel - 1)</c> / <c>updateMessengerPlayer(…, fromchannel - 1)</c> 寫 0-based。
+    /// 原本直接寫 1-based，比 Java 大一。
+    /// </summary>
+    internal static short ToWireChannel(int channelNumber) => (short)Math.Max(0, channelNumber - 1);
+
     public static byte[] AddMessengerPlayer(string from, int position, int channel)
     {
         var w = new PacketWriter();
@@ -39,7 +46,7 @@ internal static class V113MessengerPackets
         w.WriteByte(position);
         WriteEmptyCharLook(w);
         w.WriteMapleString(from);
-        w.WriteShort(channel);
+        w.WriteShort(ToWireChannel(channel));
         return w.ToArray();
     }
 
@@ -51,7 +58,7 @@ internal static class V113MessengerPackets
         w.WriteByte(position);
         WriteCharLook(w, character);
         w.WriteMapleString(from);
-        w.WriteShort(channel);
+        w.WriteShort(ToWireChannel(channel));
         return w.ToArray();
     }
 
@@ -67,7 +74,7 @@ internal static class V113MessengerPackets
         w.WriteByte(position);
         WriteCharLook(w, character);
         w.WriteMapleString(from);
-        w.WriteShort(channel);
+        w.WriteShort(ToWireChannel(channel));
         return w.ToArray();
     }
 
