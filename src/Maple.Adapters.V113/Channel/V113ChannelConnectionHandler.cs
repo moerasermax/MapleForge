@@ -1181,6 +1181,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         var canUsePotion =
                             !FieldLimitType.PotionUse.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit)
                             || player.Character.MapId is 610030600 or 105100300;
+                        var hpBeforeUseItem = player.Hp;
                         var useItemResult = _useConsumableHandler.Handle(reader, player, canUsePotion);
                         if (useItemResult.Handled)
                         {
@@ -1188,6 +1189,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             {
                                 await s.SendAsync(packet, token);
                             }
+
+                            // P099：Java 藥水 addMPHP/healHP → setHp → updatePartyMemberHP。
+                            await _partyHpSync.BroadcastIfChangedAsync(player, hpBeforeUseItem, token);
 
                             if (useItemResult.CharacterMutated)
                             {
@@ -1407,8 +1411,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         var petAutoPotCanUse =
                             !FieldLimitType.PotionUse.Check(_mapService.LoadMap(player.Character.MapId).FieldLimit)
                             || player.Character.MapId is 610030600 or 105100300;
+                        var hpBeforeAutoPot = player.Hp;
                         var petAutoPotResult = await V113PetHandler.HandlePetAutoPotion(
                             reader, player, s, _petService, _useConsumableHandler, petAutoPotCanUse, token);
+                        await _partyHpSync.BroadcastIfChangedAsync(player, hpBeforeAutoPot, token); // P099
                         if (petAutoPotResult.CharacterMutated)
                         {
                             await _charService.UpdateAsync(player.Character, token);
@@ -3021,6 +3027,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private async Task HandleSpecialMoveAsync(PacketReader reader, Player player, FieldInstance? field, MapleSession session, CancellationToken ct)
     {
         V113SkillHandleResult handled;
+        var hpBeforeCast = player.Hp;
         try
         {
             handled = V113SkillMoveHandler.HandleSpecialMove(reader, player, _skillService, DateTimeOffset.UtcNow);
@@ -3040,6 +3047,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await session.SendAsync(handled.StatsPacket, ct);
         }
+
+        // P099：Java applyTo 的 setHp（HpCon / 治癒）→ updatePartyMemberHP。
+        await _partyHpSync.BroadcastIfChangedAsync(player, hpBeforeCast, ct);
 
         if (handled.Packet is not null)
         {

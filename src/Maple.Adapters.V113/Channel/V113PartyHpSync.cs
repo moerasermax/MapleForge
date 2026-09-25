@@ -20,6 +20,13 @@ public sealed class V113PartyHpSync
         _mapRegistry = mapRegistry;
     }
 
+    /// <summary>P099：HP 與 <paramref name="hpBefore"/> 不同才同步（道具/技能這類「不一定動到 HP」的路徑用）。</summary>
+    public Task BroadcastIfChangedAsync(Player player, short hpBefore, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return player.Hp == hpBefore ? Task.CompletedTask : BroadcastAsync(player, ct);
+    }
+
     public async Task BroadcastAsync(Player player, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(player);
