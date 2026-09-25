@@ -64,19 +64,22 @@ public sealed class PacketWriter
         return this;
     }
 
-    /// <summary>MapleAsciiString：[short 長度（編碼後 byte 數）][<see cref="MapleTextEncoding"/> bytes]。</summary>
-    public PacketWriter WriteMapleString(string s)
+    /// <summary>
+    /// MapleAsciiString：[short 長度（編碼後 byte 數）][<see cref="MapleTextEncoding"/> bytes]。
+    /// null 視為空字串：LiteDB 預設 EmptyStringToNull，存檔後讀回的空字串欄位（如裝備 Owner）可能是 null。
+    /// </summary>
+    public PacketWriter WriteMapleString(string? s)
     {
-        var bytes = MapleTextEncoding.Value.GetBytes(s);
+        var bytes = MapleTextEncoding.Value.GetBytes(s ?? string.Empty);
         WriteShort(bytes.Length);
         WriteBytes(bytes);
         return this;
     }
 
     /// <summary>固定長度字串：寫入 len bytes，不足補 0（對照舊 writeAsciiString(name, 15)）。</summary>
-    public PacketWriter WriteFixedAsciiString(string s, int len)
+    public PacketWriter WriteFixedAsciiString(string? s, int len)
     {
-        var bytes = MapleTextEncoding.Value.GetBytes(s);
+        var bytes = MapleTextEncoding.Value.GetBytes(s ?? string.Empty);
         Ensure(len);
         var count = Math.Min(bytes.Length, len);
         int i = 0;

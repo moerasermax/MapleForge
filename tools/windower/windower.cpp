@@ -4727,11 +4727,90 @@ HRESULT WINAPI HookedCreateDevice(
     return hr;
 }
 
+// ── 顯示模式列舉補強 ─────────────────────────────────────────────────────────
+// 新版 Windows/驅動不再回報 16-bit 全螢幕模式，Gr2D 在 CreateDevice 前列舉不到
+// 800x600 16-bit 就直接報 "Failed in finding proper screen mode for Gr2D"。
+// 在真實模式清單後面補幾個合成模式；實際建裝置時 CreateDevice hook 會強制視窗化。
+typedef UINT    (WINAPI* GetAdapterModeCount_t)(IDirect3D8*, UINT);
+typedef HRESULT (WINAPI* EnumAdapterModes_t)(IDirect3D8*, UINT, UINT, D3DDISPLAYMODE_LOCAL*);
+typedef HRESULT (WINAPI* CheckDeviceType_t)(IDirect3D8*, UINT, UINT, D3DFORMAT, D3DFORMAT, BOOL);
+
+static GetAdapterModeCount_t g_origGetAdapterModeCount = nullptr;
+static EnumAdapterModes_t    g_origEnumAdapterModes    = nullptr;
+static CheckDeviceType_t     g_origCheckDeviceType     = nullptr;
+
+static const D3DDISPLAYMODE_LOCAL kSyntheticModes[] = {
+    { 800,  600, 60, (D3DFORMAT)23 }, // D3DFMT_R5G6B5
+    { 800,  600, 60, (D3DFORMAT)24 }, // D3DFMT_X1R5G5B5
+    { 800,  600, 60, (D3DFORMAT)22 }, // D3DFMT_X8R8G8B8
+    { 1024, 768, 60, (D3DFORMAT)23 },
+    { 1024, 768, 60, (D3DFORMAT)24 },
+    { 1024, 768, 60, (D3DFORMAT)22 },
+};
+static const UINT kSyntheticModeCount = (UINT)(sizeof(kSyntheticModes) / sizeof(kSyntheticModes[0]));
+
+static UINT WINAPI HookedGetAdapterModeCount(IDirect3D8* pThis, UINT Adapter)
+{
+    UINT real = g_origGetAdapterModeCount ? g_origGetAdapterModeCount(pThis, Adapter) : 0;
+    WriteLog("[Windower] GetAdapterModeCount(adapter=%u) real=%u +synthetic=%u",
+        (unsigned)Adapter, (unsigned)real, (unsigned)kSyntheticModeCount);
+    return real + kSyntheticModeCount;
+}
+
+static HRESULT WINAPI HookedEnumAdapterModes(IDirect3D8* pThis, UINT Adapter, UINT Mode, D3DDISPLAYMODE_LOCAL* pMode)
+{
+    UINT real = g_origGetAdapterModeCount ? g_origGetAdapterModeCount(pThis, Adapter) : 0;
+    if (Mode < real && g_origEnumAdapterModes)
+        return g_origEnumAdapterModes(pThis, Adapter, Mode, pMode);
+
+    UINT idx = Mode - real;
+    if (idx >= kSyntheticModeCount || !pMode)
+        return (HRESULT)0x8876086CL; // D3DERR_INVALIDCALL
+
+    *pMode = kSyntheticModes[idx];
+    WriteLog("[Windower] EnumAdapterModes synthetic mode=%u -> %ux%u format=0x%X",
+        (unsigned)Mode, (unsigned)pMode->Width, (unsigned)pMode->Height, (unsigned)pMode->Format);
+    return S_OK;
+}
+
+static HRESULT WINAPI HookedCheckDeviceType(IDirect3D8* pThis, UINT Adapter, UINT DevType,
+                                            D3DFORMAT DisplayFormat, D3DFORMAT BackBufferFormat, BOOL Windowed)
+{
+    HRESULT hr = g_origCheckDeviceType
+        ? g_origCheckDeviceType(pThis, Adapter, DevType, DisplayFormat, BackBufferFormat, Windowed)
+        : E_FAIL;
+    WriteLog("[Windower] CheckDeviceType(display=0x%X back=0x%X windowed=%d) hr=0x%08lX%s",
+        (unsigned)DisplayFormat, (unsigned)BackBufferFormat, (int)Windowed, (unsigned long)hr,
+        FAILED(hr) ? " -> forced S_OK" : "");
+    return S_OK;
+}
+
+static void PatchD3D8Slot(void** vtable, int slot, void* hook, void** orig, const char* name)
+{
+    if (vtable[slot] == hook) return;
+    if (!*orig) *orig = vtable[slot];
+    DWORD oldProt = 0;
+    if (VirtualProtect(&vtable[slot], sizeof(void*), PAGE_READWRITE, &oldProt))
+    {
+        vtable[slot] = hook;
+        VirtualProtect(&vtable[slot], sizeof(void*), oldProt, &oldProt);
+        WriteLog("[Windower] IDirect3D8 vtable hook done (%s)", name);
+    }
+    else
+    {
+        WriteLog("[Windower] IDirect3D8 vtable hook %s failed: VirtualProtect error=%lu",
+            name, (unsigned long)GetLastError());
+    }
+}
+
 static void HookCreateDeviceVtable(IDirect3D8* pD3D)
 {
     if (!pD3D || !pD3D->lpVtbl) return;
 
     void** vtable = (void**)pD3D->lpVtbl;
+    PatchD3D8Slot(vtable, 6, (void*)HookedGetAdapterModeCount, (void**)&g_origGetAdapterModeCount, "GetAdapterModeCount");
+    PatchD3D8Slot(vtable, 7, (void*)HookedEnumAdapterModes,    (void**)&g_origEnumAdapterModes,    "EnumAdapterModes");
+    PatchD3D8Slot(vtable, 9, (void*)HookedCheckDeviceType,     (void**)&g_origCheckDeviceType,     "CheckDeviceType");
     if (!g_origCreateDevice)
         g_origCreateDevice = (CreateDevice_t)vtable[15];
 

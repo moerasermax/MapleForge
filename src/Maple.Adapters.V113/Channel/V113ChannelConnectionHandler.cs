@@ -3436,8 +3436,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             attack = V113CombatPackets.ParseCloseRangeAttack(reader);
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException ex)
         {
+            _log.LogDebug("[Channel] CLOSE_RANGE_ATTACK parse failed: {Message}", ex.Message);
             return;
         }
 
@@ -3468,6 +3469,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         lock (field)
         {
             result = _combatService.ApplyAttack(field, player, attack.ToCombatAttack());
+        }
+
+        if (_log.IsEnabled(LogLevel.Debug))
+        {
+            var combat = attack.ToCombatAttack();
+            _log.LogDebug(
+                "[Channel] CLOSE_RANGE_ATTACK skill={Skill} targets=[{Targets}] hits=[{Hits}]",
+                attack.SkillId,
+                string.Join(",", combat.Targets.Select(t => $"{t.ObjectId}:{t.TotalDamage}")),
+                string.Join(",", result.Hits.Select(h => $"{h.ObjectId}:{h.AppliedDamage}/hp{h.RemainingHp}{(h.Killed ? ":killed" : "")}")));
         }
 
         await SendCombatHitsAsync(result.Hits, player, session, ct);
