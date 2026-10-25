@@ -27,6 +27,12 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 
     private readonly Func<int, bool> _itemExists;
     private readonly Func<int, int> _playerCount;
+    private readonly (string Name, int Id)? _portal;
+    private readonly Func<int, string, int> _portalIdOf;
+
+    internal string? PendingWarpPortalName { get; private set; }
+    internal bool PendingPortalSe { get; private set; }
+    internal int? PendingOpenNpcId { get; private set; }
     private readonly Func<int, int> _returnMapOf;
     private readonly List<(bool Broadcast, int Mode, string Name)> _pendingEnvironment = new();
     private readonly List<(int Type, string Message)> _pendingWorldMessages = new();
@@ -43,8 +49,12 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Func<int, bool>? itemExists = null,
         Random? random = null,
         Func<int, int>? playerCount = null,
-        Func<int, int>? returnMapOf = null)
+        Func<int, int>? returnMapOf = null,
+        (string Name, int Id)? portal = null,
+        Func<int, string, int>? portalIdOf = null)
     {
+        _portal = portal;
+        _portalIdOf = portalIdOf ?? (static (_, _) => -1);
         _playerCount = playerCount ?? (static _ => 0);
         _returnMapOf = returnMapOf ?? (static id => id);
         _npcId = npcId;
@@ -94,6 +104,9 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingMessages.Clear();
         _pendingJobChanges.Clear();
         _pendingEnvironment.Clear();
+        PendingWarpPortalName = null;
+        PendingPortalSe = false;
+        PendingOpenNpcId = null;
         _pendingWorldMessages.Clear();
     }
 
@@ -235,6 +248,47 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public void WorldMessage(string text) => WorldMessage(6, text);
 
     public void WorldMessage(int type, string text) => _pendingWorldMessages.Add((type, text));
+
+    // ── P170：PortalPlayerInteraction ────────────────────────────────────────────────────
+
+    /// <summary>Java <c>warp(map, portalName)</c>：依名稱找目標地圖的 portal（呼叫端解析）。</summary>
+    public void Warp(int mapId, string portalName)
+    {
+        Warp(mapId);
+        PendingWarpPortalName = portalName;
+    }
+
+    /// <summary>Java <c>playPortalSE()</c> → showOwnBuffEffect(0, 7)。</summary>
+    public void PlayPortalSe() => PendingPortalSe = true;
+
+    /// <summary>Java <c>openNpc(id)</c>：腳本結束後開啟該 NPC 對話。</summary>
+    public void OpenNpc(int npcId)
+    {
+        PendingOpenNpcId = npcId;
+        Ended = true;
+    }
+
+    public string GetPortalName() => _portal?.Name ?? string.Empty;
+
+    public int GetPortalId() => _portal?.Id ?? -1;
+
+    /// <summary>Java <c>PortalPlayerInteraction.inFreeMarket</c>：10 等以上 saveLocation(FREE_MARKET) → playPortalSE → warp(910000000, "st00")。</summary>
+    public void InFreeMarket()
+    {
+        if (_player.Character.Level >= 10)
+        {
+            SaveLocation("FREE_MARKET");
+            PlayPortalSe();
+            Warp(910000000, "st00");
+        }
+        else
+        {
+            PlayerMessage(5, "你需要10級才可以進入自由市場");
+        }
+    }
+
+    /// <summary>MapleMap.getPortal(name).getId()（找不到回 -1）。</summary>
+    public int GetMapPortalId(int mapId, string portalName) => _portalIdOf(mapId, portalName);
 
     private void EnqueueLook(PlayerStatUpdate? update)
         => EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success)

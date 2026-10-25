@@ -30,6 +30,7 @@ public sealed class NpcConversation
     private readonly Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? _sendJobChange;
     private readonly Func<bool, int, string, CancellationToken, Task>? _sendEnvironment;
     private readonly Func<int, string, CancellationToken, Task>? _sendWorldMessage;
+    private readonly Func<CancellationToken, Task>? _playPortalSe;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -53,8 +54,10 @@ public sealed class NpcConversation
         Func<int, string, CancellationToken, Task>? sendMessage = null,
         Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? sendJobChange = null,
         Func<bool, int, string, CancellationToken, Task>? sendEnvironment = null,
-        Func<int, string, CancellationToken, Task>? sendWorldMessage = null)
+        Func<int, string, CancellationToken, Task>? sendWorldMessage = null,
+        Func<CancellationToken, Task>? playPortalSe = null)
     {
+        _playPortalSe = playPortalSe;
         _sendEnvironment = sendEnvironment;
         _sendWorldMessage = sendWorldMessage;
         _sendJobChange = sendJobChange;
@@ -171,9 +174,15 @@ public sealed class NpcConversation
         if (_ctx.PendingShop is { } shopOrNpcId && _openShop is not null)
             await _openShop(shopOrNpcId, ct);
 
+        if (_ctx.PendingPortalSe && _playPortalSe is not null)
+            await _playPortalSe(ct);
+
         if (_ctx.PendingWarp is { } mapId)
         {
-            if (_ctx.PendingWarpPortal != 0 && _warpToPortal is not null)
+            var namedPortal = _ctx.PendingWarpPortalName is { } portalName ? _ctx.GetMapPortalId(mapId, portalName) : -1;
+            if (namedPortal > 0 && _warpToPortal is not null)
+                await _warpToPortal(mapId, namedPortal, ct);
+            else if (_ctx.PendingWarpPortal != 0 && _warpToPortal is not null)
                 await _warpToPortal(mapId, _ctx.PendingWarpPortal, ct);
             else
                 await _warp(mapId, ct);
@@ -200,4 +209,7 @@ public sealed class NpcConversation
         if (_ctx.Ended)
             Active = false;
     }
+
+    /// <summary>P170：portal 腳本 <c>pi.openNpc(id)</c> 要開的 NPC（呼叫端在 flush 後啟動新對話）。</summary>
+    public int? PendingOpenNpcId => _ctx.PendingOpenNpcId;
 }

@@ -155,4 +155,13 @@ public interface INpcScriptContext
     void ShowEffect(bool broadcast, string effect);
     void WorldMessage(string text);
     void WorldMessage(int type, string text);
+
+    // ── P170：portal 腳本（PortalPlayerInteraction）與換圖 ─────────────────────────────────
+    void Warp(int mapId, string portalName);
+    void PlayPortalSe();
+    void OpenNpc(int npcId);
+    string GetPortalName();
+    int GetPortalId();
+    void InFreeMarket();
+    int GetMapPortalId(int mapId, string portalName);
 }

@@ -25,3 +25,12 @@ public interface INpcScriptFactory
 {
     INpcScript? TryCreate(int npcId, INpcScriptContext cm);
 }
+
+/// <summary>
+/// P170：portal 腳本（scripts/portal/&lt;name&gt;.js 的 <c>enter(pi)</c>）。<see cref="INpcScript.Start"/> 呼叫 enter，
+/// <c>pi</c> 與 NPC 的 <c>cm</c> 共用 <see cref="INpcScriptContext"/>（Java PortalPlayerInteraction 繼承 AbstractPlayerInteraction）。
+/// </summary>
+public interface IPortalScriptFactory
+{
+    INpcScript? TryCreatePortal(string scriptName, INpcScriptContext pi);
+}

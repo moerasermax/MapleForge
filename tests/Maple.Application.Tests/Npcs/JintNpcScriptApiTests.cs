@@ -13,7 +13,11 @@ public sealed class JintNpcScriptApiTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "mf-jint-" + Guid.NewGuid().ToString("N"));
 
-    public JintNpcScriptApiTests() => Directory.CreateDirectory(Path.Combine(_root, "npc"));
+    public JintNpcScriptApiTests()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "npc"));
+        Directory.CreateDirectory(Path.Combine(_root, "portal"));
+    }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
@@ -140,6 +144,61 @@ public sealed class JintNpcScriptApiTests : IDisposable
 
         Assert.False(convo.Active);
         Assert.Equal(0, player.Character.Meso); // Java：mode -1 不呼叫 action
+    }
+
+    [Fact]
+    public async Task PortalScript_MarketReturn_UsesSavedLocationMapPortalAndChangeMap()
+    {
+        // P170：scripts/portal/market00.js 風格：getSavedLocation → getMap(id).getPortal("market00") → getPlayer().changeMap。
+        File.WriteAllText(Path.Combine(_root, "portal", "market00.js"), """
+            function enter(pi) {
+                var returnMap = pi.getSavedLocation("FREE_MARKET");
+                pi.clearSavedLocation("FREE_MARKET");
+                var target = pi.getMap(returnMap);
+                var portal = target.getPortal("market00");
+                if (portal == null) { portal = target.getPortal(0); }
+                pi.playPortalSE();
+                pi.getPlayer().changeMap(target, portal);
+            }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30, MapId = 910000000 }, new Position(0, 0, 0, 0));
+        player.Character.SavedLocations["FREE_MARKET"] = 100000000;
+        var ctx = new NpcContext(0, player, new QuestService(new EmptyQuestCatalog()), portal: ("out00", 3), portalIdOf: (map, name) => map == 100000000 && name == "market00" ? 7 : -1);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        (int, int)? warped = null;
+        var se = 0;
+        var convo = new NpcConversation(
+            0,
+            factory.TryCreatePortal("market00", ctx)!,
+            ctx,
+            (_, _) => Task.CompletedTask,
+            (_, _) => Task.CompletedTask,
+            warpToPortal: (m, p, _) => { warped = (m, p); return Task.CompletedTask; },
+            playPortalSe: _ => { se++; return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal((100000000, 7), warped);
+        Assert.Equal(1, se);
+        Assert.Equal(100000000, ctx.GetSavedLocation("FREE_MARKET")); // 已清除 → 預設值
+    }
+
+    [Fact]
+    public async Task PortalScript_InFreeMarket_WarpsByPortalName()
+    {
+        File.WriteAllText(Path.Combine(_root, "portal", "market01.js"), "function enter(pi) { pi.inFreeMarket(); return true; }");
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30, MapId = 100000000 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(0, player, new QuestService(new EmptyQuestCatalog()), portalIdOf: (map, name) => map == 910000000 && name == "st00" ? 2 : -1);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        (int, int)? warped = null;
+        var convo = new NpcConversation(0, factory.TryCreatePortal("market01", ctx)!, ctx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask,
+            warpToPortal: (m, p, _) => { warped = (m, p); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal((910000000, 2), warped);
+        Assert.Equal(100000000, player.Character.SavedLocations["FREE_MARKET"]);
+        Assert.Null(factory.TryCreatePortal("../npc/x", ctx));
     }
 
     private sealed class EmptyQuestCatalog : IQuestCatalog

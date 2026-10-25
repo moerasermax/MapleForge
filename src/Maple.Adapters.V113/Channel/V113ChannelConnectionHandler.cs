@@ -68,6 +68,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly PartyBuffService? _partyBuffs;
     private readonly AbilityPointService _abilityPoints;
     private readonly JobAdvancementService _jobAdvancement;
+    private readonly IPortalScriptFactory? _portalScripts;
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -184,8 +185,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         PlayerMistService? playerMists = null,
         PartyBuffService? partyBuffs = null,
         AbilityPointService? abilityPoints = null,
-        JobAdvancementService? jobAdvancement = null)
+        JobAdvancementService? jobAdvancement = null,
+        IPortalScriptFactory? portalScripts = null)
     {
+        _portalScripts = portalScripts ?? npcScripts as IPortalScriptFactory;
         _jobAdvancement = jobAdvancement ?? new JobAdvancementService();
         _log = log;
         _playerMists = playerMists;
@@ -349,6 +352,41 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, sessionToken, token, portal);
         }
 
+        // P170：Java MapleGenericPortal.enterPortal 腳本分支；pi.openNpc 開啟 NPC 對話；仍在原地圖才 enableActions。
+        async Task EnterScriptPortalAsync(MapPortal portal, CancellationToken token)
+        {
+            if (player is null) return;
+            var startMap = player.Character.MapId;
+            var (_, openNpcId) = await RunPortalScriptAsync(
+                portal, player, session, OpenShopFromNpcAsync, OpenStorageFromNpcAsync, WarpFromNpcAsync, WarpFromNpcToPortalAsync, token);
+            if (openNpcId is { } npcId)
+            {
+                conversation = await StartNpcConversationByNpcIdAsync(
+                    npcId, player, session, OpenShopFromNpcAsync, OpenStorageFromNpcAsync, WarpFromNpcAsync, token, WarpFromNpcToPortalAsync);
+            }
+
+            if (player.Character.MapId == startMap)
+            {
+                await session.SendAsync(V113StatsPackets.EnableActions(), token);
+            }
+        }
+
+        // P170：CHANGE_MAP_SPECIAL(0x5E)：Java PlayerHandler.ChangeMapSpecial → portal.enterPortal（腳本優先）。
+        async Task HandleChangeMapSpecialLocalAsync(PacketReader r, CancellationToken token)
+        {
+            if (player is null) return;
+            r.ReadByte();
+            var portalName = r.ReadMapleString();
+            var portal = _mapService.LoadMap(player.Character.MapId).Portals.FirstOrDefault(p => p.Name == portalName);
+            if (portal is not null && !string.IsNullOrEmpty(portal.Script))
+            {
+                await EnterScriptPortalAsync(portal, token);
+                return;
+            }
+
+            currentField = await ChangeMapSpecialByNameAsync(portalName, player, currentField, npcOidToId, session, sessionToken, token);
+        }
+
         // 腳走地圖傳送點（CHANGE_MAP 0x1E）。對照 Java PlayerHandler.ChangeMap 正常 portal 分支。
         async Task HandleChangeMapAsync(PacketReader r, CancellationToken token)
         {
@@ -360,6 +398,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 // 一般腳走傳送點：查當前圖 portal(by name) → 取目標圖(tm)+目標 portal(tn) → 換圖落地
                 var map = _mapService.LoadMap(chr.MapId);
                 var portal = map.Portals.FirstOrDefault(p => p.Name == req.PortalName);
+                // P170：script portal → Java enterPortal → executePortalScript。
+                if (portal is not null && !string.IsNullOrEmpty(portal.Script))
+                {
+                    await EnterScriptPortalAsync(portal, token);
+                    return;
+                }
+
                 if (portal is null || portal.TargetMapId == NoTargetMapId || !string.IsNullOrEmpty(portal.Script))
                 {
                     // 查不到 / 無目標 / script portal(MVP 未實作 PortalScript) → 放行不卡（不改角色狀態）
@@ -1525,7 +1570,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.ChangeMapSpecial:
                         if (player is null) break;
-                        currentField = await HandleChangeMapSpecialAsync(reader, player, currentField, npcOidToId, s, sessionToken, token);
+                        await HandleChangeMapSpecialLocalAsync(reader, token);
                         break;
 
                     case V113ChannelRecvOp.SkillEffect:
@@ -2029,38 +2074,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return null;
         }
 
-        var ctx = NewNpcContext(npcId, player);
-        var script = _npcScripts.TryCreate(npcId, ctx);
-        if (script is null)
-        {
-            _log.LogDebug("[Channel] NPC {Npc} 無對應腳本，略過", npcId);
-            return null;
-        }
-
-        var convo = new NpcConversation(
-            npcId, script, ctx,
-            sendDialog: (dlg, c) => session.SendAsync(V113NpcDialogEncoder.Encode(dlg), c),
-            warp: warp,
-            openShop: openShop,
-            openStorage: openStorage,
-            sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, player, session, c),
-            sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
-            sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
-            increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
-            sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
-            disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
-            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
-            warpToPortal: warpToPortal,
-            sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
-            sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c),
-            sendEnvironment: (broadcast, mode, name, c) => broadcast
-                ? BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.EnvironmentChange(name, mode), c)
-                : session.SendAsync(V113CombatPackets.EnvironmentChange(name, mode), c),
-            sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
-
-        await convo.StartAsync(ct);
-        _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
-        return convo.Active ? convo : null;
+        return await StartNpcConversationByNpcIdAsync(npcId, player, session, openShop, openStorage, warp, ct, warpToPortal);
     }
 
     private async Task<NpcConversation?> StartNpcConversationByNpcIdAsync(
@@ -2081,7 +2095,24 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return null;
         }
 
-        var convo = new NpcConversation(
+        var convo = CreateConversation(npcId, script, ctx, player, session, openShop, openStorage, warp, warpToPortal);
+        await convo.StartAsync(ct);
+        _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
+        return convo.Active ? convo : null;
+    }
+
+    /// <summary>NPC／portal 腳本共用的對話 flush 接線（P170 自兩處 NPC 啟動抽出）。</summary>
+    private NpcConversation CreateConversation(
+        int npcId,
+        INpcScript script,
+        NpcContext ctx,
+        Player player,
+        MapleSession session,
+        Func<int, CancellationToken, Task> openShop,
+        Func<int, CancellationToken, Task> openStorage,
+        Func<int, CancellationToken, Task> warp,
+        Func<int, int, CancellationToken, Task>? warpToPortal)
+        => new(
             npcId, script, ctx,
             sendDialog: (dlg, c) => session.SendAsync(V113NpcDialogEncoder.Encode(dlg), c),
             warp: warp,
@@ -2093,18 +2124,48 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
             sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
             disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
-            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
+            sendRepairWindow: (repairNpcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(repairNpcId), c),
             warpToPortal: warpToPortal,
             sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
             sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c),
             sendEnvironment: (broadcast, mode, name, c) => broadcast
                 ? BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.EnvironmentChange(name, mode), c)
                 : session.SendAsync(V113CombatPackets.EnvironmentChange(name, mode), c),
-            sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
+            sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
+            playPortalSe: c => session.SendAsync(V113SkillPackets.ShowOwnBuffEffect(0, 7), c));
 
+    /// <summary>
+    /// P170：Java <c>MapleGenericPortal.enterPortal</c> 的腳本分支 → <c>PortalScriptManager.executePortalScript</c>：
+    /// 跑 scripts/portal/&lt;script&gt;.js 的 <c>enter(pi)</c> 並 flush（換圖、訊息、音效…）；<c>pi.openNpc</c> 回傳要開的 NPC。
+    /// 找不到腳本回 false（呼叫端照舊 enableActions）。
+    /// </summary>
+    private async Task<(bool Ran, int? OpenNpcId)> RunPortalScriptAsync(
+        MapPortal portal,
+        Player player,
+        MapleSession session,
+        Func<int, CancellationToken, Task> openShop,
+        Func<int, CancellationToken, Task> openStorage,
+        Func<int, CancellationToken, Task> warp,
+        Func<int, int, CancellationToken, Task> warpToPortal,
+        CancellationToken ct)
+    {
+        if (_portalScripts is null || string.IsNullOrEmpty(portal.Script))
+        {
+            return (false, null);
+        }
+
+        var ctx = NewNpcContext(0, player, (portal.Name, portal.Id));
+        var script = _portalScripts.TryCreatePortal(portal.Script, ctx);
+        if (script is null)
+        {
+            _log.LogInformation("[Channel] 未處理的傳送腳本 {Script}（地圖 {Map}）", portal.Script, player.Character.MapId);
+            return (false, null);
+        }
+
+        var convo = CreateConversation(0, script, ctx, player, session, openShop, openStorage, warp, warpToPortal);
         await convo.StartAsync(ct);
-        _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
-        return convo.Active ? convo : null;
+        _log.LogInformation("[Channel] {Name} 進入傳送腳本 {Script}", player.Character.Name, portal.Script);
+        return (true, convo.PendingOpenNpcId);
     }
 
     /// <summary>
@@ -2228,8 +2289,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// c2s NPC_TALK_MORE：[byte lastMsg][byte action(mode)][selection]。
     /// 對照 Java NPCMoreTalk：lastMsg==2(getText) 帶字串、否則 selection = 剩餘≥4 readInt / &gt;0 readByte / else -1。
     /// </summary>
-    /// <summary>P169：NPC cm 的領域依賴（道具存在、地圖人數、returnMap）。</summary>
-    private NpcContext NewNpcContext(int npcId, Player player)
+    /// <summary>P169：NPC cm 的領域依賴（道具存在、地圖人數、returnMap、P170 portal 名稱→ID）。</summary>
+    private NpcContext NewNpcContext(int npcId, Player player, (string Name, int Id)? portal = null)
         => new(
             npcId,
             player,
@@ -2237,7 +2298,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             _jobAdvancement,
             _equipTemplates is { } templates ? templates.ItemExists : null,
             playerCount: mapId => _mapRegistry.GetAll(mapId).Count(),
-            returnMapOf: mapId => _mapService.LoadMap(mapId).ReturnMapId);
+            returnMapOf: mapId => _mapService.LoadMap(mapId).ReturnMapId,
+            portal: portal,
+            portalIdOf: (mapId, name) => _mapService.LoadMap(mapId).Portals.FirstOrDefault(p => p.Name == name)?.Id ?? -1);
 
     private static async Task ContinueNpcConversationAsync(PacketReader reader, NpcConversation convo, CancellationToken ct)
     {
@@ -5454,14 +5517,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
     // ── C-2: CHANGE_MAP_SPECIAL (script portal 0x5E) ──────────────────────────
 
-    private async Task<FieldInstance?> HandleChangeMapSpecialAsync(
-        PacketReader reader, Player player, FieldInstance? currentField,
+    private async Task<FieldInstance?> ChangeMapSpecialByNameAsync(
+        string portalName, Player player, FieldInstance? currentField,
         Dictionary<int, int> npcOidToId, MapleSession session,
         object sessionToken, CancellationToken ct)
     {
         var chr = player.Character;
-        reader.ReadByte(); // skip 1
-        var portalName = reader.ReadMapleString();
 
         var map = _mapService.LoadMap(chr.MapId);
         var portal = map.Portals.FirstOrDefault(p => p.Name == portalName);

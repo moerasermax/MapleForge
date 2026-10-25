@@ -13,9 +13,11 @@ namespace Maple.Scripting;
 /// cm 以「lowercase 委派物件」暴露給 JS（與 C# PascalCase 解耦，免命名策略不確定性）。
 /// 預處理後的腳本原始碼依 npcId 快取。
 /// </summary>
-public sealed class JintNpcScriptFactory : INpcScriptFactory
+public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFactory
 {
     private readonly string _npcDir;
+    private readonly string _portalDir;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string?> _portalSourceCache = new(StringComparer.Ordinal);
     private readonly ILogger<JintNpcScriptFactory> _log;
     private readonly ConcurrentDictionary<int, string?> _sourceCache = new();
 
@@ -25,6 +27,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
     public JintNpcScriptFactory(NpcScriptOptions options, ILogger<JintNpcScriptFactory> log)
     {
         _npcDir = Path.Combine(options.ScriptsDirectory, "npc");
+        _portalDir = Path.Combine(options.ScriptsDirectory, "portal");
         _log = log;
     }
 
@@ -42,6 +45,35 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         catch (Exception ex)
         {
             _log.LogWarning("[NpcScript] npcId={Id} 腳本載入/執行失敗：{Msg}", npcId, ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>P170：scripts/portal/&lt;name&gt;.js；Start() 呼叫 <c>enter(pi)</c>（pi 同時設為全域）。</summary>
+    public INpcScript? TryCreatePortal(string scriptName, INpcScriptContext pi)
+    {
+        if (string.IsNullOrWhiteSpace(scriptName) || scriptName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return null;
+        }
+
+        var source = _portalSourceCache.GetOrAdd(scriptName, name =>
+        {
+            var path = Path.Combine(_portalDir, $"{name}.js");
+            return File.Exists(path) ? Preprocess(File.ReadAllText(path)) : null;
+        });
+        if (source is null) return null;
+
+        try
+        {
+            var engine = BuildEngine(pi);
+            engine.SetValue("pi", engine.GetValue("cm"));
+            engine.Execute(source);
+            return new JintPortalScript(engine);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("[PortalScript] {Name} 腳本載入/執行失敗：{Msg}", scriptName, ex.Message);
             return null;
         }
     }
@@ -122,7 +154,9 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public void clearInfoQuest(int questId) => _cm.ClearInfoQuest(questId);
         public int getJob() => _cm.GetJob();
         public int getMeso() => _cm.GetMeso();
-        public int getMap() => _cm.GetMap();
+        /// <summary>P170：Java 回 MapleMap；這裡回地圖 facade（getId／getPortal…）。</summary>
+        public MapFacade getMap() => new(_cm, _cm.GetMap());
+        public MapFacade getMap(int mapId) => new(_cm, mapId);
         public int getBuddyCapacity() => _cm.GetBuddyCapacity();
         public void updateBuddyCapacity(int capacity) => _cm.UpdateBuddyCapacity(capacity);
         public int getPlayerStat(string type) => _cm.GetPlayerStat(type);
@@ -188,8 +222,48 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public void worldMessage(int type, string text) => _cm.WorldMessage(type, text);
         public QuestRecordFacade getQuestRecord(int questId) => new(_cm, questId);
 
+        // ── P170：PortalPlayerInteraction ─────────────────────────────────────────────
+        public void warp(int mapId, string portalName) => _cm.Warp(mapId, portalName);
+        public void playPortalSE() => _cm.PlayPortalSe();
+        public void openNpc(int npcId) => _cm.OpenNpc(npcId);
+        public PortalRef getPortal() => new(_cm.GetPortalId(), _cm.GetPortalName());
+        public void inFreeMarket() => _cm.InFreeMarket();
+
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);
+    }
+
+    /// <summary>P170：MaplePortal 子集（getId／getName）。</summary>
+    private sealed class PortalRef
+    {
+        public PortalRef(int id, string name) => (Id, Name) = (id, name);
+
+        public int Id { get; }
+
+        public string Name { get; }
+
+        public int getId() => Id;
+
+        public string getName() => Name;
+    }
+
+    /// <summary>P170：MapleMap 子集（getId、getPortal(name|id)、getCharactersSize）。</summary>
+    private sealed class MapFacade
+    {
+        private readonly INpcScriptContext _cm;
+
+        public MapFacade(INpcScriptContext cm, int mapId) => (_cm, MapId) = (cm, mapId);
+
+        public int MapId { get; }
+
+        public int getId() => MapId;
+
+        public PortalRef? getPortal(string name)
+            => _cm.GetMapPortalId(MapId, name) is var id and >= 0 ? new PortalRef(id, name) : null;
+
+        public PortalRef getPortal(int id) => new(id, string.Empty);
+
+        public int getCharactersSize() => _cm.GetPlayerCount(MapId);
     }
 
     /// <summary>P169：<c>cm.getQuestRecord(id)</c>（MapleQuestStatus 子集：customData／status）。</summary>
@@ -238,6 +312,11 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public bool hasEquipped(int itemId) => _cm.HasEquipped(itemId);
         public void gainAp(int amount) => _cm.GainAp(amount);
         public void changeJob(int job) => _cm.ChangeJob(job);
+        public MapFacade getMap() => new(_cm, _cm.GetMap());
+
+        /// <summary>P170：Java <c>changeMap(MapleMap, MaplePortal)</c> → warp(map, portal id)。</summary>
+        public void changeMap(MapFacade map, PortalRef? portal) => _cm.Warp(map.MapId, portal?.Id ?? 0);
+        public void changeMap(MapFacade map) => _cm.Warp(map.MapId, 0);
         public void dropMessage(string message) => _cm.PlayerMessage(5, message);
         public void dropMessage(int type, string message) => _cm.PlayerMessage(type, message);
     }
