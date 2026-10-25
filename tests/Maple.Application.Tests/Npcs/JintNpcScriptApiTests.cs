@@ -299,6 +299,43 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal((1, 1), (killed, warped));
     }
 
+    [Fact]
+    public async Task PartyApi_WarpPartyAndPartyExp_TargetMembersOnSameMap()
+    {
+        // P176：Java warpParty／givePartyExp：只對與自己同地圖的隊員；經驗 × 頻道倍率；自己的經驗當場給。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999995.js"), """
+            function start() {
+                if (cm.isLeader() && cm.getParty().getMembers().size() == 3 && !cm.allMembersHere()) {
+                    cm.givePartyExp(10);
+                    cm.warpParty(103000800);
+                }
+                cm.dispose();
+            }
+            """);
+        var parties = new Maple.Application.Parties.InMemoryPartyRegistry();
+        var leader = new Player(new Character { Id = 1, Name = "L", Level = 30, MapId = 103000000 }, new Position(0, 0, 0, 0));
+        var created = parties.CreateParty(Maple.Core.Parties.PartyMember.FromCharacter(leader.Character, 1));
+        parties.JoinParty(created.Party!.Id, new Maple.Core.Parties.PartyMember(2, "Near", 10, 100, 103000000, 1));
+        parties.JoinParty(created.Party!.Id, new Maple.Core.Parties.PartyMember(3, "Far", 10, 100, 100000000, 1));
+        var ctx = new NpcContext(9999995, leader, new QuestService(new EmptyQuestCatalog()),
+            parties: parties, playersOnMap: map => map == 103000000 ? [1, 2] : [3], expRate: 4);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var actions = new List<NpcPartyAction>();
+        var convo = new NpcConversation(9999995, factory.TryCreate(9999995, ctx)!, ctx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask,
+            sendPartyAction: (a, _) => { actions.Add(a); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal(40, leader.Character.Exp);
+        Assert.Equal(
+            [
+                new NpcPartyAction(NpcPartyActionKind.Exp, 2, Amount: 40),
+                new NpcPartyAction(NpcPartyActionKind.Warp, 1, MapId: 103000800),
+                new NpcPartyAction(NpcPartyActionKind.Warp, 2, MapId: 103000800),
+            ],
+            actions);
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

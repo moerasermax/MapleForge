@@ -308,8 +308,85 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void PlayerToNpc(string text) => _cm.PlayerToNpc(text);
         public void sendNextPrevS(string text) => _cm.SendNextPrevS(text, 3);
 
+        // ── P176：隊伍 ───────────────────────────────────────────────────────────────────
+        public PartyFacade? getParty() => _cm.GetPartyState() is { } party ? new(party) : null;
+        public bool isLeader() => _cm.IsLeader();
+        public bool allMembersHere() => _cm.AllMembersHere();
+        public bool isAllPartyMembersAllowedJob(int job) => _cm.IsAllPartyMembersAllowedJob(job);
+        public void warpParty(int mapId) => _cm.WarpParty(mapId, 0);
+        public void warpParty(int mapId, int portal) => _cm.WarpParty(mapId, portal);
+        public void givePartyExp(int amount) => _cm.GivePartyExp(amount);
+        public void givePartyItems(int itemId, int quantity) => _cm.GivePartyItems(itemId, quantity, false);
+        public void givePartyItems(int itemId, int quantity, bool removeAll) => _cm.GivePartyItems(itemId, quantity, removeAll);
+
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);
+    }
+
+    /// <summary>P176：MapleParty 子集（getId／getLeader／getMembers）。</summary>
+    private sealed class PartyFacade
+    {
+        private readonly Maple.Core.Parties.PartyState _party;
+
+        public PartyFacade(Maple.Core.Parties.PartyState party) => _party = party;
+
+        public int getId() => _party.Id;
+
+        public PartyMemberFacade? getLeader() => _party.Leader is { } leader ? new(leader) : null;
+
+        public PartyMemberList getMembers() => new(_party.Members.Select(static m => new PartyMemberFacade(m)).ToArray());
+
+        public PartyMemberFacade? getMemberById(int id) => _party.GetMember(id) is { } member ? new(member) : null;
+    }
+
+    /// <summary>P176：Java Collection&lt;MaplePartyCharacter&gt; 子集（size／get／iterator）。</summary>
+    private sealed class PartyMemberList
+    {
+        private readonly PartyMemberFacade[] _members;
+
+        public PartyMemberList(PartyMemberFacade[] members) => _members = members;
+
+        public int size() => _members.Length;
+
+        public bool isEmpty() => _members.Length == 0;
+
+        public PartyMemberFacade get(int index) => _members[index];
+
+        public MemberIterator iterator() => new(_members);
+    }
+
+    private sealed class MemberIterator
+    {
+        private readonly PartyMemberFacade[] _members;
+        private int _next;
+
+        public MemberIterator(PartyMemberFacade[] members) => _members = members;
+
+        public bool hasNext() => _next < _members.Length;
+
+        public PartyMemberFacade next() => _members[_next++];
+    }
+
+    /// <summary>P176：MaplePartyCharacter 子集。</summary>
+    private sealed class PartyMemberFacade
+    {
+        private readonly Maple.Core.Parties.PartyMember _member;
+
+        public PartyMemberFacade(Maple.Core.Parties.PartyMember member) => _member = member;
+
+        public int getId() => _member.CharacterId;
+
+        public string getName() => _member.Name;
+
+        public int getLevel() => _member.Level;
+
+        public int getJobId() => _member.JobId;
+
+        public int getMapid() => _member.MapId;
+
+        public int getChannel() => _member.ChannelIndex;
+
+        public bool isOnline() => _member.IsOnline;
     }
 
     /// <summary>P173：EventManager 子集（getProperty／setProperty）。</summary>
@@ -464,6 +541,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void changeJob(int job) => _cm.ChangeJob(job);
         public MapFacade getMap() => new(_cm, _cm.GetMap());
         public ClientFacade getClient() => new(_cm);
+        public PartyFacade? getParty() => _cm.GetPartyState() is { } party ? new(party) : null;
 
         /// <summary>P170：Java <c>changeMap(MapleMap, MaplePortal)</c> → warp(map, portal id)。</summary>
         public void changeMap(MapFacade map, PortalRef? portal) => _cm.Warp(map.MapId, portal?.Id ?? 0);

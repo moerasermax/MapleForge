@@ -33,6 +33,7 @@ public sealed class NpcConversation
     private readonly Func<CancellationToken, Task>? _playPortalSe;
     private readonly Func<NpcUiEffect, CancellationToken, Task>? _sendUiEffect;
     private readonly Func<CancellationToken, Task>? _killAllMob;
+    private readonly Func<NpcPartyAction, CancellationToken, Task>? _sendPartyAction;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -59,8 +60,10 @@ public sealed class NpcConversation
         Func<int, string, CancellationToken, Task>? sendWorldMessage = null,
         Func<CancellationToken, Task>? playPortalSe = null,
         Func<NpcUiEffect, CancellationToken, Task>? sendUiEffect = null,
-        Func<CancellationToken, Task>? killAllMob = null)
+        Func<CancellationToken, Task>? killAllMob = null,
+        Func<NpcPartyAction, CancellationToken, Task>? sendPartyAction = null)
     {
+        _sendPartyAction = sendPartyAction;
         _killAllMob = killAllMob;
         _sendUiEffect = sendUiEffect;
         _playPortalSe = playPortalSe;
@@ -187,6 +190,14 @@ public sealed class NpcConversation
 
         if (_ctx.PendingShop is { } shopOrNpcId && _openShop is not null)
             await _openShop(shopOrNpcId, ct);
+
+        if (_sendPartyAction is not null)
+        {
+            foreach (var action in _ctx.PendingPartyActions)
+            {
+                await _sendPartyAction(action, ct);
+            }
+        }
 
         if (_ctx.PendingKillAllMob && _killAllMob is not null)
             await _killAllMob(ct);

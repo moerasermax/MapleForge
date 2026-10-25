@@ -17,8 +17,12 @@ public sealed class V113SessionCommandRegistry : IPlayerTransferService
         _maps = maps;
     }
 
-    public void Register(int characterId, object sessionToken, Func<int, int, bool> warp)
-        => _entries[characterId] = new Entry(sessionToken, warp);
+    public void Register(int characterId, object sessionToken, Func<int, int, bool> warp, Func<Func<CancellationToken, Task>, bool>? post = null)
+        => _entries[characterId] = new Entry(sessionToken, warp, post);
+
+    /// <summary>P176：把工作排進該角色的連線序列（隊伍經驗／道具等跨玩家效果）；不在線或未提供回 false。</summary>
+    public bool TryPost(int characterId, Func<CancellationToken, Task> work)
+        => _entries.TryGetValue(characterId, out var entry) && entry.Post is { } post && post(work);
 
     public void Unregister(int characterId, object sessionToken)
     {
@@ -45,5 +49,5 @@ public sealed class V113SessionCommandRegistry : IPlayerTransferService
         return count;
     }
 
-    private readonly record struct Entry(object Token, Func<int, int, bool> Warp);
+    private readonly record struct Entry(object Token, Func<int, int, bool> Warp, Func<Func<CancellationToken, Task>, bool>? Post);
 }

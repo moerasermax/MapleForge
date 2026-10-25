@@ -73,6 +73,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly Maple.Application.Events.TransportService? _transport;
     private readonly IQuestScriptFactory? _questScripts;
     private readonly Maple.Application.Events.ITransportEffects? _transportEffects;
+    private readonly IPartyRegistry? _partyRegistry;
+    private readonly DropServiceOptions? _dropOptions;
+
+    /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, (Player Player, MapleSession Session)> _remotePlayers = new();
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -194,8 +199,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113SessionCommandRegistry? sessionCommands = null,
         Maple.Application.Events.TransportService? transport = null,
         IQuestScriptFactory? questScripts = null,
-        Maple.Application.Events.ITransportEffects? transportEffects = null)
+        Maple.Application.Events.ITransportEffects? transportEffects = null,
+        IPartyRegistry? partyRegistry = null,
+        DropServiceOptions? dropOptions = null)
     {
+        _partyRegistry = partyRegistry;
+        _dropOptions = dropOptions;
         _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
         _transport = transport;
@@ -592,7 +601,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                     {
                                         currentField = await WarpAsync(player, currentField, npcOidToId, s, mapId, sessionToken, token, portal);
                                     }
-                                }));
+                                }),
+                                work => s.Post(work));
+                            _remotePlayers[chr.Id] = (player, s);
 
                             var channel = _options.ChannelIndex + 1;
                             _onlinePlayers.Register(
@@ -1889,6 +1900,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                 _followService.CancelFollow(player);
                 _sessionCommands?.Unregister(player.Character.Id, sessionToken);
+                _remotePlayers.TryRemove(new KeyValuePair<int, (Player, MapleSession)>(player.Character.Id, (player, session)));
 
                 var deregisteredPlayer = _onlinePlayers.Deregister(player.Character.Id, sessionToken);
                 if (deregisteredPlayer is not null)
@@ -2216,6 +2228,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
             playPortalSe: c => session.SendAsync(V113SkillPackets.ShowOwnBuffEffect(0, 7), c),
             killAllMob: c => _transportEffects is { } effects ? effects.KillAllMonstersAsync(player.Character.MapId, c, animate: true) : Task.CompletedTask,
+            sendPartyAction: SendPartyActionAsync,
             sendUiEffect: (effect, c) => effect.Kind switch
             {
                 NpcUiEffectKind.Hint => session.SendAsync(V113StatsPackets.SendHint(effect.Text, effect.A, effect.B), c),
@@ -2407,7 +2420,67 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             transport: _transport,
             questId: questId,
             monstersOf: mapId => FieldMonsterIds(mapId),
-            reactorStateOf: (mapId, name) => FieldReactorState(mapId, name));
+            reactorStateOf: (mapId, name) => FieldReactorState(mapId, name),
+            parties: _partyRegistry,
+            playersOnMap: mapId => _mapRegistry.GetAll(mapId).Select(static e => e.CharId).ToArray(),
+            expRate: _dropOptions?.ExpRate ?? 1);
+
+    /// <summary>
+    /// P176：跨隊員腳本效果——排進該隊員自己的連線序列執行（warp／經驗／道具），結果照一般 cm 送包流程送給對方。
+    /// </summary>
+    private Task SendPartyActionAsync(NpcPartyAction action, CancellationToken ct)
+    {
+        if (_sessionCommands is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (action.Kind == NpcPartyActionKind.Warp)
+        {
+            _sessionCommands.Warp(action.CharacterId, action.MapId, action.Portal);
+            return Task.CompletedTask;
+        }
+
+        _sessionCommands.TryPost(action.CharacterId, async token =>
+        {
+            if (!_remotePlayers.TryGetValue(action.CharacterId, out var target))
+            {
+                return;
+            }
+
+            var ctx = NewNpcContext(0, target.Player);
+            var script = new DelegateNpcScript(() =>
+            {
+                if (action.Kind == NpcPartyActionKind.Exp)
+                {
+                    ctx.GainExp(action.Amount);
+                }
+                else
+                {
+                    ctx.GainItem(action.ItemId, action.RemoveAll ? -ctx.ItemQuantity(action.ItemId) : action.Quantity);
+                }
+
+                ctx.Dispose();
+            });
+            var convo = new NpcConversation(
+                0, script, ctx,
+                sendDialog: (_, _) => Task.CompletedTask,
+                warp: (_, _) => Task.CompletedTask,
+                sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, target.Player, target.Session, c));
+            await convo.StartAsync(token);
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>P176：以委派實作的單步腳本（跨隊員效果用）。</summary>
+    private sealed class DelegateNpcScript(Action start) : INpcScript
+    {
+        public void Start() => start();
+
+        public void Resume(int mode, int type, int selection)
+        {
+        }
+    }
 
     /// <summary>P175：腳本查詢地圖怪物（存活）ID。</summary>
     private IReadOnlyList<int> FieldMonsterIds(int mapId)

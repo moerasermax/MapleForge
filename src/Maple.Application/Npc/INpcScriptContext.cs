@@ -191,4 +191,13 @@ public interface INpcScriptContext
     bool HaveMonster(int monsterId);
     void KillAllMob();
     void PlayerToNpc(string text);
+
+    // ── P176：隊伍（AbstractPlayerInteraction.getParty／isLeader／warpParty／givePartyExp／givePartyItems）──────
+    Maple.Core.Parties.PartyState? GetPartyState();
+    bool IsLeader();
+    bool AllMembersHere();
+    bool IsAllPartyMembersAllowedJob(int job);
+    void WarpParty(int mapId, int portal);
+    void GivePartyExp(int amount);
+    void GivePartyItems(int itemId, int quantity, bool removeAll);
 }

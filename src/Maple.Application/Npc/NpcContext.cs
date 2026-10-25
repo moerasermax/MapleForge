@@ -32,6 +32,12 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly int _questId;
     private readonly Func<int, IReadOnlyList<int>> _monstersOf;
     private readonly Func<int, string, int> _reactorStateOf;
+    private readonly Maple.Application.Parties.IPartyRegistry? _parties;
+    private readonly Func<int, IReadOnlyList<int>> _playersOnMap;
+    private readonly int _expRate;
+    private readonly List<NpcPartyAction> _pendingPartyActions = new();
+
+    internal IReadOnlyList<NpcPartyAction> PendingPartyActions => _pendingPartyActions;
 
     /// <summary>P175：cm.killAllMob → 呼叫端清掉目前地圖所有怪（Java killAllMonsters(true)）。</summary>
     internal bool PendingKillAllMob { get; private set; }
@@ -64,8 +70,14 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Maple.Application.Events.TransportService? transport = null,
         int questId = 0,
         Func<int, IReadOnlyList<int>>? monstersOf = null,
-        Func<int, string, int>? reactorStateOf = null)
+        Func<int, string, int>? reactorStateOf = null,
+        Maple.Application.Parties.IPartyRegistry? parties = null,
+        Func<int, IReadOnlyList<int>>? playersOnMap = null,
+        int expRate = 1)
     {
+        _parties = parties;
+        _playersOnMap = playersOnMap ?? (static _ => []);
+        _expRate = Math.Max(1, expRate);
         _questId = questId;
         _monstersOf = monstersOf ?? (static _ => []);
         _reactorStateOf = reactorStateOf ?? (static (_, _) => -1);
@@ -125,6 +137,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingPortalSe = false;
         PendingOpenNpcId = null;
         PendingKillAllMob = false;
+        _pendingPartyActions.Clear();
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -276,6 +289,100 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 
     /// <summary>Java <c>PlayerToNpc(text)</c> = sendNextPrevS(text, 3)。</summary>
     public void PlayerToNpc(string text) => SendNextPrevS(text, 3);
+
+    // ── P176：隊伍 ──────────────────────────────────────────────────────────────────────
+
+    public Maple.Core.Parties.PartyState? GetPartyState() => _parties?.GetPartyForCharacter(_player.Character.Id);
+
+    /// <summary>Java <c>isLeader()</c>：有隊伍且隊長是自己。</summary>
+    public bool IsLeader() => GetPartyState() is { } party && party.LeaderId == _player.Character.Id;
+
+    /// <summary>Java <c>allMembersHere()</c>：每位隊員都在目前地圖。</summary>
+    public bool AllMembersHere()
+    {
+        if (GetPartyState() is not { } party)
+        {
+            return false;
+        }
+
+        var here = _playersOnMap(_player.Character.MapId);
+        return party.Members.All(m => here.Contains(m.CharacterId));
+    }
+
+    /// <summary>Java <c>isAllPartyMembersAllowedJob(job)</c>：每位隊員 jobId / 100 == job。</summary>
+    public bool IsAllPartyMembersAllowedJob(int job)
+        => GetPartyState() is { } party && party.Members.All(m => m.JobId / 100 == job);
+
+    /// <summary>
+    /// Java <c>warpParty(mapId[, portal])</c>：沒隊伍或只有自己 → 自己 warp；否則與自己同地圖的線上隊員（含自己）都換圖（portal &lt; 0 用 0）。
+    /// </summary>
+    public void WarpParty(int mapId, int portal)
+    {
+        if (SoloOrNoParty(out var party))
+        {
+            Warp(mapId, Math.Max(0, portal));
+            return;
+        }
+
+        var here = _playersOnMap(_player.Character.MapId);
+        foreach (var member in party.Members.Where(m => here.Contains(m.CharacterId)))
+        {
+            _pendingPartyActions.Add(new NpcPartyAction(NpcPartyActionKind.Warp, member.CharacterId, MapId: mapId, Portal: Math.Max(0, portal)));
+        }
+    }
+
+    /// <summary>Java <c>givePartyExp(amount)</c>：amount × 頻道經驗倍率；沒隊伍 → 自己；否則同地圖隊員（含自己）。</summary>
+    public void GivePartyExp(int amount)
+    {
+        var total = amount * _expRate;
+        if (SoloOrNoParty(out var party))
+        {
+            GainExp(total);
+            return;
+        }
+
+        var here = _playersOnMap(_player.Character.MapId);
+        foreach (var member in party.Members.Where(m => here.Contains(m.CharacterId)))
+        {
+            if (member.CharacterId == _player.Character.Id)
+            {
+                GainExp(total);
+            }
+            else
+            {
+                _pendingPartyActions.Add(new NpcPartyAction(NpcPartyActionKind.Exp, member.CharacterId, Amount: total));
+            }
+        }
+    }
+
+    /// <summary>Java <c>givePartyItems(id, quantity, removeAll)</c>：沒隊伍 → 自己（removeAll 扣光）；否則同地圖隊員各自給/扣。</summary>
+    public void GivePartyItems(int itemId, int quantity, bool removeAll)
+    {
+        if (SoloOrNoParty(out var party))
+        {
+            GainItem(itemId, removeAll ? -ItemQuantity(itemId) : quantity);
+            return;
+        }
+
+        var here = _playersOnMap(_player.Character.MapId);
+        foreach (var member in party.Members.Where(m => here.Contains(m.CharacterId)))
+        {
+            if (member.CharacterId == _player.Character.Id)
+            {
+                GainItem(itemId, removeAll ? -ItemQuantity(itemId) : quantity);
+            }
+            else
+            {
+                _pendingPartyActions.Add(new NpcPartyAction(NpcPartyActionKind.Items, member.CharacterId, ItemId: itemId, Quantity: quantity, RemoveAll: removeAll));
+            }
+        }
+    }
+
+    private bool SoloOrNoParty(out Maple.Core.Parties.PartyState party)
+    {
+        party = GetPartyState()!;
+        return party is null || party.Members.Count == 1;
+    }
 
     /// <summary>P174：Java <c>qm.getQuest()</c>（任務腳本的 questid；NPC 對話為 0）。</summary>
     public int GetQuest() => _questId;

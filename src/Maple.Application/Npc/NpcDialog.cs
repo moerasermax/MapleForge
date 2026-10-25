@@ -58,3 +58,16 @@ public enum NpcUiEffectKind
 }
 
 public sealed record NpcUiEffect(NpcUiEffectKind Kind, string Text, int A = 0, int B = 0);
+
+/// <summary>P176：跨隊員的腳本效果（warpParty／givePartyExp／givePartyItems），由呼叫端排進各隊員連線。</summary>
+public enum NpcPartyActionKind
+{
+    Warp,
+    Exp,
+    Items,
+}
+
+/// <summary>
+/// <paramref name="CharacterId"/> 為目標隊員；Warp：(MapId, Portal)；Exp：Amount（已乘倍率）；Items：(ItemId, Quantity, RemoveAll)。
+/// </summary>
+public sealed record NpcPartyAction(NpcPartyActionKind Kind, int CharacterId, int MapId = 0, int Portal = 0, int Amount = 0, int ItemId = 0, int Quantity = 0, bool RemoveAll = false);
