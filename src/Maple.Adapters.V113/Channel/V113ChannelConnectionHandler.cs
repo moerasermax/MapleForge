@@ -69,6 +69,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly AbilityPointService _abilityPoints;
     private readonly JobAdvancementService _jobAdvancement;
     private readonly IPortalScriptFactory? _portalScripts;
+    private readonly V113SessionCommandRegistry? _sessionCommands;
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -186,8 +187,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         PartyBuffService? partyBuffs = null,
         AbilityPointService? abilityPoints = null,
         JobAdvancementService? jobAdvancement = null,
-        IPortalScriptFactory? portalScripts = null)
+        IPortalScriptFactory? portalScripts = null,
+        V113SessionCommandRegistry? sessionCommands = null)
     {
+        _sessionCommands = sessionCommands;
         _portalScripts = portalScripts ?? npcScripts as IPortalScriptFactory;
         _jobAdvancement = jobAdvancement ?? new JobAdvancementService();
         _log = log;
@@ -517,6 +520,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                             await SendNormalChannelEntryPacketsAsync(chr, s, token);
                             await SendStartedQuestMobKillsAsync(chr, (pkt, tkn) => s.SendAsync(pkt, tkn), token);
+
+                            // P172：伺服器端換圖排進本連線序列（船班等）。
+                            _sessionCommands?.Register(
+                                chr.Id,
+                                sessionToken,
+                                (mapId, portal) => s.Post(async token =>
+                                {
+                                    if (player is not null)
+                                    {
+                                        currentField = await WarpAsync(player, currentField, npcOidToId, s, mapId, sessionToken, token, portal);
+                                    }
+                                }));
 
                             var channel = _options.ChannelIndex + 1;
                             _onlinePlayers.Register(
@@ -1807,6 +1822,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 }
 
                 _followService.CancelFollow(player);
+                _sessionCommands?.Unregister(player.Character.Id, sessionToken);
 
                 var deregisteredPlayer = _onlinePlayers.Deregister(player.Character.Id, sessionToken);
                 if (deregisteredPlayer is not null)

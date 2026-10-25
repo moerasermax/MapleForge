@@ -132,4 +132,26 @@ public sealed class MapleSessionSendTests
             Assert.Equal(sent[i], got);   // 順序 + 內容 + IV 同步
         }
     }
+
+    [Fact]
+    public async Task Post_RunsOnSessionSequence_WithoutInboundPackets_AndRejectsAfterClose()
+    {
+        // P172：伺服器端工作（船班換圖等）排進 inbound 佇列，不需等客戶端送包就會執行；連線結束後 Post 回 false。
+        await using var link = await ConnectAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = link.Server.RunAsync((_, _, _) => Task.CompletedTask, cts.Token);
+        var ran = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var order = new List<int>();
+
+        Assert.True(link.Server.Post(_ => { order.Add(1); return Task.CompletedTask; }));
+        Assert.True(link.Server.Post(_ => { order.Add(2); ran.SetResult(); return Task.CompletedTask; }));
+        Assert.True(link.Server.Post(_ => throw new InvalidOperationException("工作失敗不應中斷連線")));
+
+        await ran.Task.WaitAsync(cts.Token);
+        Assert.Equal([1, 2], order);
+
+        link.ClientStream.Close();
+        await run.WaitAsync(cts.Token);
+        Assert.False(link.Server.Post(_ => Task.CompletedTask));
+    }
 }

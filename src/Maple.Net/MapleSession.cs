@@ -36,6 +36,13 @@ public sealed class MapleSession : IAsyncDisposable
             AllowSynchronousContinuations = false,
         });
     private readonly CancellationTokenSource _pumpCts = new();
+
+    /// <summary>
+    /// P172：inbound 工作佇列——收到的封包與 <see cref="Post"/> 進來的伺服器端工作（船班換圖等）共用單一 consumer，
+    /// 依序執行，讓連線區域狀態（目前地圖、NPC 對話…）永遠只在同一條序列上被改動。
+    /// </summary>
+    private readonly Channel<InboundWork> _inbound = Channel.CreateUnbounded<InboundWork>(
+        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false });
     private Task? _pump;
     private int _aborted;
 
@@ -128,19 +135,80 @@ public sealed class MapleSession : IAsyncDisposable
         try { _socket.Close(); } catch { /* 已關 */ }
     }
 
-    /// <summary>接收迴圈：每個解密後的封包呼叫一次 <paramref name="onPacket"/>（body 含 2-byte opcode 開頭）。</summary>
+    /// <summary>
+    /// P172：把伺服器端工作排進這條連線的處理序列（與封包處理互斥、依序執行）。連線已結束回 false。
+    /// 工作拋出的例外只記錄、不中斷連線。
+    /// </summary>
+    public bool Post(Func<CancellationToken, Task> work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        return _inbound.Writer.TryWrite(new InboundWork(null, work));
+    }
+
+    /// <summary>
+    /// 接收迴圈：每個解密後的封包呼叫一次 <paramref name="onPacket"/>（body 含 2-byte opcode 開頭）。
+    /// P172：讀 socket 改在背景讀取迴圈，封包與 <see cref="Post"/> 工作經 inbound 佇列由這裡依序執行。
+    /// </summary>
     public async Task RunAsync(Func<byte[], MapleSession, CancellationToken, Task> onPacket, CancellationToken ct)
     {
         if (_recv is null) throw new InvalidOperationException("recv cipher 尚未啟用");
 
-        var header = new byte[4];
-        while (!ct.IsCancellationRequested)
+        using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var reader = ReadFramesAsync(readCts.Token);
+        try
         {
+            await foreach (var work in _inbound.Reader.ReadAllAsync(ct))
+            {
+                if (work.Body is { } body)
+                {
+                    await onPacket(body, this, ct);
+                    continue;
+                }
+
+                try
+                {
+                    await work.Posted!(ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "伺服器端排入的工作失敗 {Remote}", Remote);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 主機關閉：乾淨收尾。
+        }
+        finally
+        {
+            _inbound.Writer.TryComplete();
+            readCts.Cancel();
             try
+            {
+                await reader;
+            }
+            catch
+            {
+                // 讀取迴圈的例外已在內部處理；這裡只等它結束。
+            }
+        }
+    }
+
+    /// <summary>背景讀取迴圈：讀 4-byte 頭 → 驗證 → 取長度 → 讀 body → 解密 → 入 inbound 佇列。結束時 complete 佇列。</summary>
+    private async Task ReadFramesAsync(CancellationToken ct)
+    {
+        var header = new byte[4];
+        try
+        {
+            while (!ct.IsCancellationRequested)
             {
                 await _stream.ReadExactlyAsync(header, ct);
 
-                if (!_recv.Check(header))
+                if (!_recv!.Check(header))
                 {
                     _log.LogWarning("封包頭驗證失敗 {Remote}，關閉連線（可能 cipher/版本不符）", Remote);
                     return;
@@ -159,17 +227,24 @@ public sealed class MapleSession : IAsyncDisposable
                 _recv.Crypt(body);
                 if (encryptedCopy is not null) _capture!.WriteRecv(header, encryptedCopy, body);
 
-                await onPacket(body, this, ct);
-            }
-            // 客戶端正常/突然斷線（乾淨 EOF、TCP reset、socket 已棄置）＝預期事件，
-            // 記 info 後乾淨收尾；真錯誤（解析 bug 等）不在此列，繼續向上拋給 listener 記 Error。
-            catch (Exception ex) when (ex is EndOfStreamException or IOException or SocketException or ObjectDisposedException)
-            {
-                _log.LogInformation("連線關閉 {Remote}", Remote);
-                return;
+                if (!_inbound.Writer.TryWrite(new InboundWork(body, null)))
+                {
+                    return;
+                }
             }
         }
+        // 客戶端正常/突然斷線（乾淨 EOF、TCP reset、socket 已棄置）＝預期事件，記 info 後乾淨收尾。
+        catch (Exception ex) when (ex is EndOfStreamException or IOException or SocketException or ObjectDisposedException or OperationCanceledException)
+        {
+            _log.LogInformation("連線關閉 {Remote}", Remote);
+        }
+        finally
+        {
+            _inbound.Writer.TryComplete();
+        }
     }
+
+    private readonly record struct InboundWork(byte[]? Body, Func<CancellationToken, Task>? Posted);
 
     public async ValueTask DisposeAsync()
     {
