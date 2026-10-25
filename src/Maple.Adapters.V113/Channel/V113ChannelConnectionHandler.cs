@@ -72,6 +72,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly V113SessionCommandRegistry? _sessionCommands;
     private readonly Maple.Application.Events.TransportService? _transport;
     private readonly IQuestScriptFactory? _questScripts;
+    private readonly Maple.Application.Events.ITransportEffects? _transportEffects;
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -192,8 +193,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         IPortalScriptFactory? portalScripts = null,
         V113SessionCommandRegistry? sessionCommands = null,
         Maple.Application.Events.TransportService? transport = null,
-        IQuestScriptFactory? questScripts = null)
+        IQuestScriptFactory? questScripts = null,
+        Maple.Application.Events.ITransportEffects? transportEffects = null)
     {
+        _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
         _transport = transport;
         _sessionCommands = sessionCommands;
@@ -2212,6 +2215,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 : session.SendAsync(V113CombatPackets.EnvironmentChange(name, mode), c),
             sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
             playPortalSe: c => session.SendAsync(V113SkillPackets.ShowOwnBuffEffect(0, 7), c),
+            killAllMob: c => _transportEffects is { } effects ? effects.KillAllMonstersAsync(player.Character.MapId, c, animate: true) : Task.CompletedTask,
             sendUiEffect: (effect, c) => effect.Kind switch
             {
                 NpcUiEffectKind.Hint => session.SendAsync(V113StatsPackets.SendHint(effect.Text, effect.A, effect.B), c),
@@ -2401,7 +2405,31 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             portal: portal,
             portalIdOf: (mapId, name) => _mapService.LoadMap(mapId).Portals.FirstOrDefault(p => p.Name == name)?.Id ?? -1,
             transport: _transport,
-            questId: questId);
+            questId: questId,
+            monstersOf: mapId => FieldMonsterIds(mapId),
+            reactorStateOf: (mapId, name) => FieldReactorState(mapId, name));
+
+    /// <summary>P175：腳本查詢地圖怪物（存活）ID。</summary>
+    private IReadOnlyList<int> FieldMonsterIds(int mapId)
+    {
+        var field = _fieldRegistry.GetOrCreate(mapId, out _);
+        lock (field)
+        {
+            return field.Objects.OfType<Mob>().Where(static m => m.IsAlive).Select(static m => m.Definition.MonsterId).ToArray();
+        }
+    }
+
+    /// <summary>P175：腳本查詢反應堆狀態（名稱不分大小寫，同 Java equalsIgnoreCase）；找不到回 -1。</summary>
+    private int FieldReactorState(int mapId, string name)
+    {
+        var field = _fieldRegistry.GetOrCreate(mapId, out _);
+        lock (field)
+        {
+            return field.Objects.OfType<Reactor>().FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)) is { } reactor
+                ? reactor.State
+                : -1;
+        }
+    }
 
     private static async Task ContinueNpcConversationAsync(PacketReader reader, NpcConversation convo, CancellationToken ct)
     {

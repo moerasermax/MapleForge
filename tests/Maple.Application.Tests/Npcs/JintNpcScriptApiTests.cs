@@ -270,6 +270,35 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Null(factory.TryCreateQuest(9999, end: false, endCtx));
     }
 
+    [Fact]
+    public async Task MapFacade_MonstersReactors_HaveMonster_KillAllMob()
+    {
+        // P175：portal/PQ 腳本常用的 getAllMonstersThreadsafe().size()、getReactorByName(name).getState()、haveMonster、killAllMob。
+        File.WriteAllText(Path.Combine(_root, "portal", "pq.js"), """
+            function enter(pi) {
+                var map = pi.getMap();
+                if (map.getAllMonstersThreadsafe().size() == 2 && map.countMonsterById(9300001) == 2 && pi.haveMonster(9300001)
+                    && map.getReactorByName("gate").getState() == 1 && map.getReactorByName("none") == null) {
+                    pi.killAllMob();
+                    pi.warp(100000000, 0);
+                }
+            }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", MapId = 103000800 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(0, player, new QuestService(new EmptyQuestCatalog()),
+            monstersOf: id => id == 103000800 ? [9300001, 9300001] : [],
+            reactorStateOf: (id, name) => name == "gate" ? 1 : -1);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var killed = 0;
+        var warped = 0;
+        var convo = new NpcConversation(0, factory.TryCreatePortal("pq", ctx)!, ctx, (_, _) => Task.CompletedTask, (_, _) => { warped++; return Task.CompletedTask; },
+            killAllMob: _ => { killed++; return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal((1, 1), (killed, warped));
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

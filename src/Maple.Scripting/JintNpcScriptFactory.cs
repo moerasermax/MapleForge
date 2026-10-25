@@ -302,6 +302,12 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void changeMusic(string song) => _cm.ChangeMusic(song);
         public ClientFacade getClient() => new(_cm);
 
+        // ── P175 ─────────────────────────────────────────────────────────────────────
+        public bool haveMonster(int monsterId) => _cm.HaveMonster(monsterId);
+        public void killAllMob() => _cm.KillAllMob();
+        public void PlayerToNpc(string text) => _cm.PlayerToNpc(text);
+        public void sendNextPrevS(string text) => _cm.SendNextPrevS(text, 3);
+
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);
     }
@@ -364,6 +370,50 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public PortalRef getPortal(int id) => new(id, string.Empty);
 
         public int getCharactersSize() => _cm.GetPlayerCount(MapId);
+
+        // ── P175 ─────────────────────────────────────────────────────────────────────
+        public MonsterList getAllMonstersThreadsafe() => new(_cm.GetMapMonsterIds(MapId));
+        public MonsterList getAllMonsters() => getAllMonstersThreadsafe();
+        public MonsterRef? getMonsterById(int id) => _cm.GetMapMonsterIds(MapId).Contains(id) ? new MonsterRef(id) : null;
+        public int countMonsterById(int id) => _cm.GetMapMonsterIds(MapId).Count(m => m == id);
+        public int getNumMonsters() => _cm.GetMapMonsterIds(MapId).Count;
+        public ReactorRef? getReactorByName(string name) => _cm.GetReactorState(MapId, name) is var state and >= 0 ? new ReactorRef(name, state) : null;
+    }
+
+    /// <summary>P175：Java List&lt;MapleMonster&gt; 子集（size／isEmpty／get）。</summary>
+    private sealed class MonsterList
+    {
+        private readonly IReadOnlyList<int> _ids;
+
+        public MonsterList(IReadOnlyList<int> ids) => _ids = ids;
+
+        public int size() => _ids.Count;
+
+        public bool isEmpty() => _ids.Count == 0;
+
+        public MonsterRef get(int index) => new(_ids[index]);
+    }
+
+    private sealed class MonsterRef
+    {
+        public MonsterRef(int id) => Id = id;
+
+        public int Id { get; }
+
+        public int getId() => Id;
+    }
+
+    /// <summary>P175：MapleReactor 子集（getState／getName）。</summary>
+    private sealed class ReactorRef
+    {
+        private readonly string _name;
+        private readonly int _state;
+
+        public ReactorRef(string name, int state) => (_name, _state) = (name, state);
+
+        public int getState() => _state;
+
+        public string getName() => _name;
     }
 
     /// <summary>P169：<c>cm.getQuestRecord(id)</c>（MapleQuestStatus 子集：customData／status）。</summary>

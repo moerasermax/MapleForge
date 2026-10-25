@@ -21,8 +21,8 @@ public interface ITransportEffects
     /// <summary>Java <c>spawnMonsterOnGroundBelow(getMonster(id), point)</c>。</summary>
     Task SpawnMonsterAsync(int mapId, int monsterId, short x, short y, CancellationToken ct);
 
-    /// <summary>Java <c>killAllMonsters(false)</c>。</summary>
-    Task KillAllMonstersAsync(int mapId, CancellationToken ct);
+    /// <summary>Java <c>killAllMonsters(animate)</c>（船班用 false；腳本 killAllMob 用 true）。</summary>
+    Task KillAllMonstersAsync(int mapId, CancellationToken ct, bool animate = false);
 }
 
 /// <summary>

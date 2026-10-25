@@ -184,4 +184,11 @@ public interface INpcScriptContext
     int GetQuest();
     void ForceStartCurrentQuest(string? customData = null);
     void ForceCompleteCurrentQuest();
+
+    // ── P175：地圖怪物／反應堆查詢與清怪 ───────────────────────────────────────────────────
+    IReadOnlyList<int> GetMapMonsterIds(int mapId);
+    int GetReactorState(int mapId, string name);
+    bool HaveMonster(int monsterId);
+    void KillAllMob();
+    void PlayerToNpc(string text);
 }

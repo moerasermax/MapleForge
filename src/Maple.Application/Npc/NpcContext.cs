@@ -30,6 +30,11 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly (string Name, int Id)? _portal;
     private readonly Maple.Application.Events.TransportService? _transport;
     private readonly int _questId;
+    private readonly Func<int, IReadOnlyList<int>> _monstersOf;
+    private readonly Func<int, string, int> _reactorStateOf;
+
+    /// <summary>P175：cm.killAllMob → 呼叫端清掉目前地圖所有怪（Java killAllMonsters(true)）。</summary>
+    internal bool PendingKillAllMob { get; private set; }
     private readonly Func<int, string, int> _portalIdOf;
 
     internal string? PendingWarpPortalName { get; private set; }
@@ -57,9 +62,13 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         (string Name, int Id)? portal = null,
         Func<int, string, int>? portalIdOf = null,
         Maple.Application.Events.TransportService? transport = null,
-        int questId = 0)
+        int questId = 0,
+        Func<int, IReadOnlyList<int>>? monstersOf = null,
+        Func<int, string, int>? reactorStateOf = null)
     {
         _questId = questId;
+        _monstersOf = monstersOf ?? (static _ => []);
+        _reactorStateOf = reactorStateOf ?? (static (_, _) => -1);
         _transport = transport;
         _portal = portal;
         _portalIdOf = portalIdOf ?? (static (_, _) => -1);
@@ -115,6 +124,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingWarpPortalName = null;
         PendingPortalSe = false;
         PendingOpenNpcId = null;
+        PendingKillAllMob = false;
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -251,6 +261,21 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public void PlaySound(bool broadcast, string sound) => _pendingEnvironment.Add((broadcast, 4, sound));
 
     public void ChangeMusic(string song) => _pendingEnvironment.Add((true, 6, song));
+
+    /// <summary>P175：Java <c>map.getAllMonstersThreadsafe()</c> 的怪物 ID（地圖未建立回空）。</summary>
+    public IReadOnlyList<int> GetMapMonsterIds(int mapId) => _monstersOf(mapId);
+
+    /// <summary>P175：Java <c>map.getReactorByName(name).getState()</c>；找不到回 -1（Java 為 null）。</summary>
+    public int GetReactorState(int mapId, string name) => _reactorStateOf(mapId, name);
+
+    /// <summary>Java <c>haveMonster(mobid)</c>：目前地圖有沒有這隻怪。</summary>
+    public bool HaveMonster(int monsterId) => GetMapMonsterIds(_player.Character.MapId).Contains(monsterId);
+
+    /// <summary>Java <c>killAllMob()</c> → <c>map.killAllMonsters(true)</c>。</summary>
+    public void KillAllMob() => PendingKillAllMob = true;
+
+    /// <summary>Java <c>PlayerToNpc(text)</c> = sendNextPrevS(text, 3)。</summary>
+    public void PlayerToNpc(string text) => SendNextPrevS(text, 3);
 
     /// <summary>P174：Java <c>qm.getQuest()</c>（任務腳本的 questid；NPC 對話為 0）。</summary>
     public int GetQuest() => _questId;

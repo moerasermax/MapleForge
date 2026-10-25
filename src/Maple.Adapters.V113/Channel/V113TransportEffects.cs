@@ -80,7 +80,7 @@ public sealed class V113TransportEffects : ITransportEffects
         }
     }
 
-    public async Task KillAllMonstersAsync(int mapId, CancellationToken ct)
+    public async Task KillAllMonstersAsync(int mapId, CancellationToken ct, bool animate = false)
     {
         var field = _fields.GetOrCreate(mapId, out _);
         List<int> killed = [];
@@ -88,7 +88,7 @@ public sealed class V113TransportEffects : ITransportEffects
         {
             foreach (var mob in field.Objects.OfType<Mob>().ToArray())
             {
-                if (_combat.KillMobWithoutRewards(field, mob.ObjectId, animation: 0).Killed)
+                if (_combat.KillMobWithoutRewards(field, mob.ObjectId, animation: animate ? (byte)1 : (byte)0).Killed)
                 {
                     killed.Add(mob.ObjectId);
                 }
@@ -97,7 +97,7 @@ public sealed class V113TransportEffects : ITransportEffects
 
         foreach (var objectId in killed)
         {
-            await BroadcastAsync(mapId, V113CombatPackets.KillMonster(objectId, 0), ct);
+            await BroadcastAsync(mapId, V113CombatPackets.KillMonster(objectId, animate ? (byte)1 : (byte)0), ct);
         }
     }
 

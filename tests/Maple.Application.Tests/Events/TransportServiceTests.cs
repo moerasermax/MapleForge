@@ -106,7 +106,7 @@ public sealed class TransportServiceTests
         public Task NoticeAsync(int mapId, int type, string message, CancellationToken ct) { Notices.Add((mapId, type, message)); return Task.CompletedTask; }
         public Task ClockAsync(int mapId, int seconds, CancellationToken ct) { Clocks.Add((mapId, seconds)); return Task.CompletedTask; }
         public Task SpawnMonsterAsync(int mapId, int monsterId, short x, short y, CancellationToken ct) { Spawns.Add((mapId, monsterId)); return Task.CompletedTask; }
-        public Task KillAllMonstersAsync(int mapId, CancellationToken ct) { Killed.Add(mapId); return Task.CompletedTask; }
+        public Task KillAllMonstersAsync(int mapId, CancellationToken ct, bool animate = false) { Killed.Add(mapId); return Task.CompletedTask; }
     }
 
     private sealed class FixedRandom(double value) : Random
