@@ -42,6 +42,9 @@ public sealed class Character
 
     public short RemainingSp { get; set; }
 
+    /// <summary>P162：Java <c>hpApUsed</c>（hpmpApUsed）——投入 MAXHP/MAXMP 的 AP 數。</summary>
+    public short HpMpApUsed { get; set; }
+
     public int Exp { get; set; }
 
     public short Fame { get; set; }

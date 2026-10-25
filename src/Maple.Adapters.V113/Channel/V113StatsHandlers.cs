@@ -40,11 +40,12 @@ internal static class V113StatsHandlers
         return player.AutoAssignAbilityPoints(assignments);
     }
 
-    public static PlayerStatsMutation HandleDistributeAp(PacketReader reader, Player player, StatsService statsService)
+    /// <summary>P162：MAXHP/MAXMP 走 <see cref="AbilityPointService"/>（Java 職業公式），基本素質維持原路徑。</summary>
+    public static PlayerStatsMutation HandleDistributeAp(PacketReader reader, Player player, AbilityPointService abilityPoints)
     {
         var request = V113StatsPackets.ParseDistributeAp(reader);
         return request.Target is { } target
-            ? statsService.DistributeAbilityPoint(player, target)
+            ? abilityPoints.DistributeHpMp(player, target)
             : PlayerStatsMutation.Failed(PlayerStatsFailure.UnsupportedAbilityTarget);
     }
 

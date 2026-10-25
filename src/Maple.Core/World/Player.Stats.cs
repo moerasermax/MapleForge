@@ -9,6 +9,12 @@ public enum AbilityPointTarget
     Dex,
     Int,
     Luk,
+
+    /// <summary>P162：MAXHP（0x800）；由 Application <c>AbilityPointService</c> 依職業公式處理。</summary>
+    MaxHp,
+
+    /// <summary>P162：MAXMP（0x2000）。</summary>
+    MaxMp,
 }
 
 public enum PlayerStatKind

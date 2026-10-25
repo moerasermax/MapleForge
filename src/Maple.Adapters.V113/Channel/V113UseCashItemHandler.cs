@@ -1,3 +1,4 @@
+using Maple.Application.Stats;
 using Maple.Application.Maps;
 using Maple.Application.OnlinePlayers;
 using Maple.Application.Pets;
@@ -46,6 +47,7 @@ public sealed class V113UseCashItemHandler
     private readonly MapService _mapService;
     private readonly IOnlinePlayerRegistry _onlinePlayers;
     private readonly ILogger<V113UseCashItemHandler> _log;
+    private readonly AbilityPointService _abilityPoints;
 
     public V113UseCashItemHandler(
         OwlService owlService,
@@ -53,8 +55,10 @@ public sealed class V113UseCashItemHandler
         NoteService noteService,
         MapService mapService,
         IOnlinePlayerRegistry onlinePlayers,
-        ILogger<V113UseCashItemHandler> log)
+        ILogger<V113UseCashItemHandler> log,
+        AbilityPointService? abilityPoints = null)
     {
+        _abilityPoints = abilityPoints ?? new AbilityPointService();
         _owlService = owlService;
         _petService = petService;
         _noteService = noteService;
@@ -428,17 +432,19 @@ public sealed class V113UseCashItemHandler
         var from = MapBasicAbilityPointTarget(rawFrom);
         if (to is null || from is null)
         {
-            // TODO: HP/MP reset needs Java's job-specific HP/MP formulas and HPMP AP-use tracking.
-            _log.LogDebug(
-                "[UseCashItem] AP Reset HP/MP or unsupported stat deferred itemId={ItemId} to=0x{To:X} from=0x{From:X}",
-                itemId,
-                rawTo,
-                rawFrom);
+            // Java MapleStat.getByValue 取不到 → switch 不命中、used 仍為 true 但不改屬性；MapleForge 視為不使用。
+            _log.LogDebug("[UseCashItem] AP Reset unsupported stat itemId={ItemId} to=0x{To:X} from=0x{From:X}", itemId, rawTo, rawFrom);
             return EnableActionsOnly();
         }
 
-        var mutation = player.ResetBaseAbilityPoint(to.Value, from.Value);
-        if (!mutation.Applied)
+        // P162：Java 5050000 完整規則（含 HP/MP 職業公式與 hpmpApUsed），見 AbilityPointService.ResetAp。
+        var reset = _abilityPoints.ResetAp(player, to.Value, from.Value);
+        if (reset.MpToNonHp)
+        {
+            return new V113UseCashItemResult(true, false, [V113BroadcastPackets.PopupMessage("MP無法增加到HP以外的屬性唷"), V113StatsPackets.EnableActions()]);
+        }
+
+        if (!reset.Used)
         {
             return EnableActionsOnly();
         }
@@ -447,7 +453,7 @@ public sealed class V113UseCashItemHandler
             player,
             slot,
             itemId,
-            [V113StatsPackets.UpdateStats(mutation.Updates)]);
+            [V113StatsPackets.UpdateStats(reset.Updates, itemReaction: true)]);
     }
 
     private V113UseCashItemResult HandleSpReset(PacketReader reader, Player player, short slot, int itemId)
@@ -974,6 +980,8 @@ public sealed class V113UseCashItemHandler
             0x80 => AbilityPointTarget.Dex,
             0x100 => AbilityPointTarget.Int,
             0x200 => AbilityPointTarget.Luk,
+            0x800 => AbilityPointTarget.MaxHp, // P162
+            0x2000 => AbilityPointTarget.MaxMp,
             _ => null,
         };
 

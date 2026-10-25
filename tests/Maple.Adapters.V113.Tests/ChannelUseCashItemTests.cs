@@ -561,10 +561,12 @@ public sealed class ChannelUseCashItemTests
     }
 
     [Fact]
-    public void ApReset_HpMpPathIsDeferredAndDoesNotConsume()
+    public void ApReset_StrToMaxHp_UsesBeginnerFormulaAndConsumes()
     {
+        // P162：Java 5050000 to=MAXHP：初心者 maxhp += rand(8, 12)、hpmpApUsed + 1；from=STR → STR − 1。
         var player = CreatePlayerWithCashItem(910000000, 5050000, 1);
         player.Character.Stats.Str = 10;
+        player.Character.Stats.MaxHp = 100;
         var handler = CreateHandler();
         var body = new PacketWriter()
             .WriteShort(1)
@@ -575,8 +577,30 @@ public sealed class ChannelUseCashItemTests
 
         var result = handler.Handle(new PacketReader(body), player);
 
+        Assert.True(result.CharacterMutated);
+        Assert.Equal(9, player.Character.Stats.Str);
+        Assert.InRange(player.Character.Stats.MaxHp, (short)108, (short)112);
+        Assert.Equal(1, player.Character.HpMpApUsed);
+        Assert.Equal(0, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void ApReset_MpToNonHp_ShowsPopupAndDoesNotConsume()
+    {
+        var player = CreatePlayerWithCashItem(910000000, 5050000, 1);
+        player.Character.HpMpApUsed = 5;
+        var handler = CreateHandler();
+        var body = new PacketWriter()
+            .WriteShort(1)
+            .WriteInt(5050000)
+            .WriteInt(0x40)
+            .WriteInt(0x2000)
+            .ToArray();
+
+        var result = handler.Handle(new PacketReader(body), player);
+
         Assert.False(result.CharacterMutated);
-        Assert.Equal(10, player.Character.Stats.Str);
+        Assert.Equal(V113BroadcastPackets.PopupMessage("MP無法增加到HP以外的屬性唷"), result.Packets[0]);
         Assert.Equal(1, player.Inventory.By(InventoryType.Cash).Get(1)!.Quantity);
     }
 

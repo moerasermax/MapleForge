@@ -28,6 +28,8 @@ internal static class V113StatsPackets
             0x80 => AbilityPointTarget.Dex,
             0x100 => AbilityPointTarget.Int,
             0x200 => AbilityPointTarget.Luk,
+            0x800 => AbilityPointTarget.MaxHp, // P162
+            0x2000 => AbilityPointTarget.MaxMp,
             _ => null,
         });
     }

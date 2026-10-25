@@ -66,6 +66,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly MobSkillService? _mobSkills;
     private readonly PlayerMistService? _playerMists;
     private readonly PartyBuffService? _partyBuffs;
+    private readonly AbilityPointService _abilityPoints;
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -180,11 +181,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         IEquipTemplateProvider? equipTemplates = null,
         MobSkillService? mobSkills = null,
         PlayerMistService? playerMists = null,
-        PartyBuffService? partyBuffs = null)
+        PartyBuffService? partyBuffs = null,
+        AbilityPointService? abilityPoints = null)
     {
         _log = log;
         _playerMists = playerMists;
         _partyBuffs = partyBuffs;
+        _abilityPoints = abilityPoints ?? new AbilityPointService();
         _equipTemplates = equipTemplates;
         _mobSkills = mobSkills;
         _partyHpSync = partyHpSync;
@@ -806,13 +809,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         break;
 
                     case V113ChannelRecvOp.DistributeAp:
+                    {
                         if (player is null) break;
-                        await HandleStatsMutationAsync(
-                            V113StatsHandlers.HandleDistributeAp(reader, player, _statsService),
-                            s,
-                            sendSkill: false,
-                            token);
+                        // P162：Java DistributeAP 一開始就送 updatePlayerStats(空, true)，成功再送 (更新, true)。
+                        await s.SendAsync(V113StatsPackets.EnableActions(), token);
+                        var apMutation = V113StatsHandlers.HandleDistributeAp(reader, player, _abilityPoints);
+                        if (apMutation.Updates.Count > 0)
+                        {
+                            await s.SendAsync(V113StatsPackets.UpdateStats(apMutation.Updates, itemReaction: true), token);
+                        }
+
                         break;
+                    }
 
                     case V113ChannelRecvOp.HealOverTime:
                         if (player is null) break;
