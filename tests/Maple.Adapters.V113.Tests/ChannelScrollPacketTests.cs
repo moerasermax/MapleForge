@@ -69,7 +69,7 @@ public sealed class ChannelScrollPacketTests
         var player = CreatePlayer(
             useItems: [UseItem(2040200, slot: 1)],
             equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
-        var handler = new V113ScrollHandler(new ScrollService(new HardcodedScrollCatalog()));
+        var handler = new V113ScrollHandler(new ScrollService(new HardcodedScrollCatalog(), new FixedRandom(99)));
 
         var result = handler.HandleUseUpgradeScroll(Request(scrollSlot: 1, equipSlot: 1, flags: 0, tick: 99), player);
 
@@ -92,7 +92,7 @@ public sealed class ChannelScrollPacketTests
         var player = CreatePlayer(
             useItems: [UseItem(2040202, slot: 1)],
             equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
-        var handler = new V113ScrollHandler(new ScrollService(new HardcodedScrollCatalog()));
+        var handler = new V113ScrollHandler(new ScrollService(new HardcodedScrollCatalog(), new FixedRandom(99)));
 
         var result = handler.HandleUseUpgradeScroll(Request(scrollSlot: 1, equipSlot: 1, flags: 0, tick: 99), player);
 
@@ -152,4 +152,10 @@ public sealed class ChannelScrollPacketTests
         Quantity = 1,
         UpgradeSlots = slots,
     };
+
+    /// <summary>P121：卷軸成敗改用伺服器端亂數；99 → 100% 卷成功、10% 卷失敗且詛咒判定 99 &lt; 100 毀損。</summary>
+    private sealed class FixedRandom(int value) : Random
+    {
+        public override int Next(int maxValue) => Math.Min(value, maxValue - 1);
+    }
 }
