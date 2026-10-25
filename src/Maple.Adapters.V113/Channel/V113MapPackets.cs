@@ -1,5 +1,6 @@
 using Maple.Core.Characters;
 using Maple.Core.IO;
+using Maple.Core.Skills;
 using Maple.Core.World;
 
 namespace Maple.Adapters.V113.Channel;
@@ -31,6 +32,71 @@ internal static class V113MapPackets
     /// SPAWN_PLAYER 封包（最小版本，無 buff/mount；P047 接上戒指外觀）。
     /// DoD：客戶端能在地圖上看到其他玩家的角色外觀與位置。
     /// </summary>
+    /// <summary>
+    /// P140：對照 Java <c>spawnPlayerMapobject</c> 的舊版 buffmask：隱身術 0x40000000000、鬥氣集中 0x20000000000000（值 byte）、
+    /// 影分身 0x400000000000000、無形之箭 0x1000000000000、金剛不壞 0x10000000（值 int）、狂暴之怒 0x2000000、
+    /// 變身 0x2（值 short）。值依 Java 加入順序（鬥氣 → 金剛不壞 → 變身）寫在 mask 之後。
+    /// </summary>
+    internal static void WriteForeignBuffState(PacketWriter w, Player player)
+    {
+        long mask = 0;
+        var values = new List<(int Value, int Size)>(3);
+        if (player.GetBuffValue(MapleBuffStat.DARKSIGHT) is not null)
+        {
+            mask |= 0x40000000000L;
+        }
+
+        if (player.GetBuffValue(MapleBuffStat.COMBO) is { } combo)
+        {
+            mask |= 0x20000000000000L;
+            values.Add((combo, 1));
+        }
+
+        if (player.GetBuffValue(MapleBuffStat.SHADOWPARTNER) is not null)
+        {
+            mask |= 0x400000000000000L;
+        }
+
+        if (player.GetBuffValue(MapleBuffStat.SOULARROW) is not null)
+        {
+            mask |= 0x1000000000000L;
+        }
+
+        if (player.GetBuffValue(MapleBuffStat.DIVINE_BODY) is { } divineBody)
+        {
+            mask |= 0x10000000;
+            values.Add((divineBody, 4));
+        }
+
+        if (player.GetBuffValue(MapleBuffStat.BERSERK_FURY) is not null)
+        {
+            mask |= 0x2000000;
+        }
+
+        if (player.GetBuffValue(MapleBuffStat.MORPH) is { } morph)
+        {
+            mask |= 0x2;
+            values.Add((morph, 2));
+        }
+
+        w.WriteLong(mask);
+        foreach (var (value, size) in values)
+        {
+            switch (size)
+            {
+                case 1:
+                    w.WriteByte((byte)value);
+                    break;
+                case 2:
+                    w.WriteShort((short)value);
+                    break;
+                default:
+                    w.WriteInt(value);
+                    break;
+            }
+        }
+    }
+
     public static byte[] SpawnPlayer(Player player, short x, short y, byte stance, short foothold, V113SpawnGuildInfo? guild = null)
     {
         var chr = player.Character;
@@ -55,7 +121,7 @@ internal static class V113MapPackets
 
         // Buff masks
         w.WriteLong(0x00FFFC0000000000L);  // fbuffmask
-        w.WriteLong(0L);                    // buffmask (no buffs)
+        WriteForeignBuffState(w, player);
 
         // 7 CHAR_MAGIC_SPAWN blocks (no buff effects; tick = 0)
         int tick = 0;

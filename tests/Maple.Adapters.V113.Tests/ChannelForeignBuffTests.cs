@@ -87,3 +87,68 @@ public sealed class ChannelForeignBuffTests
     public void GetForeignBuffStats_OrdinaryBuffOrItem_IsNull(int sourceId, bool isSkill)
         => Assert.Null(SkillService.GetForeignBuffStats(new MapleStatEffect { SourceId = sourceId, IsSkill = isSkill }));
 }
+
+/// <summary>P140：SPAWN_PLAYER 的舊版 buffmask（Java spawnPlayerMapobject）。</summary>
+public sealed class ChannelSpawnPlayerBuffStateTests
+{
+    [Fact]
+    public void NoBuffs_WritesZeroMask()
+    {
+        var r = Write(MakePlayer());
+
+        Assert.Equal(0L, ReadLong(r));
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
+    public void DarkSightComboDivineBody_WriteMaskThenValuesInJavaOrder()
+    {
+        var player = MakePlayer();
+        Buff(player, 4001003, MapleBuffStat.DARKSIGHT, 1);
+        Buff(player, 1111002, MapleBuffStat.COMBO, 3);
+        Buff(player, 1010, MapleBuffStat.DIVINE_BODY, 1);
+
+        var r = Write(player);
+
+        Assert.Equal(0x40000000000L | 0x20000000000000L | 0x10000000L, ReadLong(r));
+        Assert.Equal(3, r.ReadByte());
+        Assert.Equal(1, r.ReadInt());
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
+    public void Morph_WritesShortValue()
+    {
+        var player = MakePlayer();
+        Buff(player, 2210023, MapleBuffStat.MORPH, 23, isSkill: false);
+
+        var r = Write(player);
+
+        Assert.Equal(0x2L, ReadLong(r));
+        Assert.Equal((short)23, r.ReadShort());
+    }
+
+    private static PacketReader Write(Player player)
+    {
+        var w = new PacketWriter(32);
+        V113MapPackets.WriteForeignBuffState(w, player);
+        return new PacketReader(w.ToArray());
+    }
+
+    private static long ReadLong(PacketReader r) => (uint)r.ReadInt() | ((long)r.ReadInt() << 32);
+
+    private static Player MakePlayer() => new(new Character { Id = 1, Name = "P" }, new Position(0, 0, 0, 0));
+
+    private static void Buff(Player player, int sourceId, MapleBuffStat stat, int value, bool isSkill = true)
+        => player.ApplyBuffStats(
+            new MapleStatEffect
+            {
+                SourceId = sourceId,
+                Level = 1,
+                IsSkill = isSkill,
+                IsOverTime = true,
+                DurationMilliseconds = 60_000,
+                Statups = [new BuffStatValue(stat, value)],
+            },
+            DateTimeOffset.UnixEpoch);
+}
