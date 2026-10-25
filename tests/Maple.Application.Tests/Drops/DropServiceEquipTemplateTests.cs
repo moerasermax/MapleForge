@@ -1,3 +1,4 @@
+using Maple.Core.Drops;
 using Maple.Application.Drops;
 using Maple.Core.Characters;
 using Maple.Core.Inventory;

@@ -1,4 +1,4 @@
-namespace Maple.Application.Drops;
+namespace Maple.Core.Drops;
 
 /// <summary>怪物掉落表列，對照 Java drop_data / MonsterDropEntry。</summary>
 public sealed record MonsterDropEntry(

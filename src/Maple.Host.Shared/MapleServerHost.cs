@@ -1,3 +1,5 @@
+using Maple.Content.Drops;
+using Maple.Core.Drops;
 using Maple.Adapters.V113.Channel;
 using Maple.Adapters.V113.Login;
 using Maple.Application.Accounts;
@@ -51,6 +53,7 @@ using Maple.Persistence.Duey;
 using Maple.Persistence.Guilds;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Maple.Host.Shared;
@@ -121,8 +124,22 @@ public static class MapleServerHost
         builder.Services.AddSingleton<ISkillCatalog>(sp => new WzSkillCatalog(sp.GetRequiredService<IDataProvider>()));
         builder.Services.AddSingleton<ISkillBookCatalog>(_ => new JsonSkillBookCatalog(ResolveSkillBookCatalogPath(builder)));
         builder.Services.AddSingleton<SkillService>();
-        builder.Services.AddSingleton<IMonsterDropCatalog>(_ =>
-            new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>()));
+        // P119：怪物掉落表（Java drop_data）。資料檔不進版控，路徑由 Content:MonsterDropCatalogPath 指定
+        // （tools/drop-data/convert_drop_data.py 從 Java SQL dump 轉出）；未設定或檔案不存在時退回空表並警告。
+        builder.Services.AddSingleton<IMonsterDropCatalog>(sp =>
+        {
+            var path = builder.Configuration["Content:MonsterDropCatalogPath"];
+            var log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Maple.Content.Drops");
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                log.LogWarning("[Drops] 未設定或找不到怪物掉落表 Content:MonsterDropCatalogPath={Path}，怪物只會掉楓幣", path);
+                return new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>());
+            }
+
+            var catalog = new JsonMonsterDropCatalog(path);
+            log.LogInformation("[Drops] 載入怪物掉落表 {Count} 隻怪物：{Path}", catalog.MonsterCount, path);
+            return catalog;
+        });
         builder.Services.AddSingleton(sp =>
         {
             var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
