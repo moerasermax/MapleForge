@@ -1198,6 +1198,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 await s.SendAsync(packet, token);
                             }
 
+                            foreach (var packet in useItemResult.ForeignPackets ?? [])
+                            {
+                                await BroadcastPacketToOthersAsync(player.Character, packet, token);
+                            }
+
                             // P099：Java 藥水 addMPHP/healHP → setHp → updatePartyMemberHP。
                             await _partyHpSync.BroadcastIfChangedAsync(player, hpBeforeUseItem, token);
 
@@ -3080,6 +3085,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         // P099：Java applyTo 的 setHp（HpCon / 治癒）→ updatePartyMemberHP。
         await _partyHpSync.BroadcastIfChangedAsync(player, hpBeforeCast, ct);
+
+        // P127：驅散／英雄意志 → dispelDebuff：自己 cancelDebuff、他人 cancelForeignDebuff。
+        foreach (var cured in handled.Cast?.CuredDiseases ?? [])
+        {
+            await session.SendAsync(V113DiseasePackets.CancelDebuff(cured), ct);
+            await BroadcastPacketToOthersAsync(player.Character, V113DiseasePackets.CancelForeignDebuff(player.Character.Id, cured), ct);
+        }
 
         if (handled.Packet is not null)
         {

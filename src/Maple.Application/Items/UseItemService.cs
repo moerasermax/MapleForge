@@ -9,7 +9,9 @@ namespace Maple.Application.Items;
 public sealed record UseItemResult(
     bool Success,
     IReadOnlyList<PlayerStatUpdate> StatUpdates,
-    ShopInventoryMutation? InventoryMutation)
+    ShopInventoryMutation? InventoryMutation,
+    // P127：此次解除的異常（呼叫端送 cancelDebuff / cancelForeignDebuff）。
+    IReadOnlyList<PlayerDisease>? CuredDiseases = null)
 {
     public static UseItemResult Failed() => new(false, Array.Empty<PlayerStatUpdate>(), null);
 }
@@ -58,8 +60,9 @@ public sealed class UseItemService
         }
 
         var updates = ApplyEffect(player, effect, AlchemistOffset(player));
+        var cured = effect.Cures?.Where(player.DispelDisease).ToArray();
         player.FlushInventory();
-        return new UseItemResult(true, updates, mutation);
+        return new UseItemResult(true, updates, mutation, cured is { Length: > 0 } ? cured : null);
     }
 
     /// <summary>

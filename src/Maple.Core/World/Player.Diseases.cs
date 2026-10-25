@@ -94,6 +94,13 @@ public sealed partial class Player
         }
     }
 
+    /// <summary>P127：Java <c>dispelDebuffs</c>（驅散）：依序 CURSE、DARKNESS、POISON、SEAL、STUN、WEAKEN，回傳實際移除者。</summary>
+    public IReadOnlyList<PlayerDisease> DispelDiseases()
+    {
+        PlayerDisease[] order = [PlayerDisease.Curse, PlayerDisease.Darkness, PlayerDisease.Poison, PlayerDisease.Seal, PlayerDisease.Stun, PlayerDisease.Weaken];
+        return order.Where(DispelDisease).ToArray();
+    }
+
     /// <summary>Java <c>World.handleCooldowns</c> 的異常到期（startTime + length &lt; now）。</summary>
     public IReadOnlyList<ActiveDisease> ExpireDiseases(DateTimeOffset now)
     {

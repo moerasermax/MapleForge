@@ -46,6 +46,7 @@ public sealed class WzItemUseCatalogTests
         Assert.Equal(0, effect.Mp);
         Assert.Equal(0, effect.HpRate);
         Assert.Equal(30, effect.MpRate);
+        Assert.Equal(new[] { Maple.Core.World.PlayerDisease.Poison, Maple.Core.World.PlayerDisease.Curse }, effect.Cures);
     }
 
     [Fact]
@@ -117,6 +118,8 @@ public sealed class WzItemUseCatalogTests
                 {
                     ["hp"] = new Node("hp", 400),
                     ["mpR"] = new Node("mpR", 30),
+                    ["poison"] = new Node("poison", 1),
+                    ["curse"] = new Node("curse", 1),
                 }),
             });
 

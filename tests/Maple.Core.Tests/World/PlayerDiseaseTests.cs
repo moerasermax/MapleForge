@@ -54,6 +54,27 @@ public sealed class PlayerDiseaseTests
     }
 
     [Fact]
+    public void DispelDiseases_RemovesCureableSetInJavaOrder()
+    {
+        var player = NewPlayer();
+        player.TryGiveDisease(PlayerDisease.Stun, 1, 5000, 123, 1, T0);
+        player.TryGiveDisease(PlayerDisease.Curse, 1, 5000, 124, 1, T0);
+
+        Assert.Equal(new[] { PlayerDisease.Curse, PlayerDisease.Stun }, player.DispelDiseases());
+        Assert.Empty(player.Diseases);
+    }
+
+    [Fact]
+    public void DispelDiseases_DoesNotRemoveSeduce()
+    {
+        var player = NewPlayer();
+        player.TryGiveDisease(PlayerDisease.Seduce, 1, 5000, 128, 1, T0);
+
+        Assert.Empty(player.DispelDiseases());
+        Assert.True(player.HasDisease(PlayerDisease.Seduce));
+    }
+
+    [Fact]
     public void DiseaseFromMobSkill_MapsJavaTable()
     {
         Assert.Equal(PlayerDisease.Stun, Player.DiseaseFromMobSkill(123));

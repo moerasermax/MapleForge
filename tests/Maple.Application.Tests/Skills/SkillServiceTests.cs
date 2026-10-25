@@ -413,6 +413,39 @@ public sealed class SkillServiceTests
         Assert.Equal((byte)1, service.GetAttackEffect(MakePlayer(mp: 50), 1009)!.Level);
     }
 
+    // ── P127：驅散 / 英雄意志 ──
+
+    [Fact]
+    public void Cast_Dispel_RemovesDiseases()
+    {
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(2311001, level: 1, masterLevel: 0);
+        player.TryGiveDisease(PlayerDisease.Seal, 1, 5000, 120, 1, DateTimeOffset.UnixEpoch);
+        var skill = new MapleSkill { Id = 2311001, Effects = [new MapleStatEffect { SourceId = 2311001, Level = 1, Prop = 100 }] };
+        var service = new SkillService(new InMemorySkillCatalog(new[] { skill }));
+
+        var result = service.Cast(player, 2311001, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(new[] { PlayerDisease.Seal }, result.CuredDiseases);
+        Assert.False(player.HasDisease(PlayerDisease.Seal));
+    }
+
+    [Fact]
+    public void Cast_HeroWill_RemovesSeduceOnly()
+    {
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(1121011, level: 1, masterLevel: 0);
+        player.TryGiveDisease(PlayerDisease.Seduce, 1, 5000, 128, 1, DateTimeOffset.UnixEpoch);
+        player.TryGiveDisease(PlayerDisease.Seal, 1, 5000, 120, 1, DateTimeOffset.UnixEpoch);
+        var skill = new MapleSkill { Id = 1121011, Effects = [new MapleStatEffect { SourceId = 1121011, Level = 1 }] };
+        var service = new SkillService(new InMemorySkillCatalog(new[] { skill }));
+
+        var result = service.Cast(player, 1121011, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(new[] { PlayerDisease.Seduce }, result.CuredDiseases);
+        Assert.True(player.HasDisease(PlayerDisease.Seal));
+    }
+
     private static MapleSkill EventSkill(int skillId)
         => new()
         {

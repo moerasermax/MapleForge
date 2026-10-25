@@ -44,7 +44,9 @@ public sealed record SkillCastResult(
     int CooldownStartedSeconds = 0,
     IReadOnlyList<int>? ResetCooldownSkillIds = null,
     // P108：未學武陵技能在道場施放時能量歸零（呼叫端送能量封包）。
-    bool MulungEnergyReset = false);
+    bool MulungEnergyReset = false,
+    // P127：驅散／英雄意志解除的異常（呼叫端送 cancelDebuff / cancelForeignDebuff）。
+    IReadOnlyList<PlayerDisease>? CuredDiseases = null);
 
 /// <summary>P108：武陵技能攻擊前的能量判斷（對照 Java DamageParse.applyAttack／applyAttackMagic）。</summary>
 public enum MulungAttackGate
@@ -97,10 +99,12 @@ public sealed class SkillService
     private const int PyramidMapGroup = 92602;
 
     private readonly ISkillCatalog _skills;
+    private readonly Random _random;
 
-    public SkillService(ISkillCatalog skills)
+    public SkillService(ISkillCatalog skills, Random? random = null)
     {
         _skills = skills;
+        _random = random ?? Random.Shared;
     }
 
     public SkillCastResult Cast(Player player, int skillId, int clientSkillLevel, DateTimeOffset now)
@@ -180,7 +184,22 @@ public sealed class SkillService
             ? player.ResetSkillCooldownsExcept(TimeLeapSkillId)
             : null;
 
-        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted, reset, mulungEnergyReset);
+        // P127：對照 Java applyTo：isDispel && makeChanceResult → dispelDebuffs；else isHeroWill → dispelDebuff(SEDUCE)。
+        IReadOnlyList<PlayerDisease>? cured = null;
+        if (status == SkillCastStatus.Success)
+        {
+            if (IsDispelSkill(skillId) && (effect.Prop == 100 || _random.Next(99) < effect.Prop))
+            {
+                cured = player.DispelDiseases();
+            }
+            else if (IsHeroWillSkill(skillId) && player.DispelDisease(PlayerDisease.Seduce))
+            {
+                cured = [PlayerDisease.Seduce];
+            }
+        }
+
+        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted, reset, mulungEnergyReset,
+            cured is { Count: > 0 } ? cured : null);
     }
 
     /// <summary>
@@ -277,6 +296,14 @@ public sealed class SkillService
         player.ModifyMulungEnergy(increase: false);
         return MulungAttackGate.Consumed;
     }
+
+    /// <summary>Java <c>MapleStatEffect.isDispel</c>：驅散 2311001 與 GM 技能 9101000/9001000。</summary>
+    public static bool IsDispelSkill(int skillId) => skillId is 2311001 or 9101000 or 9001000;
+
+    /// <summary>Java <c>MapleStatEffect.isHeroWill</c>（各職業英雄意志）。</summary>
+    public static bool IsHeroWillSkill(int skillId) => skillId is 1121011 or 1221012 or 1321010 or 2121008 or 2221008
+        or 2321009 or 3121009 or 3221008 or 4121009 or 4221008 or 5121008 or 5221010 or 21121008 or 22171004
+        or 4341008 or 32121008 or 33121008 or 35121008;
 
     /// <summary>對照 Java <c>GameConstants.isMulungSkill</c>。</summary>
     public static bool IsMulungSkill(int skillId)

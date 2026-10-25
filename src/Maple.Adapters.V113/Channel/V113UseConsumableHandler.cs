@@ -7,7 +7,9 @@ namespace Maple.Adapters.V113.Channel;
 internal sealed record V113UseConsumableResult(
     bool Handled,
     bool CharacterMutated,
-    IReadOnlyList<byte[]> Packets);
+    IReadOnlyList<byte[]> Packets,
+    // P127：要廣播給同圖他人的封包（解除異常的 cancelForeignDebuff）。
+    IReadOnlyList<byte[]>? ForeignPackets = null);
 
 public sealed class V113UseConsumableHandler
 {
@@ -68,8 +70,16 @@ public sealed class V113UseConsumableHandler
             packets.Add(V113StatsPackets.UpdateStats(result.StatUpdates));
         }
 
+        // P127：Java applyTo 的 cureDebuffs → dispelDebuff：自己 cancelDebuff、他人 cancelForeignDebuff。
+        var foreign = new List<byte[]>();
+        foreach (var disease in result.CuredDiseases ?? [])
+        {
+            packets.Add(V113DiseasePackets.CancelDebuff(disease));
+            foreign.Add(V113DiseasePackets.CancelForeignDebuff(player.Character.Id, disease));
+        }
+
         packets.Add(V113StatsPackets.EnableActions());
-        return new V113UseConsumableResult(true, true, packets);
+        return new V113UseConsumableResult(true, true, packets, foreign.Count > 0 ? foreign : null);
     }
 
     private static V113UseConsumableResult EnableActionsOnly()

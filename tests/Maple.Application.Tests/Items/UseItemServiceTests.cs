@@ -73,6 +73,26 @@ public sealed class UseItemServiceTests
     }
 
     [Fact]
+    public void Use_CureItem_DispelsListedDiseases()
+    {
+        var player = NewPlayer(hp: 50, maxHp: 100, mp: 10, maxMp: 50, UseItem(2050004, 1, 1));
+        player.TryGiveDisease(Maple.Core.World.PlayerDisease.Poison, 1, 5000, 125, 1, DateTimeOffset.UnixEpoch);
+        player.TryGiveDisease(Maple.Core.World.PlayerDisease.Stun, 1, 5000, 123, 1, DateTimeOffset.UnixEpoch);
+        var service = new UseItemService(new CureCatalog());
+
+        var result = service.Use(player, slot: 1, itemId: 2050004);
+
+        Assert.Equal(new[] { Maple.Core.World.PlayerDisease.Poison }, result.CuredDiseases);
+        Assert.True(player.HasDisease(Maple.Core.World.PlayerDisease.Stun));
+    }
+
+    private sealed class CureCatalog : Maple.Core.Items.IItemEffectCatalog
+    {
+        public Maple.Core.Items.ItemEffect? GetEffect(int itemId)
+            => new(itemId, 0, 0, 0, 0, [Maple.Core.World.PlayerDisease.Poison, Maple.Core.World.PlayerDisease.Seal]);
+    }
+
+    [Fact]
     public void Use_ClampsHpToMaxHp()
     {
         var player = NewPlayer(hp: 90, maxHp: 100, mp: 10, maxMp: 50, UseItem(2000002, 1, 1));

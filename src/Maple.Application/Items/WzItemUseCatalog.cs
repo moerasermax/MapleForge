@@ -1,6 +1,7 @@
 using System.Globalization;
 using Maple.Core.Data;
 using Maple.Core.Items;
+using Maple.Core.World;
 
 namespace Maple.Application.Items;
 
@@ -63,7 +64,8 @@ public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog, IScr
             Hp: GetInt(spec, "hp") ?? 0,
             Mp: GetInt(spec, "mp") ?? 0,
             HpRate: GetInt(spec, "hpR") ?? 0,
-            MpRate: GetInt(spec, "mpR") ?? 0);
+            MpRate: GetInt(spec, "mpR") ?? 0,
+            Cures: GetCures(spec));
     }
 
     /// <summary>
@@ -103,6 +105,18 @@ public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog, IScr
             Avoid: Inc("EVA"),
             Speed: Inc("Speed"),
             Jump: Inc("Jump"));
+    }
+
+    /// <summary>P127：Java <c>loadFromData</c> 的 cure 清單（poison、seal、darkness、weakness、curse 依序）。</summary>
+    private static IReadOnlyList<PlayerDisease>? GetCures(IDataNode? spec)
+    {
+        var cures = new List<PlayerDisease>(5);
+        if (GetInt(spec, "poison") > 0) cures.Add(PlayerDisease.Poison);
+        if (GetInt(spec, "seal") > 0) cures.Add(PlayerDisease.Seal);
+        if (GetInt(spec, "darkness") > 0) cures.Add(PlayerDisease.Darkness);
+        if (GetInt(spec, "weakness") > 0) cures.Add(PlayerDisease.Weaken);
+        if (GetInt(spec, "curse") > 0) cures.Add(PlayerDisease.Curse);
+        return cures.Count > 0 ? cures : null;
     }
 
     private IDataNode? GetItemNode(int itemId)
