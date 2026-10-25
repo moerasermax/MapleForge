@@ -71,6 +71,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly IPortalScriptFactory? _portalScripts;
     private readonly V113SessionCommandRegistry? _sessionCommands;
     private readonly Maple.Application.Events.TransportService? _transport;
+    private readonly IQuestScriptFactory? _questScripts;
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -190,8 +191,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         JobAdvancementService? jobAdvancement = null,
         IPortalScriptFactory? portalScripts = null,
         V113SessionCommandRegistry? sessionCommands = null,
-        Maple.Application.Events.TransportService? transport = null)
+        Maple.Application.Events.TransportService? transport = null,
+        IQuestScriptFactory? questScripts = null)
     {
+        _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
         _transport = transport;
         _sessionCommands = sessionCommands;
         _portalScripts = portalScripts ?? npcScripts as IPortalScriptFactory;
@@ -356,6 +359,58 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             if (player is null) return;
             currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, sessionToken, token, portal);
+        }
+
+        // P174：QUEST_ACTION：腳本任務（4 開始／5 完成）走 scripts/quest/<id>.js；其他動作照舊。
+        async Task HandleQuestActionLocalAsync(PacketReader r, CancellationToken token)
+        {
+            if (player is null) return;
+            QuestClientAction action;
+            try
+            {
+                action = V113QuestPackets.ParseQuestAction(r);
+            }
+            catch (InvalidDataException)
+            {
+                return;
+            }
+
+            if (action.Kind is QuestClientActionKind.ScriptedStart or QuestClientActionKind.ScriptedComplete)
+            {
+                await StartQuestScriptAsync(action, token);
+                return;
+            }
+
+            await SendQuestTransactionResultAsync(_questService.HandleClientAction(player, action), player, session, token);
+        }
+
+        // P174：Java NPCScriptManager.startQuest／endQuest：可開始/可完成才跑腳本；已在對話中則忽略；
+        // 完成動作（case 5）不論結果都送 showSpecialEffect(9) 給自己與他人。
+        async Task StartQuestScriptAsync(QuestClientAction action, CancellationToken token)
+        {
+            if (player is null) return;
+            var end = action.Kind == QuestClientActionKind.ScriptedComplete;
+            var allowed = end ? _questService.CanCompleteQuest(player, action.QuestId) : _questService.CanStartQuest(player, action.QuestId);
+            if (allowed && conversation is not { Active: true } && _questScripts is not null)
+            {
+                var ctx = NewNpcContext(action.NpcId, player, questId: action.QuestId);
+                if (_questScripts.TryCreateQuest(action.QuestId, end, ctx) is { } script)
+                {
+                    var convo = CreateConversation(action.NpcId, script, ctx, player, session, OpenShopFromNpcAsync, OpenStorageFromNpcAsync, WarpFromNpcAsync, WarpFromNpcToPortalAsync);
+                    await convo.StartAsync(token);
+                    conversation = convo.Active ? convo : null;
+                }
+                else if (!end)
+                {
+                    await session.SendAsync(V113BroadcastPackets.PopupMessage($"此任務尚未建置，請通知管理員。\r\n任務編號: {action.QuestId}"), token);
+                }
+            }
+
+            if (end)
+            {
+                await session.SendAsync(V113StatsPackets.ShowSpecialEffect(9), token);
+                await BroadcastPacketToOthersAsync(player.Character, V113StatsPackets.ShowForeignEffect(player.Character.Id, 9), token);
+            }
         }
 
         // P170：Java MapleGenericPortal.enterPortal 腳本分支；pi.openNpc 開啟 NPC 對話；仍在原地圖才 enableActions。
@@ -941,7 +996,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.QuestAction:
                         if (player is null) break;
-                        await HandleQuestActionAsync(reader, player, s, token);
+                        await HandleQuestActionLocalAsync(reader, token);
                         break;
 
                     case V113ChannelRecvOp.CalcDamageStatSetRequest:
@@ -2334,7 +2389,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             : _mapService.LoadMap(mapId).HasShip ? V113TransportEffects.BoatPacket(false) : null;
 
     /// <summary>P169：NPC cm 的領域依賴（道具存在、地圖人數、returnMap、P170 portal 名稱→ID）。</summary>
-    private NpcContext NewNpcContext(int npcId, Player player, (string Name, int Id)? portal = null)
+    private NpcContext NewNpcContext(int npcId, Player player, (string Name, int Id)? portal = null, int questId = 0)
         => new(
             npcId,
             player,
@@ -2345,7 +2400,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             returnMapOf: mapId => _mapService.LoadMap(mapId).ReturnMapId,
             portal: portal,
             portalIdOf: (mapId, name) => _mapService.LoadMap(mapId).Portals.FirstOrDefault(p => p.Name == name)?.Id ?? -1,
-            transport: _transport);
+            transport: _transport,
+            questId: questId);
 
     private static async Task ContinueNpcConversationAsync(PacketReader reader, NpcConversation convo, CancellationToken ct)
     {
@@ -3173,22 +3229,6 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         return guild is null
             ? V113CharacterInfoSocial.Empty
             : new V113CharacterInfoSocial(guild.Name, string.Empty);
-    }
-
-    private async Task HandleQuestActionAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
-    {
-        QuestClientAction action;
-        try
-        {
-            action = V113QuestPackets.ParseQuestAction(reader);
-        }
-        catch (InvalidDataException)
-        {
-            return;
-        }
-
-        var result = _questService.HandleClientAction(player, action);
-        await SendQuestTransactionResultAsync(result, player, session, ct);
     }
 
     private async Task HandleUpdateQuestAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)

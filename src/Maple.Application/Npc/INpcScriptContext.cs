@@ -179,4 +179,9 @@ public interface INpcScriptContext
 
     /// <summary>Java <c>changeMusic(song)</c> → 全地圖 musicChange（environmentChange mode 6）。</summary>
     void ChangeMusic(string song);
+
+    // ── P174：任務腳本 qm（NPCConversationManager 的 questid）───────────────────────────────
+    int GetQuest();
+    void ForceStartCurrentQuest(string? customData = null);
+    void ForceCompleteCurrentQuest();
 }

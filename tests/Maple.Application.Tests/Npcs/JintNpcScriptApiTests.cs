@@ -17,6 +17,7 @@ public sealed class JintNpcScriptApiTests : IDisposable
     {
         Directory.CreateDirectory(Path.Combine(_root, "npc"));
         Directory.CreateDirectory(Path.Combine(_root, "portal"));
+        Directory.CreateDirectory(Path.Combine(_root, "quest"));
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
@@ -229,6 +230,44 @@ public sealed class JintNpcScriptApiTests : IDisposable
 
         Assert.Equal([new NpcUiEffect(NpcUiEffectKind.Hint, "提示"), new NpcUiEffect(NpcUiEffectKind.MapMessage, "地圖訊息", 6)], effects);
         Assert.Equal((100000000, 2), warped);
+    }
+
+    [Fact]
+    public async Task QuestScript_StartAndEnd_UseCurrentQuestId()
+    {
+        // P174：scripts/quest/<id>.js 的 start/end(mode, type, selection)；qm.forceStartQuest()／forceCompleteQuest() 作用在目前任務。
+        File.WriteAllText(Path.Combine(_root, "quest", "2001.js"), """
+            var status = -1;
+            function start(mode, type, selection) {
+                status++;
+                if (status == 0) { qm.sendNext("開始任務 " + qm.getQuest()); }
+                else { qm.forceStartQuest(); qm.dispose(); }
+            }
+            function end(mode, type, selection) {
+                qm.gainExp(5);
+                qm.forceCompleteQuest();
+                qm.dispose();
+            }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 10 }, new Position(0, 0, 0, 0));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var quests = new QuestService(new EmptyQuestCatalog());
+        var dialogs = new List<NpcDialog>();
+
+        var startCtx = new NpcContext(1012000, player, quests, questId: 2001);
+        var starting = new NpcConversation(1012000, factory.TryCreateQuest(2001, end: false, startCtx)!, startCtx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (_, _) => Task.CompletedTask);
+        await starting.StartAsync(CancellationToken.None);
+        Assert.Equal("開始任務 2001", Assert.Single(dialogs).Text);
+        await starting.ContinueAsync(1, 0, -1, CancellationToken.None);
+        Assert.Equal(1, player.GetQuestStatus(2001));
+
+        var endCtx = new NpcContext(1012000, player, quests, questId: 2001);
+        var ending = new NpcConversation(1012000, factory.TryCreateQuest(2001, end: true, endCtx)!, endCtx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask);
+        await ending.StartAsync(CancellationToken.None);
+        Assert.Equal(2, player.GetQuestStatus(2001));
+        Assert.Equal(5, player.Character.Exp);
+        Assert.False(ending.Active);
+        Assert.Null(factory.TryCreateQuest(9999, end: false, endCtx));
     }
 
     private sealed class EmptyQuestCatalog : IQuestCatalog

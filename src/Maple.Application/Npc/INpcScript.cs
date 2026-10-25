@@ -34,3 +34,12 @@ public interface IPortalScriptFactory
 {
     INpcScript? TryCreatePortal(string scriptName, INpcScriptContext pi);
 }
+
+/// <summary>
+/// P174：任務腳本（scripts/quest/&lt;id&gt;.js）。<paramref name="end"/> = false → Start() 呼叫 <c>start(1, 0, 0)</c>、
+/// Resume 呼叫 <c>start(mode, type, selection)</c>；true → <c>end(...)</c>（Java NPCScriptManager.startQuest／endQuest）。
+/// </summary>
+public interface IQuestScriptFactory
+{
+    INpcScript? TryCreateQuest(int questId, bool end, INpcScriptContext qm);
+}

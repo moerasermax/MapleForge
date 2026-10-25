@@ -139,6 +139,12 @@ public sealed class QuestService
             _ => new QuestTransactionResult(QuestTransactionStatus.UnsupportedAction),
         };
 
+    /// <summary>P174：Java <c>MapleQuest.canStart(chr, null)</c>（腳本任務開始前檢查）。</summary>
+    public bool CanStartQuest(Player player, int questId) => CanStart(player, GetQuest(questId), npc: null);
+
+    /// <summary>P174：Java <c>MapleQuest.canComplete(chr, null)</c>。</summary>
+    public bool CanCompleteQuest(Player player, int questId) => CanComplete(player, GetQuest(questId), npc: null);
+
     public QuestTransactionResult StartQuest(Player player, int questId, int npc)
     {
         var quest = GetQuest(questId);
@@ -266,7 +272,7 @@ public sealed class QuestService
 
     private QuestDefinition GetQuest(int questId) => _catalog.GetQuest(questId) ?? QuestDefinition.Empty(questId);
 
-    private static bool CanStart(Player player, QuestDefinition quest, int npc)
+    private static bool CanStart(Player player, QuestDefinition quest, int? npc)
     {
         var current = player.GetQuest(quest.Id);
         if (current.Status != (byte)QuestStatus.NotStarted &&
@@ -278,7 +284,7 @@ public sealed class QuestService
         return quest.StartRequirements.All(req => CheckRequirement(player, quest, req, npc));
     }
 
-    private static bool CanComplete(Player player, QuestDefinition quest, int npc)
+    private static bool CanComplete(Player player, QuestDefinition quest, int? npc)
     {
         if (player.GetQuest(quest.Id).Status != (byte)QuestStatus.Started)
         {

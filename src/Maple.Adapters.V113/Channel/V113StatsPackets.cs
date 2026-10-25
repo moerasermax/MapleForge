@@ -113,6 +113,15 @@ internal static class V113StatsPackets
         return w.ToArray();
     }
 
+    /// <summary>P174：Java <c>showSpecialEffect(effect)</c>：<c>[SHOW_ITEM_GAIN_INCHAT 0xC7][byte effect]</c>（9 = 任務完成）。</summary>
+    public static byte[] ShowSpecialEffect(byte effect)
+    {
+        var w = new PacketWriter(3);
+        w.WriteShort(V113ChannelSendOp.ShowItemGainInChat);
+        w.WriteByte(effect);
+        return w.ToArray();
+    }
+
     /// <summary>P165：Java <c>showForeignEffect(cid, effect)</c>：<c>[0xBF][int cid][byte effect]</c>（0 = 升級、8 = 轉職）。</summary>
     public static byte[] ShowForeignEffect(int characterId, byte effect)
     {

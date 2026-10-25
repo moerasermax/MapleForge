@@ -13,10 +13,12 @@ namespace Maple.Scripting;
 /// cm 以「lowercase 委派物件」暴露給 JS（與 C# PascalCase 解耦，免命名策略不確定性）。
 /// 預處理後的腳本原始碼依 npcId 快取。
 /// </summary>
-public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFactory
+public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFactory, IQuestScriptFactory
 {
     private readonly string _npcDir;
     private readonly string _portalDir;
+    private readonly string _questDir;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, string?> _questSourceCache = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string?> _portalSourceCache = new(StringComparer.Ordinal);
     private readonly ILogger<JintNpcScriptFactory> _log;
     private readonly ConcurrentDictionary<int, string?> _sourceCache = new();
@@ -28,6 +30,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
     {
         _npcDir = Path.Combine(options.ScriptsDirectory, "npc");
         _portalDir = Path.Combine(options.ScriptsDirectory, "portal");
+        _questDir = Path.Combine(options.ScriptsDirectory, "quest");
         _log = log;
     }
 
@@ -74,6 +77,30 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         catch (Exception ex)
         {
             _log.LogWarning("[PortalScript] {Name} 腳本載入/執行失敗：{Msg}", scriptName, ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>P174：scripts/quest/&lt;id&gt;.js；腳本以 <c>qm</c>（同 cm facade）呼叫 API。</summary>
+    public INpcScript? TryCreateQuest(int questId, bool end, INpcScriptContext qm)
+    {
+        var source = _questSourceCache.GetOrAdd(questId, id =>
+        {
+            var path = Path.Combine(_questDir, $"{id}.js");
+            return File.Exists(path) ? Preprocess(File.ReadAllText(path)) : null;
+        });
+        if (source is null) return null;
+
+        try
+        {
+            var engine = BuildEngine(qm);
+            engine.SetValue("qm", engine.GetValue("cm"));
+            engine.Execute(source);
+            return new JintQuestScript(engine, end ? "end" : "start");
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning("[QuestScript] questId={Id} 腳本載入/執行失敗：{Msg}", questId, ex.Message);
             return null;
         }
     }
@@ -164,9 +191,18 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void openStorage() => _cm.OpenStorage();
         public void sendStorage() => _cm.SendStorage();
         public void startQuest(int questId) => _cm.StartQuest(questId);
-        public void forceStartQuest(int questId, int npcId = 0, string? customData = null) => _cm.ForceStartQuest(questId, npcId, customData);
+        public void forceStartQuest(int questId, int npcId, string? customData) => _cm.ForceStartQuest(questId, npcId, customData);
+        public void forceStartQuest(int questId, string customData) => _cm.ForceStartQuest(questId, 0, customData);
+        public void forceStartQuest(int questId) => _cm.ForceStartQuest(questId);
+        public void forceStartQuest(string customData) => _cm.ForceStartCurrentQuest(customData);
+        public void forceStartQuest() => _cm.ForceStartCurrentQuest();
+        public void forceCompleteQuest() => _cm.ForceCompleteCurrentQuest();
+        public void startQuest() => _cm.StartQuest(_cm.GetQuest());
+        public void completeQuest() => _cm.CompleteQuest(_cm.GetQuest());
+        public int getQuest() => _cm.GetQuest();
         public void completeQuest(int questId) => _cm.CompleteQuest(questId);
-        public void forceCompleteQuest(int questId, int npcId = 0) => _cm.ForceCompleteQuest(questId, npcId);
+        public void forceCompleteQuest(int questId, int npcId) => _cm.ForceCompleteQuest(questId, npcId);
+        public void forceCompleteQuest(int questId) => _cm.ForceCompleteQuest(questId);
         public int getQuestStatus(int questId) => _cm.GetQuestStatus(questId);
         public string getQuestCustomData(int questId) => _cm.GetQuestCustomData(questId);
         public void setQuestCustomData(int questId, string? customData) => _cm.SetQuestCustomData(questId, customData);

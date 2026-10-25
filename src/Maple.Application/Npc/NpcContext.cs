@@ -29,6 +29,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly Func<int, int> _playerCount;
     private readonly (string Name, int Id)? _portal;
     private readonly Maple.Application.Events.TransportService? _transport;
+    private readonly int _questId;
     private readonly Func<int, string, int> _portalIdOf;
 
     internal string? PendingWarpPortalName { get; private set; }
@@ -55,8 +56,10 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Func<int, int>? returnMapOf = null,
         (string Name, int Id)? portal = null,
         Func<int, string, int>? portalIdOf = null,
-        Maple.Application.Events.TransportService? transport = null)
+        Maple.Application.Events.TransportService? transport = null,
+        int questId = 0)
     {
+        _questId = questId;
         _transport = transport;
         _portal = portal;
         _portalIdOf = portalIdOf ?? (static (_, _) => -1);
@@ -248,6 +251,15 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public void PlaySound(bool broadcast, string sound) => _pendingEnvironment.Add((broadcast, 4, sound));
 
     public void ChangeMusic(string song) => _pendingEnvironment.Add((true, 6, song));
+
+    /// <summary>P174：Java <c>qm.getQuest()</c>（任務腳本的 questid；NPC 對話為 0）。</summary>
+    public int GetQuest() => _questId;
+
+    /// <summary>Java <c>qm.forceStartQuest()</c>／<c>forceStartQuest(customData)</c>：作用在目前任務。</summary>
+    public void ForceStartCurrentQuest(string? customData = null) => ForceStartQuest(_questId, 0, customData);
+
+    /// <summary>Java <c>qm.forceCompleteQuest()</c>。</summary>
+    public void ForceCompleteCurrentQuest() => ForceCompleteQuest(_questId);
 
     /// <summary>Java <c>showEffect(broadcast, effect)</c> → environmentChange(effect, 3)。</summary>
     public void ShowEffect(bool broadcast, string effect) => _pendingEnvironment.Add((broadcast, 3, effect));
