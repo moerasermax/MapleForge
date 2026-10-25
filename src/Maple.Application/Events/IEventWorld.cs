@@ -3,6 +3,9 @@ namespace Maple.Application.Events;
 /// <summary>P177：事件腳本看到的角色資訊（Java MapleCharacter 的唯讀子集）。</summary>
 public sealed record EventCharacterInfo(int Id, string Name, int Level, int Job, int MapId);
 
+/// <summary>P178：事件腳本看到的隊伍（Java MapleParty 子集）。</summary>
+public sealed record EventPartyInfo(int Id, int LeaderId, IReadOnlyList<int> MemberIds);
+
 /// <summary>
 /// P177：事件腳本（scripts/event/*.js）對世界的操作。實作端必須「不阻塞」：換圖與送包都排進各玩家連線或直接入送出佇列，
 /// 讓事件腳本可以在自己的鎖內同步呼叫。
@@ -21,6 +24,12 @@ public interface IEventWorld
 
     /// <summary>Java <c>getClock(seconds)</c> 給單一玩家。</summary>
     void SendClock(int characterId, int seconds);
+
+    /// <summary>P178：單一玩家 environmentChange（eim.broadcastPacket 的 showEffect／playSound／musicChange）。</summary>
+    void SendEnvironment(int characterId, int mode, string name);
+
+    /// <summary>P178：玩家所在隊伍（<c>eim.isLeader</c>、<c>chr.getParty()</c>）；無隊伍回 null。</summary>
+    EventPartyInfo? GetParty(int characterId);
 
     /// <summary>全地圖 <c>broadcastMessage(type, msg)</c>。</summary>
     void BroadcastNotice(int mapId, int type, string message);
@@ -71,4 +80,7 @@ public interface IEventScriptHost
 
     /// <summary>給腳本用的 em facade（找不到回 null）。</summary>
     object? GetEventManager(string name);
+
+    /// <summary>P178：角色目前所屬事件實例（Java <c>chr.getEventInstance()</c>）；腳本引擎層型別，無則 null。</summary>
+    object? GetEventInstance(int characterId);
 }

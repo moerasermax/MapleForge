@@ -1,4 +1,11 @@
 using Maple.Application.Events;
+using Maple.Application.Npcs;
+using Maple.Application.Parties;
+using Maple.Application.Quests;
+using Maple.Core.Characters;
+using Maple.Core.Parties;
+using Maple.Core.Quests;
+using Maple.Core.World;
 using Maple.Scripting;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -111,16 +118,185 @@ public sealed class JintEventScriptHostTests : IDisposable
         Assert.Equal("custom", registry.Get(200090000, "out00"));
     }
 
+    // ── P178：事件實例（eim）───────────────────────────────────────────────────────────
+
+    private const string KerningLike = """
+        function init() { em.setProperty("state", "0"); }
+        function monsterValue(eim, mobId) { return 1; }
+        function setup() {
+            em.setProperty("state", "1");
+            var eim = em.newInstance("KerningPQ");
+            var map = eim.setInstanceMap(103000800);
+            map.resetFully();
+            map.getPortal("next00").setScriptName("kpq1");
+            eim.setInstanceMap(103000801);
+            eim.startEventTimer(1800000);
+            return eim;
+        }
+        function playerEntry(eim, player) {
+            var map = eim.getMapInstance(0);
+            player.changeMap(map, map.getPortal(0));
+        }
+        function changedMap(eim, player, mapid) {
+            eim.unregisterPlayer(player);
+            if (eim.disposeIfPlayerBelow(0, 0)) { em.setProperty("state", "0"); }
+        }
+        function scheduledTimeout(eim) {
+            var players = eim.getPlayers();
+            var exit = eim.getMapFactory().getMap(103000890);
+            for (var i = 0; i < players.size(); i++) {
+                var player = players.get(i);
+                eim.unregisterPlayer(player);
+                player.changeMap(exit, exit.getPortal(0));
+            }
+            em.setProperty("timedOut", "yes");
+        }
+        function allMonstersDead(eim) { eim.setProperty("cleared", "true"); }
+        """;
+
+    [Fact]
+    public void StartInstance_PartyOnMap_RegistersAndWarps_TimerTimesOut()
+    {
+        var time = new ManualTime(T0);
+        var (host, world, portals) = Create(KerningLike, time: time);
+        world.OnMap[103000000] = [7, 8];
+        host.Start(T0);
+
+        Api(host).startInstance(new PartyRef(1, [7, 8, 9]), new MapRef(103000000));
+
+        Assert.Equal("1", Api(host).getProperty("state"));
+        Assert.Equal([(7, 103000800, 0), (8, 103000800, 0)], world.Warps);
+        Assert.Equal([103000800], world.Resets);
+        Assert.Equal("kpq1", portals.Get(103000800, "next00"));
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(7));
+        Assert.Same(eim, host.GetEventInstance(8));
+        Assert.Null(host.GetEventInstance(9)); // 不在地圖上的隊員不登記
+        Assert.Equal(2, eim.getPlayerCount());
+        Assert.Same(eim, Api(host).getInstance("KerningPQ"));
+
+        host.Tick(T0.AddMinutes(29));
+        Assert.Null(Api(host).getProperty("timedOut"));
+        host.Tick(T0.AddMinutes(30));
+        Assert.Equal("yes", Api(host).getProperty("timedOut"));
+        Assert.Equal([(7, 103000890, 0), (8, 103000890, 0)], world.Warps.Skip(2));
+        Assert.Null(host.GetEventInstance(7));
+    }
+
+    [Fact]
+    public void DisposeIfPlayerBelow_DisposesInstance_ResetsState_AndCancelsSchedules()
+    {
+        var (host, world, _) = Create(KerningLike);
+        world.OnMap[103000000] = [7];
+        host.Start(T0);
+        Api(host).startInstance(new PartyRef(1, [7]), new MapRef(103000000));
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(7));
+        eim.schedule("scheduledTimeout", 1000);
+
+        Assert.False(eim.disposeIfPlayerBelow(0, 0));
+        eim.unregisterPlayer(new MapRefChar(7));
+        Assert.True(eim.disposeIfPlayerBelow(0, 103000890));
+
+        Assert.True(eim.Disposed);
+        Assert.Equal("0", Api(host).getProperty("state"));
+        Assert.Null(Api(host).getInstance("KerningPQ"));
+        Assert.Equal(string.Empty, eim.getProperty("anything"));
+        host.Tick(T0.AddHours(1));
+        Assert.Null(Api(host).getProperty("timedOut")); // 計時與 eim.schedule 已取消
+    }
+
+    [Fact]
+    public void DisposeIfPlayerBelow_WarpsRemainingPlayers()
+    {
+        var (host, world, _) = Create(KerningLike);
+        world.OnMap[103000000] = [7, 8];
+        host.Start(T0);
+        Api(host).startInstance(new PartyRef(1, [7, 8]), new MapRef(103000000));
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(7));
+        world.Warps.Clear();
+
+        Assert.True(eim.disposeIfPlayerBelow(100, 103000890));
+
+        Assert.Equal([(7, 103000890, 0), (8, 103000890, 0)], world.Warps);
+        Assert.Null(host.GetEventInstance(8));
+    }
+
+    [Fact]
+    public void RegisteredMonsters_AllDead_InvokesAllMonstersDead()
+    {
+        var (host, _, _) = Create(KerningLike);
+        host.Start(T0);
+        Api(host).startInstance();
+        var eim = Api(host).getInstance("KerningPQ")!;
+        var a = new MonsterTemplate(9300001);
+        var b = new MonsterTemplate(9300001);
+        eim.registerMonster(a);
+        eim.registerMonster(b);
+
+        eim.unregisterMonster(a);
+        Assert.Null(eim.getProperty("cleared"));
+        eim.unregisterMonster(b);
+        Assert.Equal("true", eim.getProperty("cleared"));
+    }
+
+    [Fact]
+    public void RestartEventTimer_SendsClockToMembers()
+    {
+        var (host, world, _) = Create(KerningLike);
+        world.OnMap[103000000] = [7];
+        host.Start(T0);
+        Api(host).startInstance(new PartyRef(1, [7]), new MapRef(103000000));
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(7));
+
+        eim.restartEventTimer(60000);
+        eim.broadcastPlayerMsg(6, "go");
+
+        Assert.Equal([(7, 60)], world.Clocks);
+        Assert.Contains((7, 6, "go"), world.CharacterNotices);
+        Assert.True(eim.isTimerStarted());
+    }
+
+    [Fact]
+    public async Task NpcScript_StartsInstance_ThroughCmGetEventManager()
+    {
+        var (host, world, _) = Create(KerningLike);
+        host.Start(T0);
+        var npcDir = Path.Combine(_dir, "npc");
+        Directory.CreateDirectory(npcDir);
+        File.WriteAllText(Path.Combine(npcDir, "9020000.js"), """
+            function start() {
+                var em = cm.getEventManager("Test");
+                if (em.getProperty("state").equals("0")) {
+                    em.startInstance(cm.getParty(), cm.getMap());
+                }
+                cm.sendOk(cm.getEventInstance().getName() + "/" + cm.getPlayer().getEventInstance().getPlayerCount());
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var parties = new InMemoryPartyRegistry();
+        var player = new Player(new Character { Id = 7, Name = "Leader", Level = 30, MapId = 103000000 }, new Position(0, 0, 0, 0));
+        parties.CreateParty(PartyMember.FromCharacter(player.Character, channelIndex: 1));
+        world.OnMap[103000000] = [7];
+        var ctx = new NpcContext(9020000, player, new QuestService(new EmptyQuestCatalog()), parties: parties);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _dir }, NullLogger<JintNpcScriptFactory>.Instance, host);
+        var dialogs = new List<string>();
+        var convo = new NpcConversation(9020000, factory.TryCreate(9020000, ctx)!, ctx, (d, _) => { dialogs.Add(d.Text); return Task.CompletedTask; }, (_, _) => Task.CompletedTask);
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal(["KerningPQ/1"], dialogs);
+        Assert.Equal([(7, 103000800, 0)], world.Warps);
+    }
+
     private static EventManagerApi Api(JintEventScriptHost host) => Assert.IsType<EventManagerApi>(host.GetEventManager("Test"));
 
-    private (JintEventScriptHost, FakeWorld, PortalScriptOverrideRegistry) Create(string source, string[]? extraEvents = null)
+    private (JintEventScriptHost, FakeWorld, PortalScriptOverrideRegistry) Create(string source, string[]? extraEvents = null, TimeProvider? time = null)
     {
         Directory.CreateDirectory(Path.Combine(_dir, "event"));
         File.WriteAllText(Path.Combine(_dir, "event", "Test.js"), source);
         var world = new FakeWorld();
         var portals = new PortalScriptOverrideRegistry();
         var options = new EventScriptOptions { ScriptsDirectory = _dir, Events = ["Test", .. extraEvents ?? []] };
-        return (new JintEventScriptHost(options, world, portals, NullLogger<JintEventScriptHost>.Instance), world, portals);
+        return (new JintEventScriptHost(options, world, portals, NullLogger<JintEventScriptHost>.Instance, time ?? new ManualTime(T0)), world, portals);
     }
 
     private sealed class FakeWorld : IEventWorld
@@ -149,7 +325,13 @@ public sealed class JintEventScriptHostTests : IDisposable
 
         public void SendNotice(int characterId, int type, string message) => CharacterNotices.Add((characterId, type, message));
 
-        public void SendClock(int characterId, int seconds) { }
+        public List<(int, int)> Clocks { get; } = [];
+
+        public void SendClock(int characterId, int seconds) => Clocks.Add((characterId, seconds));
+
+        public void SendEnvironment(int characterId, int mode, string name) { }
+
+        public EventPartyInfo? GetParty(int characterId) => null;
 
         public void BroadcastNotice(int mapId, int type, string message) => Notices.Add((mapId, type, message));
 
@@ -169,5 +351,23 @@ public sealed class JintEventScriptHostTests : IDisposable
         }
 
         public IReadOnlyList<int> GetMonsterIds(int mapId) => _mobs;
+    }
+
+    private sealed record PartyRef(int PartyId, IReadOnlyList<int> MemberIds) : IScriptPartyRef;
+
+    private sealed record MapRef(int MapId) : IScriptMapRef;
+
+    private sealed record MapRefChar(int CharacterId) : IScriptCharacterRef;
+
+    private sealed class ManualTime(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private sealed class EmptyQuestCatalog : IQuestCatalog
+    {
+        public QuestDefinition? GetQuest(int questId) => null;
     }
 }

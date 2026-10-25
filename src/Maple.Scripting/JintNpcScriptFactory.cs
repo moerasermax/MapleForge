@@ -325,16 +325,23 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void givePartyItems(int itemId, int quantity) => _cm.GivePartyItems(itemId, quantity, false);
         public void givePartyItems(int itemId, int quantity, bool removeAll) => _cm.GivePartyItems(itemId, quantity, removeAll);
 
-        public PlayerFacade getPlayer() => new(_cm);
-        public PlayerFacade getChar() => new(_cm);
+        public PlayerFacade getPlayer() => new(_cm, _events);
+        public PlayerFacade getChar() => new(_cm, _events);
+
+        /// <summary>P178：Java <c>cm.getEventInstance()</c>＝<c>getPlayer().getEventInstance()</c>。</summary>
+        public object? getEventInstance() => _events?.GetEventInstance(_cm.GetCharacterId());
     }
 
     /// <summary>P176：MapleParty 子集（getId／getLeader／getMembers）。</summary>
-    private sealed class PartyFacade
+    private sealed class PartyFacade : IScriptPartyRef
     {
         private readonly Maple.Core.Parties.PartyState _party;
 
         public PartyFacade(Maple.Core.Parties.PartyState party) => _party = party;
+
+        int IScriptPartyRef.PartyId => _party.Id;
+
+        IReadOnlyList<int> IScriptPartyRef.MemberIds => _party.Members.Select(static m => m.CharacterId).ToArray();
 
         public int getId() => _party.Id;
 
@@ -438,7 +445,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
     }
 
     /// <summary>P170：MapleMap 子集（getId、getPortal(name|id)、getCharactersSize）。</summary>
-    private sealed class MapFacade
+    private sealed class MapFacade : IScriptMapRef
     {
         private readonly INpcScriptContext _cm;
 
@@ -519,11 +526,17 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
     }
 
     /// <summary>P166：<c>cm.getPlayer()</c>／<c>cm.getChar()</c> 的 MapleCharacter 子集（只讀查詢＋gainAp）。</summary>
-    private sealed class PlayerFacade
+    private sealed class PlayerFacade : IScriptCharacterRef
     {
         private readonly INpcScriptContext _cm;
+        private readonly Maple.Application.Events.IEventScriptHost? _events;
 
-        public PlayerFacade(INpcScriptContext cm) => _cm = cm;
+        public PlayerFacade(INpcScriptContext cm, Maple.Application.Events.IEventScriptHost? events = null) => (_cm, _events) = (cm, events);
+
+        int IScriptCharacterRef.CharacterId => _cm.GetCharacterId();
+
+        /// <summary>P178：Java <c>chr.getEventInstance()</c>。</summary>
+        public object? getEventInstance() => _events?.GetEventInstance(_cm.GetCharacterId());
 
         public int getId() => _cm.GetCharacterId();
         public string getName() => _cm.GetName();
@@ -547,7 +560,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void gainAp(int amount) => _cm.GainAp(amount);
         public void changeJob(int job) => _cm.ChangeJob(job);
         public MapFacade getMap() => new(_cm, _cm.GetMap());
-        public ClientFacade getClient() => new(_cm, null);
+        public ClientFacade getClient() => new(_cm, _events);
         public PartyFacade? getParty() => _cm.GetPartyState() is { } party ? new(party) : null;
 
         /// <summary>P170：Java <c>changeMap(MapleMap, MaplePortal)</c> → warp(map, portal id)。</summary>

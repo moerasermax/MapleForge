@@ -2,6 +2,7 @@ using Maple.Application.Combat;
 using Maple.Application.Events;
 using Maple.Application.Maps;
 using Maple.Application.OnlinePlayers;
+using Maple.Application.Parties;
 using Maple.Core.World;
 
 namespace Maple.Adapters.V113.Channel;
@@ -18,6 +19,7 @@ public sealed class V113EventWorld : IEventWorld
     private readonly IFieldInstanceRegistry _fields;
     private readonly CombatService _combat;
     private readonly TimeProvider _time;
+    private readonly IPartyRegistry? _parties;
 
     public V113EventWorld(
         IMapSessionRegistry maps,
@@ -25,8 +27,10 @@ public sealed class V113EventWorld : IEventWorld
         IPlayerTransferService transfer,
         IFieldInstanceRegistry fields,
         CombatService combat,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        IPartyRegistry? parties = null)
     {
+        _parties = parties;
         _maps = maps;
         _online = online;
         _transfer = transfer;
@@ -48,6 +52,14 @@ public sealed class V113EventWorld : IEventWorld
         => SendTo(characterId, V113BroadcastPackets.ServerNotice(type, message));
 
     public void SendClock(int characterId, int seconds) => SendTo(characterId, V113TransportEffects.Clock(seconds));
+
+    public void SendEnvironment(int characterId, int mode, string name)
+        => SendTo(characterId, V113CombatPackets.EnvironmentChange(name, mode));
+
+    public EventPartyInfo? GetParty(int characterId)
+        => _parties?.GetPartyForCharacter(characterId) is { } party
+            ? new EventPartyInfo(party.Id, party.LeaderId, party.Members.Select(static m => m.CharacterId).ToArray())
+            : null;
 
     public void BroadcastNotice(int mapId, int type, string message) => Broadcast(mapId, V113BroadcastPackets.ServerNotice(type, message));
 

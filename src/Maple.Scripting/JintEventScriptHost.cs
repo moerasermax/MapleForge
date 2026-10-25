@@ -26,15 +26,25 @@ public sealed class JintEventScriptHost : IEventScriptHost
     private readonly ILogger<JintEventScriptHost> _log;
     private readonly Dictionary<string, EventRuntime> _events = new(StringComparer.Ordinal);
     private readonly object _gate = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, EventInstanceApi> _playerInstances = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(int MapId, int ObjectId), MonsterTemplate> _trackedMobs = new();
     private bool _started;
 
-    public JintEventScriptHost(EventScriptOptions options, IEventWorld world, PortalScriptOverrideRegistry portals, ILogger<JintEventScriptHost> log)
+    public JintEventScriptHost(
+        EventScriptOptions options,
+        IEventWorld world,
+        PortalScriptOverrideRegistry portals,
+        ILogger<JintEventScriptHost> log,
+        TimeProvider? time = null)
     {
+        Clock = time ?? TimeProvider.System;
         _options = options;
         _world = world;
         _portals = portals;
         _log = log;
     }
+
+    internal TimeProvider Clock { get; }
 
     internal IEventWorld World => _world;
 
@@ -113,12 +123,38 @@ public sealed class JintEventScriptHost : IEventScriptHost
     }
 
     internal EventManagerApi? FindEventManager(string name) => GetEventManager(name) as EventManagerApi;
+
+    public object? GetEventInstance(int characterId)
+        => _playerInstances.TryGetValue(characterId, out var eim) && !eim.Disposed ? eim : null;
+
+    internal void SetPlayerInstance(int characterId, EventInstanceApi eim) => _playerInstances[characterId] = eim;
+
+    /// <summary>只在角色仍屬於該實例時清除（避免舊實例清掉新登記）。</summary>
+    internal void ClearPlayerInstance(int characterId, EventInstanceApi eim)
+        => _playerInstances.TryRemove(new KeyValuePair<int, EventInstanceApi>(characterId, eim));
+
+    /// <summary>已生成（有 objectId）且登記了實例的怪物，供 P179 擊殺掛勾查詢。</summary>
+    internal void TrackMonster(MonsterTemplate mob)
+    {
+        if (mob.ObjectId > 0 && mob.EventInstance is not null)
+        {
+            _trackedMobs[(mob.MapId, mob.ObjectId)] = mob;
+        }
+    }
+
+    internal MonsterTemplate? FindTrackedMonster(int mapId, int objectId)
+        => _trackedMobs.TryGetValue((mapId, objectId), out var mob) ? mob : null;
+
+    internal void ForgetMonster(int mapId, int objectId) => _trackedMobs.TryRemove((mapId, objectId), out _);
 }
 
 /// <summary>P177：一個事件腳本的執行期（引擎、鎖、屬性、排程）。</summary>
 internal sealed class EventRuntime
 {
     private readonly object _lock = new();
+    private readonly object _scheduleLock = new();
+    private readonly Dictionary<string, EventInstanceApi> _instances = new(StringComparer.Ordinal);
+    private DateTimeOffset? _invokeNow;
     private readonly List<(DateTimeOffset Due, long Seq, string Function, object[] Args, ScheduleHandle Handle)> _schedule = new();
     private Engine? _engine;
     private long _seq;
@@ -138,8 +174,14 @@ internal sealed class EventRuntime
 
     public Dictionary<string, string> Properties { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>目前執行中的時間（排程起點）。</summary>
-    public DateTimeOffset Now { get; private set; } = DateTimeOffset.UtcNow;
+    /// <summary>目前時間：腳本呼叫中為該次呼叫的時間（tick 時間），否則取主機時鐘（NPC 端直接呼叫 em／eim）。</summary>
+    public DateTimeOffset Now => _invokeNow ?? Host.Clock.GetUtcNow();
+
+    /// <summary>em.newInstance／getInstance 的實例表（Java EventManager.instances）。</summary>
+    public Dictionary<string, EventInstanceApi> Instances => _instances;
+
+    /// <summary>以 <see cref="Now"/> 呼叫腳本函式（NPC 端或 eim 內部觸發）。</summary>
+    public JsValue InvokeNow(string function, params object?[] args) => Invoke(Now, function, args!);
 
     public void Load(string source)
     {
@@ -160,14 +202,15 @@ internal sealed class EventRuntime
     {
         lock (_lock)
         {
-            Now = now;
-            if (_engine?.GetValue(function) is not Function callable)
-            {
-                return JsValue.Undefined;
-            }
-
+            var previous = _invokeNow;
+            _invokeNow = now;
             try
             {
+                if (_engine?.GetValue(function) is not Function callable)
+                {
+                    return JsValue.Undefined;
+                }
+
                 return _engine.Invoke(callable, args);
             }
             catch (Exception ex)
@@ -175,13 +218,17 @@ internal sealed class EventRuntime
                 Host.Log.LogWarning("[EventScript] {Name}.{Function} 失敗：{Msg}", Name, function, ex.Message);
                 return JsValue.Undefined;
             }
+            finally
+            {
+                _invokeNow = previous;
+            }
         }
     }
 
     public ScheduleHandle Schedule(string function, long delayMs, params object[] args)
     {
         var handle = new ScheduleHandle();
-        lock (_lock)
+        lock (_scheduleLock)
         {
             _schedule.Add((Now.AddMilliseconds(delayMs), _seq++, function, args, handle));
         }
@@ -194,7 +241,7 @@ internal sealed class EventRuntime
         while (true)
         {
             (DateTimeOffset Due, long Seq, string Function, object[] Args, ScheduleHandle Handle) next;
-            lock (_lock)
+            lock (_scheduleLock)
             {
                 var index = -1;
                 for (var i = 0; i < _schedule.Count; i++)
@@ -249,9 +296,13 @@ public sealed class EventManagerApi
     {
         lock (_runtime.Properties)
         {
-            _runtime.Properties[key] = value.IsNull() || value.IsUndefined() ? "null" : value.ToString();
+            _runtime.Properties[key] = ToPropertyString(value);
         }
     }
+
+    /// <summary>Java Properties 存字串；Rhino 數字 1 轉成 "1"（非 "1.0"）。</summary>
+    internal static string ToPropertyString(JsValue value)
+        => value.IsNull() || value.IsUndefined() ? "null" : value.ToString();
 
     public string? getProperty(string key)
     {
@@ -271,6 +322,147 @@ public sealed class EventManagerApi
     public MapFactoryApi getMapFactory() => new(_runtime);
 
     public MonsterTemplate getMonster(int id) => new(id);
+
+    public OverrideMonsterStatsShim newMonsterStats() => new();
+
+    // ── P178：事件實例 ───────────────────────────────────────────────────────────────
+    public EventInstanceApi newInstance(string name)
+    {
+        var eim = new EventInstanceApi(_runtime, name);
+        lock (_runtime.Instances)
+        {
+            _runtime.Instances[name] = eim;
+        }
+
+        return eim;
+    }
+
+    public EventInstanceApi? getInstance(string name)
+    {
+        lock (_runtime.Instances)
+        {
+            return _runtime.Instances.GetValueOrDefault(name);
+        }
+    }
+
+    public EventInstanceList getInstances()
+    {
+        lock (_runtime.Instances)
+        {
+            return new(_runtime.Instances.Values.ToArray());
+        }
+    }
+
+    /// <summary>Java disposeInstance：移除；沒有實例時 state → "0"、leader "false" → "true"。</summary>
+    public void disposeInstance(string name)
+    {
+        bool empty;
+        lock (_runtime.Instances)
+        {
+            _runtime.Instances.Remove(name);
+            empty = _runtime.Instances.Count == 0;
+        }
+
+        if (!empty)
+        {
+            return;
+        }
+
+        if (getProperty("state") is not null)
+        {
+            setProperty("state", "0");
+        }
+
+        if (getProperty("leader") == "false")
+        {
+            setProperty("leader", "true");
+        }
+    }
+
+    /// <summary>Java startInstance()：setup(null)。</summary>
+    public void startInstance() => _runtime.InvokeNow("setup", (object?)null);
+
+    /// <summary>Java startInstance(MapleParty, MapleMap)：setup(partyId) → registerParty(party, map)。</summary>
+    public void startInstance(IScriptPartyRef party, IScriptMapRef map)
+        => Setup(party.PartyId)?.registerParty(party, map);
+
+    /// <summary>Java startInstance(MapleCharacter)：setup(null) → registerPlayer。</summary>
+    public void startInstance(IScriptCharacterRef character) => Setup(null)?.registerPlayer(character);
+
+    /// <summary>Java startInstance(MapleCharacter, String leader)（GPQ）：registerPlayer 後設 leader。</summary>
+    public void startInstance(IScriptCharacterRef character, JsValue leader)
+    {
+        if (Setup(null) is { } eim)
+        {
+            eim.registerPlayer(character);
+            eim.setProperty("leader", leader);
+        }
+    }
+
+    /// <summary>Java startInstance(EventInstanceManager, String leader)：setup(eim)。</summary>
+    public void startInstance(EventInstanceApi eim, string leader)
+    {
+        _runtime.InvokeNow("setup", eim);
+        eim.setProperty("leader", leader);
+    }
+
+    /// <summary>
+    /// Java startInstance(String mapid, chr)：setup(mapid) → registerCarnivalParty。擂台（CPQ）隊伍尚未移植：
+    /// 先以 registerParty（隊伍不存在時 registerPlayer）處理。
+    /// </summary>
+    public void startInstance(string mapId, IScriptCharacterRef character) => RegisterPartyOf(Setup(mapId), character);
+
+    /// <summary>Java startInstance_Party(mapid, chr)：setup(mapid) → registerParty(chr.getParty(), chr.getMap())。</summary>
+    public void startInstance_Party(string mapId, IScriptCharacterRef character) => RegisterPartyOf(Setup(mapId), character);
+
+    /// <summary>Java startInstance_CharID(chr)：setup(chr.getId()) → registerPlayer。</summary>
+    public void startInstance_CharID(IScriptCharacterRef character) => Setup(character.CharacterId)?.registerPlayer(character);
+
+    /// <summary>Java startInstance_NoID(party, map)：setup(null) → registerParty。</summary>
+    public void startInstance_NoID(IScriptPartyRef party, IScriptMapRef map) => Setup(null)?.registerParty(party, map);
+
+    /// <summary>Java warpAllPlayer(from, to)：from 圖上所有人 → to 圖 portal 0。</summary>
+    public void warpAllPlayer(int from, int to)
+    {
+        var world = _runtime.Host.World;
+        foreach (var id in world.GetCharacterIdsOnMap(from).ToArray())
+        {
+            world.Warp(id, to, 0);
+        }
+    }
+
+    private EventInstanceApi? Setup(object? argument)
+    {
+        var result = _runtime.InvokeNow("setup", argument);
+        return result.IsObject() ? result.ToObject() as EventInstanceApi : null;
+    }
+
+    private void RegisterPartyOf(EventInstanceApi? eim, IScriptCharacterRef character)
+    {
+        if (eim is null)
+        {
+            return;
+        }
+
+        var world = _runtime.Host.World;
+        if (world.GetParty(character.CharacterId) is { } party && world.GetCharacter(character.CharacterId) is { } info)
+        {
+            eim.registerParty(new PartyRef(party), new MapRef(info.MapId));
+        }
+        else
+        {
+            eim.registerPlayer(character);
+        }
+    }
+
+    private sealed record PartyRef(EventPartyInfo Party) : IScriptPartyRef
+    {
+        public int PartyId => Party.Id;
+
+        public IReadOnlyList<int> MemberIds => Party.MemberIds;
+    }
+
+    private sealed record MapRef(int MapId) : IScriptMapRef;
 
     /// <summary>Java <c>broadcastYellowMsg</c>：目前以黃字公告（type 6）送給事件相關地圖以外無法定位，先記錄。</summary>
     public void broadcastYellowMsg(string message) => _runtime.Host.Log.LogInformation("[EventScript] {Name} 公告：{Msg}", _runtime.Name, message);
@@ -301,7 +493,7 @@ public sealed class MapFactoryApi
 }
 
 /// <summary>P177：事件腳本的 MapleMap 子集（真實共用地圖）。</summary>
-public sealed class EventMapApi
+public sealed class EventMapApi : IScriptMapRef
 {
     private readonly EventRuntime _runtime;
 
@@ -337,7 +529,9 @@ public sealed class EventMapApi
     public void spawnMonsterOnGroundBelow(MonsterTemplate monster, JsValue point)
     {
         var (x, y) = ReadPoint(point);
-        World.SpawnMonster(MapId, monster.Id, x, y);
+        monster.MapId = MapId;
+        monster.ObjectId = World.SpawnMonster(MapId, monster.Id, x, y);
+        _runtime.Host.TrackMonster(monster);
     }
 
     public EventCountList getAllMonstersThreadsafe() => new(World.GetMonsterIds(MapId).Count);
@@ -432,7 +626,7 @@ public sealed class EventCountList
 }
 
 /// <summary>P177：事件腳本的 MapleCharacter 子集。</summary>
-public sealed class EventCharacterApi
+public sealed class EventCharacterApi : IScriptCharacterRef
 {
     private readonly EventRuntime _runtime;
 
@@ -440,7 +634,13 @@ public sealed class EventCharacterApi
 
     public int Id { get; }
 
+    int IScriptCharacterRef.CharacterId => Id;
+
     private EventCharacterInfo? Info => _runtime.Host.World.GetCharacter(Id);
+
+    public object? getEventInstance() => _runtime.Host.GetEventInstance(Id);
+
+    public EventPartyApi? getParty() => _runtime.Host.World.GetParty(Id) is { } party ? new(party) : null;
 
     public int getId() => Id;
 
@@ -470,14 +670,44 @@ public sealed class EventCharacterApi
     public override int GetHashCode() => Id;
 }
 
-/// <summary>MapleLifeFactory.getMonster(id) 的結果（只帶怪物 ID）。</summary>
+/// <summary>P178：事件腳本看到的 MapleParty 子集（getId／getLeader().getId()／getMembers().size()）。</summary>
+public sealed class EventPartyApi : IScriptPartyRef
+{
+    private readonly EventPartyInfo _party;
+
+    internal EventPartyApi(EventPartyInfo party) => _party = party;
+
+    int IScriptPartyRef.PartyId => _party.Id;
+
+    IReadOnlyList<int> IScriptPartyRef.MemberIds => _party.MemberIds;
+
+    public int getId() => _party.Id;
+
+    public int getLeaderId() => _party.LeaderId;
+
+    public EventCountList getMembers() => new(_party.MemberIds.Count);
+}
+
+/// <summary>MapleLifeFactory.getMonster(id) 的結果；生成後帶 mapId／objectId（P178 實例怪物登記用）。</summary>
 public sealed class MonsterTemplate
 {
     public MonsterTemplate(int id) => Id = id;
 
     public int Id { get; }
 
+    public int MapId { get; internal set; }
+
+    public int ObjectId { get; internal set; } = -1;
+
+    public EventInstanceApi? EventInstance { get; internal set; }
+
+    public OverrideMonsterStatsShim? OverrideStats { get; private set; }
+
     public int getId() => Id;
+
+    public int getObjectId() => ObjectId;
+
+    public void setOverrideStats(OverrideMonsterStatsShim stats) => OverrideStats = stats;
 }
 
 public sealed class LifeFactoryShim
@@ -489,27 +719,38 @@ public sealed class LifeFactoryShim
 public abstract class PacketDescriptor
 {
     internal abstract void Broadcast(IEventWorld world, int mapId);
+
+    /// <summary>P178：單一玩家（eim.broadcastPacket）。</summary>
+    internal abstract void SendTo(IEventWorld world, int characterId);
 }
 
 internal sealed class NoticePacket(int type, string message) : PacketDescriptor
 {
     internal override void Broadcast(IEventWorld world, int mapId) => world.BroadcastNotice(mapId, type, message);
+
+    internal override void SendTo(IEventWorld world, int characterId) => world.SendNotice(characterId, type, message);
 }
 
 internal sealed class ClockPacket(int seconds) : PacketDescriptor
 {
     internal override void Broadcast(IEventWorld world, int mapId) => world.BroadcastClock(mapId, seconds);
+
+    internal override void SendTo(IEventWorld world, int characterId) => world.SendClock(characterId, seconds);
 }
 
 internal sealed class EnvironmentPacket(int mode, string name) : PacketDescriptor
 {
     internal override void Broadcast(IEventWorld world, int mapId) => world.BroadcastEnvironment(mapId, mode, name);
+
+    internal override void SendTo(IEventWorld world, int characterId) => world.SendEnvironment(characterId, mode, name);
 }
 
 /// <summary>尚未支援的封包：廣播時忽略。</summary>
 internal sealed class UnsupportedPacket : PacketDescriptor
 {
     internal override void Broadcast(IEventWorld world, int mapId) { }
+
+    internal override void SendTo(IEventWorld world, int characterId) { }
 }
 
 /// <summary>P177：Java MaplePacketCreator 在事件腳本中常用的方法（broadcastMessage／getClock／musicChange…）。</summary>
