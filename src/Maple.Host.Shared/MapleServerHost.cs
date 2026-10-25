@@ -276,6 +276,10 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113PlayerTickHandler>();
         builder.Services.AddHostedService<WorldTickHostedService>();
 
+        // P112：怪物異常狀態 tick（1 秒，到期解除；P113 起含持續傷害）。
+        builder.Services.AddSingleton<V113MobStatusTickHandler>();
+        builder.Services.AddHostedService<MobStatusTickHostedService>();
+
         return builder;
     }
 

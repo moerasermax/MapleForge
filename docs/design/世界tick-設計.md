@@ -35,3 +35,8 @@ Java `World.Respawn`（`WorldTimer.register(new Respawn(), 3000)`）每 3 秒巡
 - 異常狀態（disease）到期、寵物飢餓／限時寵物、坐騎疲勞。
 - 死亡懲罰：P076 已移植 `playerDead` 經驗值區塊（護身符/經驗值損失），怪物打死與地圖扣血兩條路徑都接上；靈魂之石、取消 buff、事件副本、裝備耐久尚未移植。
 - Java 的 `numTimes % N` 以 tick 次數計時；MapleForge 傾向改用各物件自己的時間戳（可測、不依賴排程器次數）。
+
+## 怪物異常狀態 tick（P112，獨立 1 秒排程器）
+
+- `Maple.Host.Shared/MobStatusTickHostedService`（1 秒）→ `V113MobStatusTickHandler.TickAsync(field, now)`：`lock(field)` 內 `Mob.ExpireStatuses(now)`，鎖外逐狀態廣播 `CANCEL_MONSTER_STATUS(0xEC)` 給全圖。
+- 不併入 3 秒的 `WorldTickHostedService`：Java 每個狀態各自 `BuffTimer.schedule(cancelTask, aniTime)` 精確到期，毒傷 `register(applyEffectTask, 1000)` 每秒一次；1 秒排程讓到期最多晚 1 秒，也供 P113 持續傷害使用。
