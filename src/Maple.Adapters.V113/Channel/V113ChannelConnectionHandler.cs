@@ -2986,6 +2986,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await BroadcastPacketToOthersAsync(player.Character, V113MapPackets.UpdateCharLook(player), ct);
             await _messengerHandler.NotifyLookChangedAsync(player, _options.ChannelIndex + 1, ct); // P097：Java equipChanged → updateMessenger（1-based，P098）
+
+            // P116：Java equip/unequip → recalcLocalStats → enforceMaxHpMp（卸下 +HP 裝備時壓回上限）。
+            var enforced = player.EnforceMaxHpMp();
+            if (enforced.Count > 0)
+            {
+                await session.SendAsync(V113StatsPackets.UpdateStats(enforced), ct);
+            }
         }
 
         if (result.Success)
@@ -3243,7 +3250,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         IReadOnlyList<PlayerBuffCancellation> cancellations,
         MapleSession session,
         CancellationToken ct)
-        => _buffEffects.ApplyAsync(player, field, cancellations, ct);
+        => _buffEffects.ApplyAsync(player, field, cancellations, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
 
     private async Task HandleItemPickupAsync(
         PacketReader reader,
@@ -3769,7 +3776,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 await session.SendAsync(packet, ct);
             }
 
-            await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct);
+            await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
         }
 
         if (applied > 0)

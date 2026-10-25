@@ -61,7 +61,7 @@ public sealed class V113PlayerTickHandler
                 await SendBestEffortAsync(entry, V113SkillPackets.CancelBuff(cancellation.Stats), ct).ConfigureAwait(false);
             }
 
-            await _buffEffects.ApplyAsync(entry.Player, field, cancellations, ct).ConfigureAwait(false);
+            await _buffEffects.ApplyAsync(entry.Player, field, cancellations, ct, entry.SendPacket).ConfigureAwait(false);
 
             if (entry.Player.IsAlive)
             {
@@ -96,7 +96,7 @@ public sealed class V113PlayerTickHandler
                     await SendBestEffortAsync(entry, packet, ct).ConfigureAwait(false);
                 }
 
-                await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct).ConfigureAwait(false);
+                await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, entry.SendPacket).ConfigureAwait(false);
             }
 
             await SendBestEffortAsync(
@@ -133,7 +133,7 @@ public sealed class V113PlayerTickHandler
             await SendBestEffortAsync(entry, V113SkillPackets.CancelBuff(cancellation.Stats), ct).ConfigureAwait(false);
         }
 
-        await _buffEffects.ApplyAsync(player, field, tick.Cancellations, ct).ConfigureAwait(false);
+        await _buffEffects.ApplyAsync(player, field, tick.Cancellations, ct, entry.SendPacket).ConfigureAwait(false);
 
         if (tick.HpDelta >= 0)
         {
@@ -210,7 +210,7 @@ public sealed class V113PlayerTickHandler
             await SendBestEffortAsync(entry, V113SkillPackets.CancelBuff(cancellation.Stats), ct).ConfigureAwait(false);
         }
 
-        await _buffEffects.ApplyAsync(player, field, tick.Cancellations, ct).ConfigureAwait(false);
+        await _buffEffects.ApplyAsync(player, field, tick.Cancellations, ct, entry.SendPacket).ConfigureAwait(false);
 
         if (tick.HpDelta <= 0)
         {

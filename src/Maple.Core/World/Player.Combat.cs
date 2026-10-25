@@ -19,6 +19,30 @@ public sealed partial class Player
     /// <summary>P115：目前最大 MP（Java <c>getCurrentMaxMp</c>），規則同 <see cref="MaxHp"/>。</summary>
     public short MaxMp => ComputeCurrentMax(Character.Stats.MaxMp, static e => e.Mp, MapleBuffStat.MAXMP);
 
+    /// <summary>
+    /// P116：對照 Java <c>MapleCharacter.enforceMaxHpMp</c>（<c>recalcLocalStats</c> 尾段）：HP/MP 超過目前上限時壓回，
+    /// 回傳要送出的屬性更新（MP 先、HP 後，同 Java）；沒有變動回空清單。
+    /// </summary>
+    public IReadOnlyList<PlayerStatUpdate> EnforceMaxHpMp()
+    {
+        var updates = new List<PlayerStatUpdate>(2);
+        var maxMp = MaxMp;
+        if (Character.Stats.Mp > maxMp)
+        {
+            Character.Stats.Mp = maxMp;
+            updates.Add(new PlayerStatUpdate(PlayerStatKind.Mp, maxMp));
+        }
+
+        var maxHp = MaxHp;
+        if (Character.Stats.Hp > maxHp)
+        {
+            Character.Stats.Hp = maxHp;
+            updates.Add(new PlayerStatUpdate(PlayerStatKind.Hp, maxHp));
+        }
+
+        return updates;
+    }
+
     private short ComputeCurrentMax(short baseValue, Func<EquipEntry, short> equipValue, MapleBuffStat buffStat)
     {
         // Java recalcLocalStats：int localmaxhp_ = getMaxHp() + Σ equip.getHp()；

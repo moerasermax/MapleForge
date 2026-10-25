@@ -28,7 +28,7 @@ public sealed class CentralPartySessionHook : IV113PartySessionHook
             chr.MapId,
             ChannelIndex: Math.Max(0, online.Channel - 1),
             Hp: chr.Stats.Hp,
-            MaxHp: chr.Stats.MaxHp);
+            MaxHp: online.Player.MaxHp); // P116：Java receivePartyMemberHP 用 getCurrentMaxHp
 
         return ValueTask.FromResult<V113PartySessionPlayer?>(player);
     }

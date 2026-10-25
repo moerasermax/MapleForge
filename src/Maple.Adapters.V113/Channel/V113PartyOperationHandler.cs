@@ -113,7 +113,7 @@ public sealed class V113PartyOperationHandler
         }
 
         await BroadcastPartyUpdateAsync(result, player, channelIndex, sendSelf, ct);
-        await SyncPartyMemberHpAsync(updated, chr, sendSelf, ct);
+        await SyncPartyMemberHpAsync(updated, player, sendSelf, ct);
     }
 
     /// <summary>
@@ -467,11 +467,13 @@ public sealed class V113PartyOperationHandler
     /// <summary>對照 Java <c>updatePartyMemberHP</c>（送出自己 HP）+ <c>receivePartyMemberHP</c>（收其他人 HP）合併一輪。</summary>
     private async Task SyncPartyMemberHpAsync(
         PartyState party,
-        Character self,
+        Player selfPlayer,
         Func<byte[], CancellationToken, Task> sendSelf,
         CancellationToken ct)
     {
-        var selfHpPacket = V113PartyPackets.UpdatePartyMemberHp(self.Id, self.Stats.Hp, self.Stats.MaxHp);
+        // P116：Java updatePartyMemberHP 送 getCurrentMaxHp（含裝備與 MAXHP buff）。
+        var self = selfPlayer.Character;
+        var selfHpPacket = V113PartyPackets.UpdatePartyMemberHp(self.Id, selfPlayer.Hp, selfPlayer.MaxHp);
 
         foreach (var member in party.Members)
         {

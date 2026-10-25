@@ -50,6 +50,29 @@ public sealed class PlayerCurrentMaxHpTests
         Assert.Equal((short)600, player.Hp);
     }
 
+    [Fact]
+    public void EnforceMaxHpMp_BuffEnds_ClampsHpAndMp()
+    {
+        var player = MakePlayer(maxHp: 1000, maxMp: 1000);
+        player.ApplySkillEffect(HyperBody(60), DateTimeOffset.UnixEpoch);
+        player.HealHp(5000);
+        player.HealMp(5000);
+        Assert.Equal((short)1600, player.Hp);
+
+        player.CancelBuffBySource(1301007);
+        var updates = player.EnforceMaxHpMp();
+
+        Assert.Equal((short)1000, player.Hp);
+        Assert.Equal((short)1000, player.Mp);
+        Assert.Equal(new[] { PlayerStatKind.Mp, PlayerStatKind.Hp }, updates.Select(static u => u.Kind));
+    }
+
+    [Fact]
+    public void EnforceMaxHpMp_WithinLimits_NoUpdates()
+    {
+        Assert.Empty(MakePlayer(maxHp: 100, maxMp: 100).EnforceMaxHpMp());
+    }
+
     private static MapleStatEffect HyperBody(int percent)
         => new()
         {

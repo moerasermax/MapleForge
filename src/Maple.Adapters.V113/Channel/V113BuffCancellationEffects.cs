@@ -28,7 +28,8 @@ public sealed class V113BuffCancellationEffects
         Player player,
         FieldInstance? field,
         IReadOnlyList<PlayerBuffCancellation> cancellations,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<byte[], CancellationToken, Task>? sendSelf = null)
     {
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(cancellations);
@@ -36,6 +37,27 @@ public sealed class V113BuffCancellationEffects
         if (cancellations.Count == 0)
         {
             return;
+        }
+
+        // P116：Java cancelEffect → recalcLocalStats → enforceMaxHpMp（神聖之火等 MAXHP/MAXMP buff 結束時壓回上限）。
+        if (sendSelf is not null)
+        {
+            var enforced = player.EnforceMaxHpMp();
+            if (enforced.Count > 0)
+            {
+                try
+                {
+                    await sendSelf(V113StatsPackets.UpdateStats(enforced), ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // best-effort
+                }
+            }
         }
 
         if (cancellations.Any(static c => DoorService.IsMagicDoorSkill(c.SourceId)))
