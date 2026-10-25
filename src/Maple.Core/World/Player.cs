@@ -154,7 +154,10 @@ public sealed partial class Player : IFieldObject
     /// P214：Java <c>haveItem(id, 1, checkEquipped=true, greaterOrEquals=false)</c>——持有數「剛好等於 1」（裝備含已穿戴）。
     /// 唯一道具照抄這個 == 1 的判斷。
     /// </summary>
-    public bool HasExactlyOneIncludingEquipped(int itemId)
+    public bool HasExactlyOneIncludingEquipped(int itemId) => CountIncludingEquipped(itemId) == 1;
+
+    /// <summary>P215：Java <c>haveItem</c> 的持有數（裝備含已穿戴）。</summary>
+    public int CountIncludingEquipped(int itemId)
     {
         var type = InventoryTypeOf(itemId);
         var count = Inventory.By(type).CountById(itemId);
@@ -163,7 +166,7 @@ public sealed partial class Player : IFieldObject
             count += Character.Equips.Count(e => e.ItemId == itemId);
         }
 
-        return count == 1;
+        return count;
     }
 
     public void UseChair(int itemId) => ChairItemId = itemId;

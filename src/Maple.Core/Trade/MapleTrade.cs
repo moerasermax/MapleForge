@@ -319,7 +319,10 @@ public sealed class MapleTrade
         return new TradeOfferMesoResult(TradeOfferMesoStatus.Success, offer.Meso);
     }
 
-    public TradeConfirmResult Confirm(Player player)
+    public TradeConfirmResult Confirm(Player player) => Confirm(player, isPickupRestricted: null);
+
+    /// <param name="isPickupRestricted">P215：唯一道具判斷（Java isPickupRestricted）；null 時不檢查。</param>
+    public TradeConfirmResult Confirm(Player player, Func<int, bool>? isPickupRestricted)
     {
         if (IsClosed)
         {
@@ -344,7 +347,7 @@ public sealed class MapleTrade
             return new TradeConfirmResult(TradeConfirmStatus.WaitingForPartner);
         }
 
-        var failure = CheckCompletionFailure();
+        var failure = CheckCompletionFailure(player, isPickupRestricted);
         if (failure is not null)
         {
             Cancel(failure.Value);
@@ -384,7 +387,11 @@ public sealed class MapleTrade
         Close();
     }
 
-    private TradeCancelReason? CheckCompletionFailure()
+    /// <summary>
+    /// Java <c>completeTrade</c>：<c>lz = local.check(), lz2 = partner.check()</c>，原因取 <c>lz == 0 ? lz2 : lz</c>——
+    /// 先檢查確認方（local）收到的、再檢查對方；各自先看唯一道具（P215），再看楓幣溢位與空格。
+    /// </summary>
+    private TradeCancelReason? CheckCompletionFailure(Player confirmer, Func<int, bool>? isPickupRestricted)
     {
         var invitee = Invitee;
         var inviteeOffer = _inviteeOffer;
@@ -393,12 +400,29 @@ public sealed class MapleTrade
             return TradeCancelReason.Canceled;
         }
 
-        if (!CanReceive(Initiator, inviteeOffer) || !CanReceive(invitee, _initiatorOffer))
+        var initiatorCheck = CheckReceiver(Initiator, inviteeOffer, isPickupRestricted);
+        var inviteeCheck = CheckReceiver(invitee, _initiatorOffer, isPickupRestricted);
+        return ReferenceEquals(confirmer, Initiator)
+            ? initiatorCheck ?? inviteeCheck
+            : inviteeCheck ?? initiatorCheck;
+    }
+
+    /// <summary>Java <c>MapleTrade.check()</c>：楓幣溢位 → 1；唯一道具且已持有（findById 或 haveItem(id,1,true,true)）→ 2；空間不足 → 1。</summary>
+    private static TradeCancelReason? CheckReceiver(Player receiver, TradeOffer incoming, Func<int, bool>? isPickupRestricted)
+    {
+        var mesoGain = TradeTax.GetNetMeso(incoming.Meso);
+        if (mesoGain > 0 && (long)receiver.Character.Meso + mesoGain > int.MaxValue)
         {
-            return TradeCancelReason.InventoryFull;
+            return TradeCancelReason.InventoryFull; // Java：meso 溢位先回 1
         }
 
-        return null;
+        if (isPickupRestricted is not null
+            && incoming.Items.Any(i => isPickupRestricted(i.Item.ItemId) && receiver.CountIncludingEquipped(i.Item.ItemId) >= 1))
+        {
+            return TradeCancelReason.PickupRestricted;
+        }
+
+        return CanReceive(receiver, incoming) ? null : TradeCancelReason.InventoryFull;
     }
 
     private static bool CanReceive(Player receiver, TradeOffer incoming)

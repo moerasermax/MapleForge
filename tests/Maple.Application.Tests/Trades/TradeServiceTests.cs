@@ -2,6 +2,7 @@ using Maple.Application.OnlinePlayers;
 using Maple.Application.Trades;
 using Maple.Core.Characters;
 using Maple.Core.Inventory;
+using Maple.Core.Trade;
 using Maple.Core.World;
 
 namespace Maple.Application.Tests.Trades;
@@ -98,6 +99,44 @@ public sealed class TradeServiceTests
         Assert.Equal((short)4, merged.Slot);
         Assert.True(trade.InviteeReceivedMeso > 0);
         Assert.Empty(trade.InitiatorReceived);
+    }
+
+    [Fact]
+    public void CompleteTrade_UniqueItemAlreadyOwned_CancelsWithPickupRestricted()
+    {
+        // P215：Java MapleTrade.check()——收方已有唯一道具 → 2（getTradeCancel 第 3 byte = 10）。
+        var registry = new FakeOnlinePlayerRegistry();
+        var service = new TradeService(registry, new UniqueItemCatalog(4030003));
+        var alice = NewPlayer(1, "Alice", meso: 0, new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4030003, Slot = 1, Quantity = 1 });
+        var bob = NewPlayer(2, "Bob", meso: 0, new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4030003, Slot = 1, Quantity = 1 });
+        Register(service, registry, alice);
+        Register(service, registry, bob);
+
+        Assert.True(service.StartTrade(alice).Success);
+        Assert.True(service.InviteTrade(alice, bob.Character.Id).Success);
+        Assert.True(service.VisitTrade(bob).Success);
+        Assert.True(service.OfferItem(alice, InventoryType.Etc, 1, 1, -1).Success);
+        service.ConfirmTrade(alice);
+        var result = service.ConfirmTrade(bob);
+
+        Assert.All(result.Notices, n => Assert.Equal((TradeNoticeKind.Cancel, TradeCancelReason.PickupRestricted), (n.Kind, n.CancelReason)));
+        Assert.Equal(1, alice.Inventory.By(InventoryType.Etc).CountById(4030003)); // 放回
+        Assert.Equal(1, bob.Inventory.By(InventoryType.Etc).CountById(4030003));
+    }
+
+    private sealed class UniqueItemCatalog(int uniqueId) : Maple.Core.Items.IItemMakeCatalog
+    {
+        public Maple.Core.Items.ItemMakeGemRecipe? GetGemRecipe(int itemId) => null;
+        public Maple.Core.Items.ItemMakeCreateRecipe? GetCreateRecipe(int itemId) => null;
+        public int GetItemMakeLevel(int itemId) => 0;
+        public int GetRequiredLevel(int itemId) => 0;
+        public bool IsDropRestricted(int itemId) => false;
+        public bool IsAccountShared(int itemId) => false;
+        public bool IsPickupRestricted(int itemId) => itemId == uniqueId;
+        public Equip? CreateEquip(int itemId) => null;
+        public Maple.Core.Items.ItemMakeEnhanceStats? GetEnhanceStats(int itemId) => null;
+        public int GemRecipeCount => 0;
+        public int CreateRecipeCount => 0;
     }
 
     [Fact]

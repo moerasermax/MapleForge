@@ -69,9 +69,12 @@ public sealed class TradeService
     private readonly Dictionary<int, RegisteredTradePlayer> _players = [];
     private readonly Dictionary<int, MapleTrade> _activeTrades = [];
 
-    public TradeService(IOnlinePlayerRegistry onlinePlayers)
+    private readonly Maple.Core.Items.IItemMakeCatalog? _items;
+
+    public TradeService(IOnlinePlayerRegistry onlinePlayers, Maple.Core.Items.IItemMakeCatalog? items = null)
     {
         _onlinePlayers = onlinePlayers;
+        _items = items;
     }
 
     public void RegisterPlayer(
@@ -326,7 +329,7 @@ public sealed class TradeService
             }
 
             var actorSide = trade.GetSide(player);
-            var result = trade.Confirm(player);
+            var result = trade.Confirm(player, _items is null ? null : _items.IsPickupRestricted);
             switch (result.Status)
             {
                 case TradeConfirmStatus.WaitingForPartner:
