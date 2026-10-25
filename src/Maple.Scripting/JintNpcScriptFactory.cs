@@ -340,6 +340,12 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public string getName() => _cm.GetName();
         public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
 
+        // ── P196：公會 ─────────────────────────────────────────────────────────────────
+        public GuildRef? getGuild() => _cm.GetGuildId() > 0 ? new(_cm.GetGuildId(), _cm) : null;
+        public void gainGP(int gp) => _cm.GainGuildPoints(gp);
+        public int getGP() => _cm.GetGuildPoints();
+        public void genericGuildMessage(int code) => _cm.GenericGuildMessage(code);
+
         // ── P195 ───────────────────────────────────────────────────────────────────────
         public int getNpc() => _cm.GetNpcId();
         public void gainAp(int amount) => _cm.GainAp(amount);
@@ -754,5 +760,19 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public ChannelServerFacade getEventSM() => this;
 
         public object? getEventManager(string name) => _cm.HasEventManager(name) ? new EventManagerFacade(_cm, name) : _events?.GetEventManager(name);
+    }
+
+    /// <summary>P196：Java MapleGuild 子集（getId／getGP）。</summary>
+    public sealed class GuildRef
+    {
+        private readonly INpcScriptContext _cm;
+
+        internal GuildRef(int id, INpcScriptContext cm) => (Id, _cm) = (id, cm);
+
+        public int Id { get; }
+
+        public int getId() => Id;
+
+        public int getGP() => _cm.GetGuildPoints();
     }
 }

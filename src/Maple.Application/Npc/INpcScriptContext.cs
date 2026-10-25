@@ -204,6 +204,12 @@ public interface INpcScriptContext
     void GainExpR(int gain) { }
     int GetMonsterCount(int mapId) => 0;
 
+    // ── P196：公會 GP ──────────────────────────────────────────────────────────────────
+    int GetGuildId() => 0;
+    void GainGuildPoints(int amount) { }
+    int GetGuildPoints() => 0;
+    void GenericGuildMessage(int code) { }
+
     // ── P195 ────────────────────────────────────────────────────────────────────────
     int GetNpcId() => 0;
     /// <summary>Java warpBack(mid, retmap, time)：傳到 mid 並開 time 秒計時，到時回 retmap。</summary>

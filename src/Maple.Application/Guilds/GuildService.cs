@@ -19,6 +19,7 @@ public enum GuildUpdateKind
     MemberLevelJobChanged,
     CapacityChanged,
     Disbanded,
+    PointsChanged,
 }
 
 public enum GuildCommandStatus
@@ -83,6 +84,10 @@ public interface IGuildRegistry
     /// <summary>擴充公會人數上限（cm.increaseGuildCapacity 用）。對照 Java <c>MapleGuild.increaseCapacity</c>：
     /// +5、上限 100，找不到公會或已達上限回非 Success（不拋例外）。</summary>
     Task<GuildCommandResult> IncreaseCapacityAsync(int guildId, CancellationToken ct = default);
+
+    /// <summary>P196：Java <c>World.Guild.gainGP</c> → <c>MapleGuild.gainGP(amount)</c>：0 不動；不低於 0；通知線上成員 updateGP。</summary>
+    Task<GuildCommandResult> GainGuildPointsAsync(int guildId, int amount, CancellationToken ct = default)
+        => Task.FromResult(new GuildCommandResult(GuildCommandStatus.InvalidOperation));
 
     /// <summary>解散公會（cm.disbandGuild 用）。對照 Java <c>MapleGuild.disbandGuild</c>：從登記表移除、
     /// 刪除持久化紀錄；回傳的 <see cref="GuildCommandResult.Guild"/> 是刪除前的快照（含完整成員名單，
@@ -505,6 +510,36 @@ public sealed class InMemoryGuildRegistry : IGuildRegistry
         }
     }
 
+    public async Task<GuildCommandResult> GainGuildPointsAsync(int guildId, int amount, CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct).ConfigureAwait(false);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!_guilds.TryGetValue(guildId, out var guild))
+            {
+                return new GuildCommandResult(GuildCommandStatus.GuildNotFound);
+            }
+
+            if (amount == 0)
+            {
+                return new GuildCommandResult(GuildCommandStatus.InvalidOperation, guild.Snapshot());
+            }
+
+            guild.GainGuildPoints(amount);
+            await _repository.UpdateAsync(guild, ct).ConfigureAwait(false);
+            return new GuildCommandResult(
+                GuildCommandStatus.Success,
+                guild.Snapshot(),
+                UpdateKind: GuildUpdateKind.PointsChanged,
+                RecipientCharacterIds: OnlineRecipientIds(guild));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<GuildCommandResult> IncreaseCapacityAsync(int guildId, CancellationToken ct = default)
     {
         await EnsureLoadedAsync(ct).ConfigureAwait(false);
@@ -902,6 +937,12 @@ public sealed class GuildService
         _registry = registry;
         _characters = characters;
     }
+
+    /// <summary>P196：Java gainGP（公會 ID ≤ 0 不動）。</summary>
+    public Task<GuildCommandResult> GainGuildPointsAsync(int guildId, int amount, CancellationToken ct = default)
+        => guildId <= 0
+            ? Task.FromResult(new GuildCommandResult(GuildCommandStatus.NotInGuild))
+            : _registry.GainGuildPointsAsync(guildId, amount, ct);
 
     public Task<GuildState?> GetGuildAsync(int guildId, CancellationToken ct = default) =>
         _registry.GetGuildAsync(guildId, ct);

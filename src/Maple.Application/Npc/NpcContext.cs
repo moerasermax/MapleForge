@@ -81,8 +81,10 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Func<int, IReadOnlyList<int>>? playersOnMap = null,
         int expRate = 1,
         Maple.Application.Squads.SquadRegistry? squads = null,
-        Maple.Application.Text.WzStringCatalog? strings = null)
+        Maple.Application.Text.WzStringCatalog? strings = null,
+        Func<int, int>? guildPointsOf = null)
     {
+        _guildPointsOf = guildPointsOf ?? (static _ => 0);
         _strings = strings;
         _squads = squads;
         _parties = parties;
@@ -155,6 +157,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingMapWarp = null;
         _pendingWarpBack = null;
         _pendingEnvironmentClock = null;
+        _pendingGuildPoints = 0;
+        _pendingGuildMessages.Clear();
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -1060,4 +1064,31 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 
     /// <summary>P195：warpBack 的 getClock(秒)。</summary>
     public int? PendingClock => _pendingEnvironmentClock;
+
+    // ── P196：公會 GP ─────────────────────────────────────────────────────────────────
+    private readonly Func<int, int> _guildPointsOf;
+    private int _pendingGuildPoints;
+    private readonly List<byte> _pendingGuildMessages = new();
+
+    /// <summary>P196：gainGP 累計（呼叫端寫入公會並廣播 updateGP）。</summary>
+    public int PendingGuildPoints => _pendingGuildPoints;
+
+    /// <summary>P196：genericGuildMessage(code)。</summary>
+    public IReadOnlyList<byte> PendingGuildMessages => _pendingGuildMessages;
+
+    public int GetGuildId() => _player.Character.GuildId;
+
+    /// <summary>Java gainGP：沒有公會不動。</summary>
+    public void GainGuildPoints(int amount)
+    {
+        if (_player.Character.GuildId > 0)
+        {
+            _pendingGuildPoints += amount;
+        }
+    }
+
+    /// <summary>Java getGP：沒有公會 0；同一段對話已 gainGP 的量一併計入。</summary>
+    public int GetGuildPoints() => _player.Character.GuildId <= 0 ? 0 : Math.Max(0, _guildPointsOf(_player.Character.GuildId) + _pendingGuildPoints);
+
+    public void GenericGuildMessage(int code) => _pendingGuildMessages.Add((byte)code);
 }

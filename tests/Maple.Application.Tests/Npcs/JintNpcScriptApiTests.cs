@@ -493,6 +493,34 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal(80, clock);
     }
 
+    [Fact]
+    public async Task Script_GuildGp_PendingAndSnapshot()
+    {
+        // P196：cm.getGuild()（無公會 null）、gainGP 累計、getGP = 快照＋本次累計。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999985.js"), """
+            function start() {
+                if (cm.getGuild() == null) { cm.sendOk("none"); return; }
+                cm.gainGP(30);
+                cm.genericGuildMessage(0x1C);
+                cm.sendOk(cm.getGuild().getId() + "/" + cm.getGP());
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30, GuildId = 7 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(9999985, player, new QuestService(new EmptyQuestCatalog()), guildPointsOf: id => id == 7 ? 100 : 0);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        (int, byte[])? pending = null;
+        var convo = new NpcConversation(9999985, factory.TryCreate(9999985, ctx)!, ctx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (_, _) => Task.CompletedTask,
+            applyWorldEffects: (c, _) => { pending = (c.PendingGuildPoints, c.PendingGuildMessages.ToArray()); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal("7/130", Assert.Single(dialogs).Text);
+        Assert.Equal(30, pending!.Value.Item1);
+        Assert.Equal(new byte[] { 0x1C }, pending.Value.Item2);
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

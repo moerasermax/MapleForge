@@ -2525,7 +2525,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             playersOnMap: mapId => _mapRegistry.GetAll(mapId).Select(static e => e.CharId).ToArray(),
             expRate: _dropOptions?.ExpRate ?? 1,
             squads: _squads,
-            strings: _strings);
+            strings: _strings,
+            guildPointsOf: guildId => _guildService.GetGuildAsync(guildId).GetAwaiter().GetResult()?.GuildPoints ?? 0);
 
     /// <summary>
     /// P176：跨隊員腳本效果——排進該隊員自己的連線序列執行（warp／經驗／道具），結果照一般 cm 送包流程送給對方。
@@ -4030,6 +4031,31 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             for (var i = 0; i < quantity; i++)
             {
                 RunEventHook(() => _eventWorld?.SpawnMonster(mapId, monsterId, x, y));
+            }
+        }
+
+        // P196：genericGuildMessage／gainGP（寫入公會，通知線上成員 updateGP）。
+        foreach (var code in ctx.PendingGuildMessages)
+        {
+            if (_onlinePlayers.FindById(player.Character.Id) is { } me)
+            {
+                await me.SendPacket(V113GuildPackets.GenericGuildMessage(code), ct);
+            }
+        }
+
+        if (ctx.PendingGuildPoints != 0)
+        {
+            var gp = await _guildService.GainGuildPointsAsync(player.Character.GuildId, ctx.PendingGuildPoints, ct);
+            if (gp.Succeeded && gp.Guild is { } guild)
+            {
+                var gpPacket = V113GuildPackets.UpdateGuildPoints(guild.Id, guild.GuildPoints);
+                foreach (var recipientId in gp.Recipients.Distinct())
+                {
+                    if (_onlinePlayers.FindById(recipientId) is { } member)
+                    {
+                        try { await member.SendPacket(gpPacket, ct); } catch { /* best-effort */ }
+                    }
+                }
             }
         }
 

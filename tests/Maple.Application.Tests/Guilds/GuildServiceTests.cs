@@ -156,6 +156,28 @@ public sealed class GuildServiceTests
     }
 
     [Fact]
+    public async Task GainGuildPointsAsync_AddsClampsAtZero_IgnoresZeroAndNoGuild()
+    {
+        // P196：Java MapleGuild.gainGP——0 不動、不低於 0、通知線上成員。
+        var characters = new FakeCharacterRepository();
+        var guilds = new FakeGuildRepository();
+        var service = new GuildService(new InMemoryGuildRegistry(guilds, firstGuildId: 50), characters);
+        var leader = Player(1, "Leader", meso: GuildService.CreationCost, mapId: GuildService.CreationMapId);
+        characters.Put(leader.Character);
+        var created = await service.CreateGuildAsync(leader, "Points", channel: 1);
+        var guildId = created.Guild!.Id;
+
+        var gained = await service.GainGuildPointsAsync(guildId, 25);
+        Assert.True(gained.Succeeded);
+        Assert.Equal(GuildService.InitialGuildPoints + 25, gained.Guild!.GuildPoints);
+        Assert.Equal(GuildUpdateKind.PointsChanged, gained.UpdateKind);
+
+        Assert.Equal(0, (await service.GainGuildPointsAsync(guildId, -100000)).Guild!.GuildPoints);
+        Assert.False((await service.GainGuildPointsAsync(guildId, 0)).Succeeded);
+        Assert.Equal(GuildCommandStatus.NotInGuild, (await service.GainGuildPointsAsync(0, 5)).Status);
+    }
+
+    [Fact]
     public async Task IncreaseGuildCapacityAsync_BelowCap_IncreasesByFiveAndDeductsMeso()
     {
         var characters = new FakeCharacterRepository();
