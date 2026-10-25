@@ -109,6 +109,30 @@ public sealed class ChannelMobStatusTickHandlerTests
         Assert.Equal(V113StatsPackets.UpdateStats([new PlayerStatUpdate(PlayerStatKind.Mp, 200)]), Assert.Single(received));
     }
 
+    [Fact]
+    public async Task TickAsync_RemoveAfterExpired_BroadcastsKillWithAnimationOne()
+    {
+        var registry = new InMemoryMapSessionRegistry();
+        var field = new FieldInstance(100000100);
+        var mob = new Mob(
+            new MapMonster { MonsterId = 100100, X = 0, Y = 0, Fh = 1 },
+            new MobStats(100100, 100, MaxMp: 0, Level: 1, Exp: 1, RemoveAfterSeconds: 5),
+            objectId: 100001);
+        field.Add(mob);
+        var received = new List<byte[]>();
+        var watcher = new Player(new Character { Id = 1, Name = "Watcher" }, new Position(0, 0, 0, 0));
+        registry.Register(field.MapId, 1, watcher, (pkt, _) => { received.Add(pkt); return Task.CompletedTask; }, new object());
+        var handler = new V113MobStatusTickHandler(registry, new CombatService(new MapService(new EmptyDataProvider())));
+
+        await handler.TickAsync(field, T0, CancellationToken.None);
+        Assert.Empty(received);
+
+        await handler.TickAsync(field, T0.AddSeconds(5), CancellationToken.None);
+
+        Assert.Null(field.Get(100001));
+        Assert.Equal(V113CombatPackets.KillMonster(100001, 1), Assert.Single(received));
+    }
+
     private static (V113MobStatusTickHandler Handler, FieldInstance Field, Mob Mob, List<byte[]> Received, Player Player) SetupWithMists()
     {
         var registry = new InMemoryMapSessionRegistry();

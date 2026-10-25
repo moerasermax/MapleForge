@@ -40,7 +40,9 @@ public sealed record MobStats(
     // P146：WZ info/undead（Java setUndead：undead &gt; 0 或 9700004、9700009~9700011）。
     bool Undead = false,
     // P148：WZ info/revive（死亡後生成的怪物模板 id，Java MapleMonsterStats.getRevives）。
-    IReadOnlyList<int>? Revives = null)
+    IReadOnlyList<int>? Revives = null,
+    // P149：WZ info/removeAfter（秒；&gt; 0 時生成後自動消失，Java checkRemoveAfter）。
+    int RemoveAfterSeconds = 0)
 {
     /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
     public ElementalEffectiveness GetEffectiveness(Element element)
@@ -363,6 +365,21 @@ public sealed class Mob : IFieldObject
 
     /// <summary>P122：扣怪物 MP（Java <c>setMp(getMp() - mpCon)</c>，負值夾 0）。</summary>
     public void ConsumeMp(int amount) => Mp = Math.Max(0, Mp - amount);
+
+    /// <summary>P149：removeAfter 到期時間（第一次被世界 tick 看到時起算；Java 在生成時排程）。</summary>
+    public DateTimeOffset? RemoveAt { get; private set; }
+
+    /// <summary>P149：有 removeAfter 且尚未起算時，以 <paramref name="now"/> 起算；回傳是否已到期。</summary>
+    public bool CheckRemoveAfter(DateTimeOffset now)
+    {
+        if (Stats.RemoveAfterSeconds <= 0)
+        {
+            return false;
+        }
+
+        RemoveAt ??= now.AddSeconds(Stats.RemoveAfterSeconds);
+        return RemoveAt <= now;
+    }
 
     /// <summary>P148：Java <c>setLinkOid</c>（revive 生成時 = 死亡怪物 oid；SPAWN_MONSTER 的 link 欄）。</summary>
     public int LinkObjectId { get; init; }

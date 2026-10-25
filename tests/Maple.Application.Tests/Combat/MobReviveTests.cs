@@ -74,6 +74,42 @@ public sealed class MobReviveTests
         Assert.Null(service.SpawnRevives(field, sponge, 1));
     }
 
+    [Fact]
+    public void RemoveAfter_ExpiresAfterSeconds_FromFirstCheck_AndSpawnsRevives()
+    {
+        var maps = new MapService(new ReviveProvider());
+        var service = new CombatService(maps);
+        var field = new FieldInstance(100000100);
+        var player = new Player(new Character { Id = 5, Name = "W" }, new Position(0, 0, 0, 0));
+        var stats = maps.LoadMobStats(100100)! with { RemoveAfterSeconds = 30 };
+        var mob = new Mob(new MapMonster { MonsterId = 100100, X = 0, Y = 0, Fh = 1 }, stats, 100001);
+        field.Add(player);
+        field.Add(mob);
+        var t0 = new DateTimeOffset(2026, 10, 26, 0, 0, 0, TimeSpan.Zero);
+
+        Assert.Empty(service.ExpireRemoveAfter(field, t0));
+        Assert.Empty(service.ExpireRemoveAfter(field, t0.AddSeconds(29)));
+        var expired = Assert.Single(service.ExpireRemoveAfter(field, t0.AddSeconds(30)));
+
+        Assert.Equal((byte)1, expired.Animation);
+        Assert.Null(field.Get(100001));
+        Assert.Equal(2, expired.Revived!.Count);
+        Assert.All(expired.Revived!, r => Assert.Equal(5, r.ControllerId));
+    }
+
+    [Fact]
+    public void NoRemoveAfter_NeverExpires()
+    {
+        var mob = new Mob(new MapMonster { MonsterId = 100100 }, new MobStats(100100, 10, MaxMp: 0, Level: 1, Exp: 1), 1);
+
+        Assert.False(mob.CheckRemoveAfter(DateTimeOffset.MaxValue));
+        Assert.Null(mob.RemoveAt);
+    }
+
+    [Fact]
+    public void LoadMobStats_ReadsRemoveAfter()
+        => Assert.Equal(12, new MapService(new ReviveProvider()).LoadMobStats(100102)!.RemoveAfterSeconds);
+
     private sealed class ReviveProvider : IDataProvider
     {
         public IDataNode GetRoot(string fileName) => new Node(fileName);
@@ -86,17 +122,22 @@ public sealed class MobReviveTests
                 ["0"] = new Node("0", 100101),
             }),
             ("Mob", "0100101.img") => MobImg("0100101.img"),
-            ("Mob", "0100102.img") => MobImg("0100102.img"),
+            ("Mob", "0100102.img") => MobImg("0100102.img", removeAfter: 12),
             _ => null,
         };
 
-        private static Node MobImg(string name, IReadOnlyDictionary<string, IDataNode>? revive = null)
+        private static Node MobImg(string name, IReadOnlyDictionary<string, IDataNode>? revive = null, int removeAfter = 0)
         {
             var info = new Dictionary<string, IDataNode>
             {
                 ["maxHP"] = new Node("maxHP", 50),
                 ["level"] = new Node("level", 3),
             };
+            if (removeAfter > 0)
+            {
+                info["removeAfter"] = new Node("removeAfter", removeAfter);
+            }
+
             if (revive is not null)
             {
                 info["revive"] = new Node("revive", children: revive);

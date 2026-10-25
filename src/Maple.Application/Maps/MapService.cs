@@ -139,7 +139,8 @@ public sealed class MapService
             Eva: GetInt(info, "eva", 0),
             MagicDefense: GetInt(info, "MDDamage", 0),
             Undead: GetInt(info, "undead", 0) > 0 || monsterId is 9700004 or 9700009 or 9700010 or 9700011,
-            Revives: LoadRevives(info["revive"]));
+            Revives: LoadRevives(info["revive"]),
+            RemoveAfterSeconds: GetInt(info, "removeAfter", 0));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -33,8 +33,12 @@ public sealed class V113MobStatusTickHandler
         IReadOnlyList<CombatMobHit> dotHits;
         Mist[] expiredMists;
         var mistTick = MistTickResult.Empty;
+        IReadOnlyList<CombatMobKillResult> removed;
         lock (field)
         {
+            // P149：removeAfter 到期（Java checkRemoveAfter → killMonster(monster)）。
+            removed = _combat.ExpireRemoveAfter(field, now);
+
 
             // P131：Java spawnMist 的 tMan.schedule(remove, duration)——到期移除並廣播 REMOVE_MIST。
             expiredMists = field.Objects.OfType<Mist>().Where(m => m.ExpiresAt <= now).ToArray();
@@ -61,12 +65,24 @@ public sealed class V113MobStatusTickHandler
             }
         }
 
-        if (cancelled.Count == 0 && dotHits.Count == 0 && expiredMists.Length == 0 && mistTick.IsEmpty)
+        if (cancelled.Count == 0 && dotHits.Count == 0 && expiredMists.Length == 0 && mistTick.IsEmpty && removed.Count == 0)
         {
             return;
         }
 
         var recipients = _mapRegistry.GetAll(field.MapId);
+        foreach (var kill in removed)
+        {
+            await SendAsync(recipients, V113CombatPackets.KillMonster(kill.ObjectId, kill.Animation), ct);
+            foreach (var revived in kill.Revived ?? [])
+            {
+                await SendAsync(recipients, V113CombatPackets.SpawnMonster(revived, spawnType: -2, link: revived.LinkObjectId), ct);
+                await SendAsync(
+                    recipients.Where(r => r.CharId == revived.ControllerId),
+                    V113CombatPackets.SpawnMonsterControl(revived, newSpawn: true, aggro: false),
+                    ct);
+            }
+        }
         foreach (var mist in expiredMists)
         {
             await SendAsync(recipients, V113MistPackets.RemoveMist(mist.ObjectId), ct);

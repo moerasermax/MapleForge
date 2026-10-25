@@ -626,6 +626,32 @@ public sealed class CombatService
     }
 
     /// <summary>
+    /// P149：對照 Java <c>MapleMap.checkRemoveAfter</c> → 私有 <c>killMonster(monster)</c>：到期怪物 HP 歸 0、spawnRevives、
+    /// 廣播 killMonster(oid, 1)、移出地圖；不給經驗／掉寶，也不呼叫重生點 listener（照抄）。revive 控制者給地圖第一位玩家。
+    /// 世界 tick 每秒呼叫（第一次看到才起算，最多晚 1 秒）。呼叫端持有 field 鎖。
+    /// </summary>
+    public IReadOnlyList<CombatMobKillResult> ExpireRemoveAfter(FieldInstance field, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        List<CombatMobKillResult>? expired = null;
+        foreach (var mob in field.Objects.OfType<Mob>().ToArray())
+        {
+            if (!mob.IsAlive || !mob.CheckRemoveAfter(now))
+            {
+                continue;
+            }
+
+            var controllerId = field.Players.FirstOrDefault()?.Character.Id ?? 0;
+            var revived = SpawnRevives(field, mob, controllerId);
+            field.Remove(mob.ObjectId);
+            (expired ??= []).Add(new CombatMobKillResult(mob.ObjectId, mob.Definition.MonsterId, Animation: 1, Killed: true, revived));
+        }
+
+        return expired ?? [];
+    }
+
+    /// <summary>
     /// P148：對照 Java <c>MapleMonster.spawnRevives</c> 的 default 分支 → <c>map.spawnRevives(mob, oid)</c>：在死亡位置依序生成
     /// <c>info/revive</c> 的怪物（link = 死亡怪物 oid），控制者交給 <paramref name="controllerId"/>（Java updateMonsterController）。
     /// 暗黑龍王／皮卡啾的海綿怪分支（8810118~8810121、8810026、8810130、8820008~8820013）尚未移植，不生成。
