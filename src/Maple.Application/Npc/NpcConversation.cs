@@ -34,6 +34,7 @@ public sealed class NpcConversation
     private readonly Func<NpcUiEffect, CancellationToken, Task>? _sendUiEffect;
     private readonly Func<CancellationToken, Task>? _killAllMob;
     private readonly Func<NpcPartyAction, CancellationToken, Task>? _sendPartyAction;
+    private readonly Func<Maple.Application.Squads.SquadNotice, CancellationToken, Task>? _sendSquadNotice;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -61,8 +62,10 @@ public sealed class NpcConversation
         Func<CancellationToken, Task>? playPortalSe = null,
         Func<NpcUiEffect, CancellationToken, Task>? sendUiEffect = null,
         Func<CancellationToken, Task>? killAllMob = null,
-        Func<NpcPartyAction, CancellationToken, Task>? sendPartyAction = null)
+        Func<NpcPartyAction, CancellationToken, Task>? sendPartyAction = null,
+        Func<Maple.Application.Squads.SquadNotice, CancellationToken, Task>? sendSquadNotice = null)
     {
+        _sendSquadNotice = sendSquadNotice;
         _sendPartyAction = sendPartyAction;
         _killAllMob = killAllMob;
         _sendUiEffect = sendUiEffect;
@@ -196,6 +199,14 @@ public sealed class NpcConversation
             foreach (var action in _ctx.PendingPartyActions)
             {
                 await _sendPartyAction(action, ct);
+            }
+        }
+
+        if (_sendSquadNotice is not null)
+        {
+            foreach (var notice in _ctx.PendingSquadNotices)
+            {
+                await _sendSquadNotice(notice, ct);
             }
         }
 

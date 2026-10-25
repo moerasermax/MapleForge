@@ -330,6 +330,34 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
 
         /// <summary>P178：Java <c>cm.getEventInstance()</c>＝<c>getPlayer().getEventInstance()</c>。</summary>
         public object? getEventInstance() => _events?.GetEventInstance(_cm.GetCharacterId());
+
+        // ── P190：遠征隊 ─────────────────────────────────────────────────────────────
+        public int getSquadAvailability(string type) => _cm.GetSquadAvailability(type);
+        public bool registerSquad(string type, int minutes, string startText) => _cm.RegisterSquad(type, minutes, startText);
+        public int isSquadLeader(string type) => _cm.IsSquadLeader(type);
+        public int isSquadMember(string type) => _cm.IsSquadMember(type);
+        public int addMember(string type, bool join) => _cm.AddSquadMember(type, join);
+        public void banMember(string type, int pos) => _cm.BanSquadMember(type, pos);
+        public void acceptMember(string type, int pos) => _cm.AcceptSquadMember(type, pos);
+        public bool getSquadList(string type, int kind) => _cm.GetSquadList(type, kind);
+        public SquadFacade? getSquad(string type) => _cm.GetSquad(type) is { } squad ? new(_cm, type, squad) : null;
+
+        /// <summary>Java getDisconnected(event)：該事件中「我斷線過」且仍有玩家的實例。</summary>
+        public object? getDisconnected(string eventName)
+            => (_events?.GetEventManager(eventName) as EventManagerApi)?.FindDisconnectedInstance(_cm.GetCharacterId());
+
+        /// <summary>Java reAdd(eim, squad)：斷線回來者重新加入遠征隊與事件實例。</summary>
+        public bool reAdd(string eventName, string squadType)
+        {
+            if (getDisconnected(eventName) is not EventInstanceApi eim || _cm.GetSquad(squadType) is null)
+            {
+                return false;
+            }
+
+            _cm.ReAddSquadMember(squadType);
+            eim.registerPlayer(new PlayerFacade(_cm, _events));
+            return true;
+        }
     }
 
     /// <summary>P176：MapleParty 子集（getId／getLeader／getMembers）。</summary>
@@ -568,5 +596,40 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void changeMap(MapFacade map) => _cm.Warp(map.MapId, 0);
         public void dropMessage(string message) => _cm.PlayerMessage(5, message);
         public void dropMessage(int type, string message) => _cm.PlayerMessage(type, message);
+    }
+
+    /// <summary>P190：MapleSquad 子集（排隊、名單、狀態）。</summary>
+    public sealed class SquadFacade : IScriptSquadRef
+    {
+        private readonly INpcScriptContext _cm;
+        private readonly string _type;
+
+        internal SquadFacade(INpcScriptContext cm, string type, Maple.Core.Squads.MapleSquad squad) => (_cm, _type, Squad) = (cm, type, squad);
+
+        public Maple.Core.Squads.MapleSquad Squad { get; }
+
+        public string getLeaderName() => Squad.LeaderName;
+        public int getStatus() => Squad.Status;
+        public int getSquadSize() => Squad.Members.Count;
+        public int getBannedMemberSize() => Squad.BannedMembers.Count;
+        public string? getSquadMemberString(int type) => Squad.MemberString(type);
+        public string getNextPlayer() => _cm.GetSquadNextPlayerString(_type);
+        public void setNextPlayer(string name) => _cm.SetSquadNextPlayer(_type, name);
+
+        /// <summary>Java 回傳 List&lt;Pair&lt;String, Long&gt;&gt;，腳本的 <c>contains(名字)</c> 恆為 false（照抄）。</summary>
+        public PairList getAllNextPlayer() => new(_cm.GetSquadQueue(_type).Count);
+    }
+
+    public sealed class PairList
+    {
+        private readonly int _count;
+
+        internal PairList(int count) => _count = count;
+
+        public int size() => _count;
+
+        public bool isEmpty() => _count == 0;
+
+        public bool contains(object? value) => false;
     }
 }

@@ -194,6 +194,21 @@ public interface INpcScriptContext
 
     // ── P176：隊伍（AbstractPlayerInteraction.getParty／isLeader／warpParty／givePartyExp／givePartyItems）──────
     Maple.Core.Parties.PartyState? GetPartyState();
+
+    // ── P190：遠征隊（Java NPCConversationManager squad API）──────────────────────────────
+    int GetSquadAvailability(string type) => -1;
+    bool RegisterSquad(string type, int minutes, string startText) => false;
+    int IsSquadLeader(string type) => -1;
+    int IsSquadMember(string type) => -1;
+    int AddSquadMember(string type, bool join) => -1;
+    void BanSquadMember(string type, int pos) { }
+    void AcceptSquadMember(string type, int pos) { }
+    bool GetSquadList(string type, int kind) => false;
+    Maple.Core.Squads.MapleSquad? GetSquad(string type) => null;
+    void ReAddSquadMember(string type) { }
+    string GetSquadNextPlayerString(string type) => string.Empty;
+    void SetSquadNextPlayer(string type, string name) { }
+    IReadOnlyList<string> GetSquadQueue(string type) => [];
     bool IsLeader();
     bool AllMembersHere();
     bool IsAllPartyMembersAllowedJob(int job);

@@ -40,6 +40,15 @@ public interface IEventWorld
     /// <summary>全地圖 getClock。</summary>
     void BroadcastClock(int mapId, int seconds);
 
+    /// <summary>P190：全地圖 stopClock（Java registerSquad 開戰時對開始地圖送）。</summary>
+    void BroadcastStopClock(int mapId) { }
+
+    /// <summary>P190：依名字找在線角色（Java squad.getChar(name)）；不在線回 null。</summary>
+    EventCharacterInfo? FindCharacterByName(string name) => null;
+
+    /// <summary>P190：Java <c>getQuestNAdd(quest).setCustomData(data)</c>（排進該玩家連線序列寫入）。</summary>
+    void SetQuestCustomData(int characterId, int questId, string data) { }
+
     /// <summary>Java <c>map.resetFully()</c>：清怪、重生出生點怪物、重設反應堆。</summary>
     void ResetMap(int mapId);
 

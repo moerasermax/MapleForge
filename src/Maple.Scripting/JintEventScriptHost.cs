@@ -455,6 +455,47 @@ public sealed class EventManagerApi
     /// <summary>Java startInstance_NoID(party, map)：setup(null) → registerParty。</summary>
     public void startInstance_NoID(IScriptPartyRef party, IScriptMapRef map) => Setup(null)?.registerParty(party, map);
 
+    // ── P190：遠征隊 ─────────────────────────────────────────────────────────────────
+    public void startInstance(IScriptSquadRef squad, IScriptMapRef map) => StartSquad(squad, map, -1, null);
+
+    public void startInstance(IScriptSquadRef squad, IScriptMapRef map, int questId) => StartSquad(squad, map, questId, null);
+
+    public void startInstance(IScriptSquadRef squad, IScriptMapRef map, int questId, string bossName) => StartSquad(squad, map, questId, bossName);
+
+    /// <summary>
+    /// Java startInstance(MapleSquad, map, questID, bossname)：已清除（狀態 0）不開；CWKPQ 需 5 種職業（GM 系統尚無，一律檢查）；
+    /// setup(隊長名) → eim.registerSquad。
+    /// </summary>
+    private void StartSquad(IScriptSquadRef squadRef, IScriptMapRef map, int questId, string? bossName)
+    {
+        var squad = squadRef.Squad;
+        if (squad.Status == 0)
+        {
+            return;
+        }
+
+        if (_runtime.Name == "CWKPQ" && squad.GetJobs().Count < 5)
+        {
+            if (_runtime.Host.World.FindCharacterByName(squad.LeaderName) is { } leader)
+            {
+                _runtime.Host.World.SendNotice(leader.Id, 5, "The squad requires members from every type of job.");
+            }
+
+            return;
+        }
+
+        Setup(squad.LeaderName)?.registerSquad(squadRef, map, questId, bossName);
+    }
+
+    /// <summary>Java getDisconnected：isDisconnected(chr) 且 getPlayerCount() &gt; 0 的第一個實例。</summary>
+    internal EventInstanceApi? FindDisconnectedInstance(int characterId)
+    {
+        lock (_runtime.Instances)
+        {
+            return _runtime.Instances.Values.FirstOrDefault(e => e.IsDisconnectedId(characterId) && e.getPlayerCount() > 0);
+        }
+    }
+
     /// <summary>Java warpAllPlayer(from, to)：from 圖上所有人 → to 圖 portal 0。</summary>
     public void warpAllPlayer(int from, int to)
     {

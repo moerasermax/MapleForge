@@ -107,6 +107,46 @@ public sealed class EventInstanceApi
         }
     }
 
+    /// <summary>
+    /// P190：Java registerSquad(squad, map, questID, bossname)：遠征隊成員中在線且在該地圖者——questID &gt; 0 時
+    /// 該任務 customData = 現在毫秒（BOSS 冷卻），registerPlayer；之後遠征隊狀態 2（取消到期）、開始地圖 stopClock。
+    /// bossLog 尚無系統，略過。
+    /// </summary>
+    public void registerSquad(IScriptSquadRef squadRef, IScriptMapRef map, int questId, string? bossName)
+    {
+        if (Disposed)
+        {
+            return;
+        }
+
+        var squad = squadRef.Squad;
+        foreach (var name in squad.Members)
+        {
+            if (World.FindCharacterByName(name) is { } chr && chr.MapId == map.MapId)
+            {
+                if (questId > 0)
+                {
+                    World.SetQuestCustomData(chr.Id, questId, _runtime.Now.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+
+                registerPlayer(new EventCharacterApi(_runtime, chr.Id));
+            }
+        }
+
+        squad.SetStatus(2);
+        World.BroadcastStopClock(squad.BeginMapId);
+    }
+
+    public void registerSquad(IScriptSquadRef squadRef, IScriptMapRef map, int questId) => registerSquad(squadRef, map, questId, null);
+
+    internal bool IsDisconnectedId(int characterId)
+    {
+        lock (_lock)
+        {
+            return !Disposed && _disconnected.Contains(characterId);
+        }
+    }
+
     public void unregisterPlayer(IScriptCharacterRef chr)
     {
         lock (_lock)

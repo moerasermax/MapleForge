@@ -429,6 +429,81 @@ public sealed class JintEventScriptHostTests : IDisposable
         return (host, world, portals);
     }
 
+    // ── P190：遠征隊 ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Squad_RegisterJoin_ThenEventStartsInstanceForMembersOnMap()
+    {
+        var (host, world, _) = Create("""
+            function init() { em.setProperty("state", "0"); }
+            function setup(leaderName) {
+                em.setProperty("leader", leaderName);
+                var eim = em.newInstance("Zak" + leaderName);
+                eim.setInstanceMap(280030000);
+                return eim;
+            }
+            function playerEntry(eim, player) {
+                var map = eim.getMapInstance(0);
+                player.changeMap(map, map.getPortal(0));
+            }
+            """);
+        host.Start(T0);
+        world.Characters[7] = new EventCharacterInfo(7, "Lead", 120, 112, 211042400);
+        world.Characters[8] = new EventCharacterInfo(8, "Mem", 120, 212, 211042400);
+        world.Characters[9] = new EventCharacterInfo(9, "Far", 120, 312, 100000000);
+        var online = world.Characters.Values.ToDictionary(c => c.Name, c => new Maple.Application.Squads.SquadCharacter(c.Id, c.Name, c.Job, c.MapId, 0));
+        var squads = new Maple.Application.Squads.SquadRegistry(n => online.GetValueOrDefault(n));
+        var npcDir = Path.Combine(_dir, "npc");
+        Directory.CreateDirectory(npcDir);
+        File.WriteAllText(Path.Combine(npcDir, "2030013.js"), """
+            function start() {
+                var who = cm.getPlayer().getName();
+                if (who == "Lead") {
+                    cm.registerSquad("ZAK", 5, " 開團");
+                    cm.sendOk("leader=" + cm.isSquadLeader("ZAK"));
+                } else if (who == "Mem") {
+                    cm.sendOk("join=" + cm.addMember("ZAK", true) + " member=" + cm.isSquadMember("ZAK"));
+                } else {
+                    cm.getEventManager("Test").startInstance(cm.getSquad("ZAK"), cm.getMap(), 160101);
+                    cm.sendOk("avail=" + cm.getSquadAvailability("ZAK"));
+                }
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _dir }, NullLogger<JintNpcScriptFactory>.Instance, host);
+
+        async Task<(List<string> Dialogs, List<Maple.Application.Squads.SquadNotice> Notices)> Talk(int id, string name)
+        {
+            var player = new Player(new Character { Id = id, Name = name, Level = 120, MapId = 211042400 }, new Position(0, 0, 0, 0));
+            var ctx = new NpcContext(2030013, player, new QuestService(new EmptyQuestCatalog()), squads: squads);
+            var dialogs = new List<string>();
+            var notices = new List<Maple.Application.Squads.SquadNotice>();
+            var convo = new NpcConversation(2030013, factory.TryCreate(2030013, ctx)!, ctx, (d, _) => { dialogs.Add(d.Text); return Task.CompletedTask; }, (_, _) => Task.CompletedTask,
+                sendSquadNotice: (n, _) => { notices.Add(n); return Task.CompletedTask; });
+            await convo.StartAsync(CancellationToken.None);
+            return (dialogs, notices);
+        }
+
+        var lead = await Talk(7, "Lead");
+        Assert.Equal(["leader=1"], lead.Dialogs);
+        Assert.Contains(new Maple.Application.Squads.SquadMapNotice(211042400, "Lead 開團"), lead.Notices);
+
+        var mem = await Talk(8, "Mem");
+        Assert.Equal(["join=1 member=1"], mem.Dialogs);
+        Assert.Equal(new Maple.Application.Squads.SquadPlayerNotice("Lead", 6, "Mem (大魔導士(火,毒)) 加入了遠征隊!"), Assert.Single(mem.Notices));
+
+        squads.Get("ZAK")!.AddMember("Far", 312, true, false); // 不在開始地圖：不會被登記
+        var start = await Talk(10, "Starter");
+        Assert.Equal(["avail=2"], start.Dialogs);
+        Assert.Equal("Lead", Api(host).getProperty("leader"));
+        Assert.Equal([(7, 280030000, 0), (8, 280030000, 0)], world.Warps);
+        Assert.Equal([7, 8], world.QuestData.Select(static q => q.Item1));
+        Assert.All(world.QuestData, q => Assert.Equal(160101, q.Item2));
+        Assert.Equal([211042400], world.StopClocks);
+        Assert.NotNull(host.GetEventInstance(8));
+        Assert.Null(host.GetEventInstance(9));
+    }
+
     private static EventManagerApi Api(JintEventScriptHost host) => Assert.IsType<EventManagerApi>(host.GetEventManager("Test"));
 
     private (JintEventScriptHost, FakeWorld, PortalScriptOverrideRegistry) Create(string source, string[]? extraEvents = null, TimeProvider? time = null)
@@ -474,6 +549,16 @@ public sealed class JintEventScriptHostTests : IDisposable
         public void SendEnvironment(int characterId, int mode, string name) { }
 
         public Dictionary<int, EventPartyInfo> Parties { get; } = [];
+
+        public List<int> StopClocks { get; } = [];
+
+        public List<(int, int, string)> QuestData { get; } = [];
+
+        public void BroadcastStopClock(int mapId) => StopClocks.Add(mapId);
+
+        public EventCharacterInfo? FindCharacterByName(string name) => Characters.Values.FirstOrDefault(c => c.Name == name);
+
+        public void SetQuestCustomData(int characterId, int questId, string data) => QuestData.Add((characterId, questId, data));
 
         public EventPartyInfo? GetParty(int characterId) => Parties.GetValueOrDefault(characterId);
 

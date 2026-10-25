@@ -20,3 +20,9 @@ public interface IScriptPartyRef
 
     IReadOnlyList<int> MemberIds { get; }
 }
+
+/// <summary>P190：遠征隊參考（NPC 的 <c>cm.getSquad(type)</c> 傳給事件的 <c>em.startInstance(squad, map)</c>）。</summary>
+public interface IScriptSquadRef
+{
+    Maple.Core.Squads.MapleSquad Squad { get; }
+}

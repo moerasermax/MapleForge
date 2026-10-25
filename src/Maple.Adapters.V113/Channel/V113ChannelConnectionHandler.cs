@@ -78,6 +78,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly Maple.Application.Events.IEventScriptHost? _eventScripts;
     private readonly IItemUseCatalog? _itemUseCatalog;
     private readonly Maple.Application.Events.IEventWorld? _eventWorld;
+    private readonly Maple.Application.Squads.SquadRegistry? _squads;
+    private readonly V113SquadNotifier? _squadNotifier;
     private readonly DropServiceOptions? _dropOptions;
 
     /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
@@ -209,13 +211,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         Maple.Application.Events.PortalScriptOverrideRegistry? portalOverrides = null,
         Maple.Application.Events.IEventScriptHost? eventScripts = null,
         IItemUseCatalog? itemUseCatalog = null,
-        Maple.Application.Events.IEventWorld? eventWorld = null)
+        Maple.Application.Events.IEventWorld? eventWorld = null,
+        Maple.Application.Squads.SquadRegistry? squads = null,
+        V113SquadNotifier? squadNotifier = null)
     {
         _partyRegistry = partyRegistry;
         _portalOverrides = portalOverrides ?? new Maple.Application.Events.PortalScriptOverrideRegistry();
         _eventScripts = eventScripts;
         _itemUseCatalog = itemUseCatalog;
         _eventWorld = eventWorld;
+        _squads = squads;
+        _squadNotifier = squadNotifier;
         _dropOptions = dropOptions;
         _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
@@ -2263,6 +2269,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             playPortalSe: c => session.SendAsync(V113SkillPackets.ShowOwnBuffEffect(0, 7), c),
             killAllMob: c => _transportEffects is { } effects ? effects.KillAllMonstersAsync(player.Character.MapId, c, animate: true) : Task.CompletedTask,
             sendPartyAction: SendPartyActionAsync,
+            sendSquadNotice: (notice, c) => _squadNotifier is { } notifier ? notifier.SendAsync(notice, c) : Task.CompletedTask,
             sendUiEffect: (effect, c) => effect.Kind switch
             {
                 NpcUiEffectKind.Hint => session.SendAsync(V113StatsPackets.SendHint(effect.Text, effect.A, effect.B), c),
@@ -2504,7 +2511,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             reactorStateOf: (mapId, name) => FieldReactorState(mapId, name),
             parties: _partyRegistry,
             playersOnMap: mapId => _mapRegistry.GetAll(mapId).Select(static e => e.CharId).ToArray(),
-            expRate: _dropOptions?.ExpRate ?? 1);
+            expRate: _dropOptions?.ExpRate ?? 1,
+            squads: _squads);
 
     /// <summary>
     /// P176：跨隊員腳本效果——排進該隊員自己的連線序列執行（warp／經驗／道具），結果照一般 cm 送包流程送給對方。

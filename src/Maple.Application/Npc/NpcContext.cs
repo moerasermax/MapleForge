@@ -36,6 +36,11 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly Func<int, IReadOnlyList<int>> _playersOnMap;
     private readonly int _expRate;
     private readonly List<NpcPartyAction> _pendingPartyActions = new();
+    private readonly Maple.Application.Squads.SquadRegistry? _squads;
+    private readonly List<Maple.Application.Squads.SquadNotice> _pendingSquadNotices = new();
+
+    /// <summary>P190：遠征隊通知（開始地圖 clock／公告、對其他角色的 dropMessage）。</summary>
+    internal IReadOnlyList<Maple.Application.Squads.SquadNotice> PendingSquadNotices => _pendingSquadNotices;
 
     internal IReadOnlyList<NpcPartyAction> PendingPartyActions => _pendingPartyActions;
 
@@ -73,8 +78,10 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Func<int, string, int>? reactorStateOf = null,
         Maple.Application.Parties.IPartyRegistry? parties = null,
         Func<int, IReadOnlyList<int>>? playersOnMap = null,
-        int expRate = 1)
+        int expRate = 1,
+        Maple.Application.Squads.SquadRegistry? squads = null)
     {
+        _squads = squads;
         _parties = parties;
         _playersOnMap = playersOnMap ?? (static _ => []);
         _expRate = Math.Max(1, expRate);
@@ -138,6 +145,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingOpenNpcId = null;
         PendingKillAllMob = false;
         _pendingPartyActions.Clear();
+        _pendingSquadNotices.Clear();
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -779,4 +787,96 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public void SendRepairWindow() => PendingRepairWindowNpcId = _npcId;
 
     private void EnqueueQuestResult(QuestTransactionResult result) => _pendingQuestResults.Add(result);
+
+    // ── P190：遠征隊 ─────────────────────────────────────────────────────────────────
+    private Maple.Application.Squads.SquadCharacter SelfSquadCharacter()
+        => _squads?.FindOnline(_player.Character.Name)
+            ?? new Maple.Application.Squads.SquadCharacter(_player.Character.Id, _player.Character.Name, _player.Character.Job, _player.Character.MapId, 0);
+
+    /// <summary>Java getSquadAvailability：無遠征隊 −1，否則狀態（1 招募中、2 已開戰）。</summary>
+    public int GetSquadAvailability(string type) => _squads?.Get(type)?.Status ?? -1;
+
+    public bool RegisterSquad(string type, int minutes, string startText)
+    {
+        if (_squads is null || !_squads.Register(type, SelfSquadCharacter(), minutes, startText, out var notices))
+        {
+            return false;
+        }
+
+        _pendingSquadNotices.AddRange(notices);
+        return true;
+    }
+
+    /// <summary>Java isSquadLeader：無 −1；隊長（getLeader 在線）是自己 1，否則 0。</summary>
+    public int IsSquadLeader(string type)
+    {
+        if (_squads?.Get(type) is not { } squad)
+        {
+            return -1;
+        }
+
+        return _squads.GetLeader(squad, _pendingSquadNotices)?.Id == _player.Character.Id ? 1 : 0;
+    }
+
+    /// <summary>Java isSquadMember：無 −1；在名單 1；黑名單 2；否則 0。</summary>
+    public int IsSquadMember(string type)
+    {
+        if (_squads?.Get(type) is not { } squad)
+        {
+            return -1;
+        }
+
+        return squad.Members.Contains(_player.Character.Name) ? 1 : squad.IsBanned(_player.Character.Name) ? 2 : 0;
+    }
+
+    public int AddSquadMember(string type, bool join)
+        => _squads?.AddMember(type, SelfSquadCharacter(), join, _pendingSquadNotices) ?? -1;
+
+    public void BanSquadMember(string type, int pos) => _squads?.BanMember(type, pos, _pendingSquadNotices);
+
+    public void AcceptSquadMember(string type, int pos) => _squads?.AcceptMember(type, pos, _pendingSquadNotices);
+
+    /// <summary>Java getSquadList：0／3 sendNext、1 sendSimple、2 有黑名單 sendSimple 否則 sendNext。</summary>
+    public bool GetSquadList(string type, int kind)
+    {
+        if (_squads?.Get(type) is not { } squad)
+        {
+            return false;
+        }
+
+        var text = squad.MemberString(kind) ?? string.Empty;
+        switch (kind)
+        {
+            case 0:
+            case 3:
+                SendNext(text);
+                break;
+            case 1:
+                SendSimple(text);
+                break;
+            case 2:
+                if (squad.BannedMembers.Count > 0)
+                {
+                    SendSimple(text);
+                }
+                else
+                {
+                    SendNext(text);
+                }
+
+                break;
+        }
+
+        return true;
+    }
+
+    public Maple.Core.Squads.MapleSquad? GetSquad(string type) => _squads?.Get(type);
+
+    public void ReAddSquadMember(string type) => _squads?.Get(type)?.ReAddMember(_player.Character.Name, _player.Character.Job);
+
+    public string GetSquadNextPlayerString(string type) => _squads?.NextPlayerString(type) ?? string.Empty;
+
+    public void SetSquadNextPlayer(string type, string name) => _squads?.SetNextPlayer(type, name);
+
+    public IReadOnlyList<string> GetSquadQueue(string type) => _squads?.GetQueue(type).Select(static q => q.Name).ToArray() ?? [];
 }

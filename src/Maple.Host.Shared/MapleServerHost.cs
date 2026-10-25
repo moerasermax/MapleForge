@@ -336,6 +336,17 @@ public static class MapleServerHost
         builder.Services.AddSingleton<TransportService>();
         builder.Services.AddHostedService<TransportHostedService>();
 
+        // P190：遠征隊（Java ChannelServer.mapleSquads）；到期與排隊遞補每秒 tick。
+        builder.Services.AddSingleton(sp =>
+        {
+            var online = sp.GetRequiredService<IOnlinePlayerRegistry>();
+            return new Maple.Application.Squads.SquadRegistry(name => online.FindByName(name) is { } p
+                ? new Maple.Application.Squads.SquadCharacter(p.Character.Id, p.Character.Name, p.Character.Job, p.Character.MapId, 0)
+                : null);
+        });
+        builder.Services.AddSingleton<V113SquadNotifier>();
+        builder.Services.AddHostedService<SquadTickHostedService>();
+
         // P177：事件腳本（Java EventScriptManager；Jint 跑 scripts/event/*.js，em.schedule 由 1 秒 tick 驅動）。
         builder.Services.AddSingleton<PortalScriptOverrideRegistry>();
         builder.Services.AddSingleton(sp =>

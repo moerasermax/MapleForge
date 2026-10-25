@@ -20,6 +20,7 @@ public sealed class V113EventWorld : IEventWorld
     private readonly CombatService _combat;
     private readonly TimeProvider _time;
     private readonly IPartyRegistry? _parties;
+    private readonly V113SessionCommandRegistry? _sessions;
 
     public V113EventWorld(
         IMapSessionRegistry maps,
@@ -28,8 +29,10 @@ public sealed class V113EventWorld : IEventWorld
         IFieldInstanceRegistry fields,
         CombatService combat,
         TimeProvider? time = null,
-        IPartyRegistry? parties = null)
+        IPartyRegistry? parties = null,
+        V113SessionCommandRegistry? sessions = null)
     {
+        _sessions = sessions;
         _parties = parties;
         _maps = maps;
         _online = online;
@@ -66,6 +69,30 @@ public sealed class V113EventWorld : IEventWorld
     public void BroadcastEnvironment(int mapId, int mode, string name) => Broadcast(mapId, V113CombatPackets.EnvironmentChange(name, mode));
 
     public void BroadcastClock(int mapId, int seconds) => Broadcast(mapId, V113TransportEffects.Clock(seconds));
+
+    public void BroadcastStopClock(int mapId) => Broadcast(mapId, V113TransportEffects.StopClock());
+
+    public EventCharacterInfo? FindCharacterByName(string name)
+        => _online.FindByName(name) is { } online
+            ? new EventCharacterInfo(online.Character.Id, online.Character.Name, online.Character.Level, online.Character.Job, online.Character.MapId)
+            : null;
+
+    public void SetQuestCustomData(int characterId, int questId, string data)
+    {
+        if (_online.FindById(characterId) is not { } online)
+        {
+            return;
+        }
+
+        var player = online.Player;
+        if (_sessions?.TryPost(characterId, _ => { player.GetOrAddQuest(questId).CustomData = data; return Task.CompletedTask; }) != true)
+        {
+            lock (player)
+            {
+                player.GetOrAddQuest(questId).CustomData = data;
+            }
+        }
+    }
 
     public void ResetMap(int mapId)
     {
