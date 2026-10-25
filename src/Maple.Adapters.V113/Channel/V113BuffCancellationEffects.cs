@@ -43,6 +43,12 @@ public sealed class V113BuffCancellationEffects
         var others = _mapRegistry.GetOthers(player.Character.MapId, player.Character.Id);
         foreach (var cancellation in cancellations)
         {
+            // P159：HOMING_BEACON 只送本人 cancelHoming，不廣播。
+            if (cancellation.Stats.Contains(MapleBuffStat.HOMING_BEACON))
+            {
+                continue;
+            }
+
             await SendAllAsync(others, V113SkillPackets.CancelForeignBuff(player.Character.Id, cancellation.Stats), ct).ConfigureAwait(false);
         }
 

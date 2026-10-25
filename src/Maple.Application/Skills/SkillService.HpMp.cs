@@ -14,6 +14,9 @@ public sealed record SkillHpMpResult(SkillCastStatus Status, IReadOnlyList<Playe
     public bool Applied => Status == SkillCastStatus.Success;
 }
 
+/// <summary>P159：攻擊尾段 applyTo 登記的 buff；<paramref name="HomingMobObjectId"/> 非 null 時呼叫端改送 giveHoming。</summary>
+public sealed record AttackSkillBuffResult(MapleStatEffect Effect, PlayerBuffChange Buff, int? HomingMobObjectId);
+
 public sealed partial class SkillService
 {
     public const int MpRecoverySkillId = 5101005;
@@ -34,6 +37,37 @@ public sealed partial class SkillService
 
         return ApplySkillHpMp(player, effect);
     }
+
+    /// <summary>
+    /// P159：攻擊尾段 applyTo（HP/MP 結算成功後）的 <c>if (overTime &amp;&amp; !isEnergyCharge()) applyBuffEffect</c>：
+    /// 一般技能照常登記 buff（呼叫端送 giveBuff＋giveForeignBuff）；指定攻擊 5211006／精準砲擊 5220011 只在
+    /// <c>linkMid &gt; 0</c> 時登記並改送 cancelHoming＋giveHoming，否則 Java 直接 return（不登記）。
+    /// 能量獲得 5110001／15100004 已被 <see cref="AppliesAttackEffect"/> 排除。隊伍 applyBuff（攻擊技能無 lt/rb 隊伍 buff）未接。
+    /// </summary>
+    public AttackSkillBuffResult? ApplyAttackSkillBuff(Player player, int skillId, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (GetAttackEffect(player, skillId) is not { IsOverTime: true } effect)
+        {
+            return null;
+        }
+
+        if (IsHomingSkill(effect.SourceId))
+        {
+            var mobObjectId = player.LinkMobObjectId;
+            return mobObjectId > 0 && player.ApplyBuffStats(effect, now) is { } homing
+                ? new AttackSkillBuffResult(effect, homing, mobObjectId)
+                : null;
+        }
+
+        return player.ApplyBuffStats(effect, now, GetMorphStatups(effect, player.Character.Gender)) is { } buff
+            ? new AttackSkillBuffResult(effect, buff, null)
+            : null;
+    }
+
+    /// <summary>Java applyBuffEffect 的 <c>case 5211006: case 5220011</c>（Homing Beacon／Bullseye）。</summary>
+    public static bool IsHomingSkill(int skillId) => skillId is 5211006 or 5220011;
 
     public static bool AppliesAttackEffect(int skillId, int targetCount, bool isMagic)
         => isMagic

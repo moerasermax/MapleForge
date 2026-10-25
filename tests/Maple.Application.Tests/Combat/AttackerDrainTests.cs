@@ -57,6 +57,21 @@ public sealed class AttackerDrainTests
     }
 
     [Fact]
+    public void HomingSkill_LinksLastHitMob()
+    {
+        var (service, field, player) = Setup();
+        var first = AddMob(field, 100001, 10_000);
+        var second = AddMob(field, 100002, 10_000);
+
+        service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(first.ObjectId, [10]), new CombatAttackTarget(second.ObjectId, [10])],
+            new MapleStatEffect { SourceId = 5211006 },
+            5211006));
+
+        Assert.Equal(second.ObjectId, player.LinkMobObjectId);
+    }
+
+    [Fact]
     public void Sacrifice_CostsHpButLeavesOne()
     {
         var (service, field, player) = Setup();

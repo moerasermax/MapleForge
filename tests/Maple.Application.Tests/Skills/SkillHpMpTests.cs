@@ -227,6 +227,44 @@ public sealed class SkillHpMpTests
         Assert.Equal((short)100, player.Mp);
     }
 
+    [Fact]
+    public void AttackSkillBuff_Homing_RequiresLinkedMob()
+    {
+        var homing = new MapleSkill
+        {
+            Id = 5211006,
+            Effects = [new MapleStatEffect { SourceId = 5211006, Level = 1, IsOverTime = true, DurationMilliseconds = 10_000, Statups = [new BuffStatValue(MapleBuffStat.HOMING_BEACON, 1)] }],
+        };
+        var (service, player) = Setup(homing);
+
+        Assert.Null(service.ApplyAttackSkillBuff(player, 5211006, T0)); // linkMid == 0 → Java return
+        Assert.Null(player.GetBuffValue(MapleBuffStat.HOMING_BEACON));
+
+        player.LinkMobObjectId = 100002;
+        var applied = service.ApplyAttackSkillBuff(player, 5211006, T0)!;
+
+        Assert.Equal(100002, applied.HomingMobObjectId);
+        Assert.Equal(1, player.GetBuffValue(MapleBuffStat.HOMING_BEACON));
+    }
+
+    [Fact]
+    public void AttackSkillBuff_OverTimeStatups_AreRegistered_NonOverTimeIgnored()
+    {
+        var buffing = new MapleSkill
+        {
+            Id = 1311006,
+            Effects = [new MapleStatEffect { SourceId = 1311006, Level = 1, IsOverTime = true, DurationMilliseconds = 5000, Statups = [new BuffStatValue(MapleBuffStat.WATK, 7)] }],
+        };
+        var (service, player) = Setup(buffing, Skill(2101004));
+        player.ChangeSkillLevel(2101004, 1, 1);
+
+        var applied = service.ApplyAttackSkillBuff(player, 1311006, T0)!;
+
+        Assert.Null(applied.HomingMobObjectId);
+        Assert.Equal(7, player.GetBuffValue(MapleBuffStat.WATK));
+        Assert.Null(service.ApplyAttackSkillBuff(player, 2101004, T0));
+    }
+
     private static MapleSkill Skill(int id, short mpCon = 0, double hpRate = 0, short hpCon = 0)
         => new()
         {

@@ -45,6 +45,37 @@ internal static class V113SkillPackets
     public const short CooldownOp = unchecked((short)0xE3); // COOLDOWN（send.properties 0xE3）
 
 
+    /// <summary>
+    /// P159：Java <c>giveHoming(skillid, mobid)</c>：<c>[GIVE_BUFF][mask(HOMING_BEACON)][short 0][int 1][long 技能][byte 0][int 怪物 oid][short 0]</c>
+    /// （unverified）。
+    /// </summary>
+    public static byte[] GiveHoming(int skillId, int mobObjectId)
+    {
+        var w = new PacketWriter(40);
+        w.WriteShort(GiveBuffOp);
+        WriteBuffMask(w, [MapleBuffStat.HOMING_BEACON]);
+        w.WriteShort(0);
+        w.WriteInt(1);
+        w.WriteLong(skillId);
+        w.WriteByte(0);
+        w.WriteInt(mobObjectId);
+        w.WriteShort(0);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// P159：Java <c>cancelHoming()</c>：<c>[CANCEL_BUFF][long HOMING_BEACON.getValue()][long 0]</c>。
+    /// Java 直接寫 <c>getValue()</c>（1 &lt;&lt; 16）到第一個 long，而非 writeBuffState 的位置（mask[1]）——照抄，unverified。
+    /// </summary>
+    public static byte[] CancelHoming()
+    {
+        var w = new PacketWriter(18);
+        w.WriteShort(CancelBuffOp);
+        w.WriteLong(1L << ((int)MapleBuffStat.HOMING_BEACON % 32));
+        w.WriteLong(0);
+        return w.ToArray();
+    }
+
     /// <summary>P158：Java <c>skillCancel</c>：CANCEL_SKILL_EFFECT [int charId][int skillId]（unverified：未經真機擷取）。</summary>
     public static byte[] CancelSkillEffect(int characterId, int skillId)
     {
@@ -211,6 +242,12 @@ internal static class V113SkillPackets
 
     public static byte[] CancelBuff(IReadOnlyList<MapleBuffStat> stats)
     {
+        // P159：Java cancelPlayerBuffs：含 HOMING_BEACON 時只送 cancelHoming（不送一般 cancelBuff）。
+        if (stats.Contains(MapleBuffStat.HOMING_BEACON))
+        {
+            return CancelHoming();
+        }
+
         var w = new PacketWriter(24);
         w.WriteShort(CancelBuffOp);
         WriteBuffMask(w, stats);

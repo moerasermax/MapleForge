@@ -432,6 +432,10 @@ public sealed class CombatService
             case 4101005 or 14101006 or 5111004:
                 stats.Hp = (short)Math.Clamp(stats.Hp + Drain(attack.SkillEffect?.X ?? 0), 0, attacker.MaxHp);
                 break;
+            case 5211006 or 5220011:
+                // P159：Java 指定攻擊／精準砲擊 → setLinkMid(monster.getObjectId())（多目標時留最後一隻）。
+                attacker.LinkMobObjectId = mob.ObjectId;
+                break;
             case 1311005:
                 var remaining = stats.Hp - totDamage * (attack.SkillEffect?.X ?? 0) / 100;
                 stats.Hp = (short)Math.Clamp(remaining > 1 ? remaining : 1, 1, attacker.MaxHp);

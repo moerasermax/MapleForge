@@ -1830,3 +1830,12 @@ c2s CANCEL_BUFF(0x56) 蓄力技能 → s2c CANCEL_SKILL_EFFECT(0xB7): [int cid][
 ```
 
 證據層級：Java source（`PlayerHandler.CancelBuffHandler:496`／`SkillEffect:511`、`MaplePacketCreator.skillCancel:3632`）＋ focused tests；**unverified**。
+
+### 歸巢：`GIVE_BUFF` 的 giveHoming／`CANCEL_BUFF` 的 cancelHoming（P159）
+
+```text
+giveHoming:   [0x1E][mask(HOMING_BEACON)][short 0][int 1][long 技能 5211006|5220011][byte 0][int 怪物 oid][short 0]（只送本人）
+cancelHoming: [0x1F][long 1<<16][long 0]（Java 把 getValue() 寫在第一個 long，與 writeBuffState 的位置不同；照抄）
+```
+
+證據層級：Java source（`MaplePacketCreator.giveHoming:1737`／`cancelHoming:1940`、`MapleCharacter.cancelPlayerBuffs:1977`）＋ focused tests；**unverified**。

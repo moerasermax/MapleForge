@@ -31,6 +31,29 @@ public sealed class ChannelSkillPacketTests
             V113SkillPackets.CancelSkillEffect(7, 3121020));
 
     [Fact]
+    public void HomingPackets_MatchJava()
+    {
+        // P159：giveHoming：mask(HOMING_BEACON=80 → mask[1] bit16)、short 0、int 1、long 技能、byte 0、int 怪物、short 0。
+        Assert.Equal(
+            new byte[]
+            {
+                0x1E, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+                0x7E, 0x83, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00,
+                0xA2, 0x86, 0x01, 0x00,
+                0x00, 0x00,
+            },
+            V113SkillPackets.GiveHoming(5211006, 100002));
+
+        // cancelHoming：Java writeLong(getValue()=1<<16)＋writeLong(0)。
+        var cancel = new byte[] { 0x1F, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0 };
+        Assert.Equal(cancel, V113SkillPackets.CancelHoming());
+        Assert.Equal(cancel, V113SkillPackets.CancelBuff([MapleBuffStat.HOMING_BEACON]));
+    }
+
+    [Fact]
     public void GiveBuff_MatchesJavaGiveBuffShape()
     {
         var packet = V113SkillPackets.GiveBuff(

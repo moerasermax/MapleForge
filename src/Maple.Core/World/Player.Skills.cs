@@ -40,6 +40,9 @@ public sealed partial class Player
     /// <summary>P158：Java <c>keyDownSkill_Time</c>——蓄力技能開始按住的時間；取消時清為 null（Java 設 0）。</summary>
     public DateTimeOffset? KeyDownSkillStartedAt { get; set; }
 
+    /// <summary>P159：Java <c>linkMid</c>——指定攻擊／精準砲擊最後命中的怪物 objectId（0 = 無；Java 從不清除）。</summary>
+    public int LinkMobObjectId { get; set; }
+
     public int GetSkillLevel(int skillId)
     {
         var skill = Character.Skills.FirstOrDefault(s => s.SkillId == skillId);

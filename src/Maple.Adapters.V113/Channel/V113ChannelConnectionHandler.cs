@@ -3835,7 +3835,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// <summary>
     /// P133：攻擊尾段的 <c>effect.applyTo(player, pos)</c>——HP/MP 結算（不足時 Java return false：不送封包、不生霧）→
     /// <c>updatePlayerStats(hpmpupdate, true)</c>（MP 有變才帶、HP 一律帶）→ 隊伍 HP → 霧（P132）。
-    /// 攻擊技能的 buff 類副作用（overTime statups）尚未移植。
+    /// P159：之後 applyBuffEffect（overTime buff、歸巢）。
     /// </summary>
     private async Task ApplyAttackSkillEffectAsync(
         Player player,
@@ -3859,6 +3859,24 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (_skillService.GetAttackEffect(player, skillId) is { } effect)
         {
             await SpawnPlayerMistAsync(player, field, effect, position, player.Position.Stance % 2 != 0, session, ct);
+        }
+
+        // P159：applyBuffEffect——一般 giveBuff＋giveForeignBuff；指定攻擊／精準砲擊改送 cancelHoming＋giveHoming（不廣播）。
+        if (_skillService.ApplyAttackSkillBuff(player, skillId, DateTimeOffset.UtcNow) is { } attackBuff)
+        {
+            if (attackBuff.HomingMobObjectId is { } mobObjectId)
+            {
+                await session.SendAsync(V113SkillPackets.CancelHoming(), ct);
+                await session.SendAsync(V113SkillPackets.GiveHoming(attackBuff.Effect.SourceId, mobObjectId), ct);
+            }
+            else
+            {
+                await session.SendAsync(V113SkillMoveHandler.BuildGiveBuff(attackBuff.Effect.SourceId, attackBuff.Buff, attackBuff.Effect), ct);
+                if (ForeignBuffPacket(player.Character.Id, attackBuff.Effect, attackBuff.Buff) is { } foreignPacket)
+                {
+                    await BroadcastPacketToOthersAsync(player.Character, foreignPacket, ct);
+                }
+            }
         }
     }
 
