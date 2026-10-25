@@ -81,6 +81,9 @@ public sealed class MapleStatEffect
     /// </summary>
     public World.MobSkillArea? Area { get; init; }
 
+    /// <summary>P156：WZ <c>morph</c>（Java <c>morphId</c>；&gt; 0 即 <c>isMorph</c>）。</summary>
+    public int MorphId { get; init; }
+
     /// <summary>P138：WZ <c>range</c>（Java <c>getRange</c>，預設 0）。</summary>
     public int Range { get; init; }
 

@@ -186,6 +186,7 @@ public sealed class WzSkillCatalog : ISkillCatalog
             Area = ReadArea(source),
             FixDamage = GetInt(source, "fixdamage", 0),
             Range = GetInt(source, "range", 0),
+            MorphId = morph,
         };
     }
 

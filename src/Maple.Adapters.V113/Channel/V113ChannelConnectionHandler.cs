@@ -3914,9 +3914,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private static byte[]? ForeignBuffPacket(int characterId, MapleStatEffect effect, PlayerBuffChange buff)
         => SkillService.IsPirateBuff(effect)
             ? V113SkillPackets.GiveForeignPirate(buff.Stats, buff.DurationMilliseconds / 1000, characterId, effect.SourceId)
-            : SkillService.GetForeignBuffStats(effect) is { } foreign
-                ? V113BuffItemPackets.GiveForeignBuff(characterId, foreign, isMorph: false)
-                : null;
+            // P156：變身 → giveForeignBuff([MORPH, getMorph(chr)])，isMorph（WZ morph > 0）時多寫 1 byte。
+            : SkillService.IsMorphBuff(effect) && buff.Stats.FirstOrDefault(static s => s.Stat == MapleBuffStat.MORPH) is { Stat: MapleBuffStat.MORPH } morph
+                ? V113BuffItemPackets.GiveForeignBuff(characterId, [morph], isMorph: effect.MorphId > 0)
+                : SkillService.GetForeignBuffStats(effect) is { } foreign
+                    ? V113BuffItemPackets.GiveForeignBuff(characterId, foreign, isMorph: false)
+                    : null;
 
     private static async Task SendBestEffortAsync(MapPlayerEntry entry, byte[] packet, CancellationToken ct)
     {

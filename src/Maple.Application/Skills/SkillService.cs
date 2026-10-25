@@ -148,6 +148,45 @@ public sealed partial class SkillService
     public static IReadOnlyList<BuffStatValue>? GetForeignBuffStats(MapleStatEffect effect)
         => GetForeignBuffStatsCore(effect);
 
+    /// <summary>Java <c>isPirateMorph</c>：15111002、5111005、5121003（技能）。</summary>
+    public static bool IsPirateMorph(MapleStatEffect effect) => effect.IsSkill && effect.SourceId is 15111002 or 5111005 or 5121003;
+
+    /// <summary>P156：Java <c>isMorph() || isPirateMorph()</c>（applyBuffEffect 改用 Selfstat 的條件）。</summary>
+    public static bool IsMorphBuff(MapleStatEffect effect) => effect.MorphId > 0 || IsPirateMorph(effect);
+
+    /// <summary>
+    /// P156：Java <c>getMorph(chr)</c>：15111002／5111005 → 1000、5121003 → 1001、5101007 → 1002、13111005 → 1003，其他取 WZ morph；
+    /// 1000／1001／1003 女性角色（gender 1）+100。
+    /// </summary>
+    public static int GetMorphValue(MapleStatEffect effect, int gender)
+    {
+        var morph = effect.SourceId switch
+        {
+            15111002 or 5111005 => 1000,
+            5121003 => 1001,
+            5101007 => 1002,
+            13111005 => 1003,
+            _ => effect.MorphId,
+        };
+        return morph is 1000 or 1001 or 1003 && gender == 1 ? morph + 100 : morph;
+    }
+
+    /// <summary>
+    /// P156：Java applyBuffEffect 的變身 Selfstat：<c>[JUMP=jump, WDEF=wdef, MDEF=wdef（原碼如此）, SPEED=speed, MORPH=getMorph(chr)]</c>，
+    /// 取代效果本身的 statups 註冊並送出；非變身回 null。
+    /// </summary>
+    public static IReadOnlyList<BuffStatValue>? GetMorphStatups(MapleStatEffect effect, int gender)
+        => IsMorphBuff(effect)
+            ?
+            [
+                new BuffStatValue(MapleBuffStat.JUMP, effect.Jump),
+                new BuffStatValue(MapleBuffStat.WDEF, effect.Wdef),
+                new BuffStatValue(MapleBuffStat.MDEF, effect.Wdef),
+                new BuffStatValue(MapleBuffStat.SPEED, effect.Speed),
+                new BuffStatValue(MapleBuffStat.MORPH, GetMorphValue(effect, gender)),
+            ]
+            : null;
+
     /// <summary>
     /// P147：Java <c>applyBuffEffect</c> 走 givePirate／giveForeignPirate 的技能：極速領域 5121009／15111005、
     /// 衝刺 5001005／15001003、龍捲風 4321000（僅技能）。
@@ -234,7 +273,9 @@ public sealed partial class SkillService
 
         // P134：HP/MP 走 Java calcHPChange/calcMPChange（元素增幅、集中術、魔力無限、能量恢復），再登記 buff。
         var status = ApplySkillHpMp(player, effect).Status;
-        var appliedBuff = status == SkillCastStatus.Success ? player.ApplyBuffStats(effect, now) : null;
+        var appliedBuff = status == SkillCastStatus.Success
+            ? player.ApplyBuffStats(effect, now, GetMorphStatups(effect, player.Character.Gender))
+            : null;
 
         // 對照 Java PlayerHandler.SpecialMove：有冷卻的技能施放時登記冷卻（呼叫端據此送 COOLDOWN
         // 封包）；海盜船例外——Java 施放時不登記，船被打爆時才由 MapleCharacter 登記冷卻。

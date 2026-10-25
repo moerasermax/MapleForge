@@ -173,16 +173,18 @@ public sealed partial class Player
     /// P134：只套用 buff 部分（Java <c>applyBuffEffect</c> 的 statups 登記）；HP/MP 結算由呼叫端負責
     /// （技能走 <c>SkillService</c> 的 Java calcHPChange/calcMPChange）。非 overTime 或無 statups 回 null。
     /// </summary>
-    public PlayerBuffChange? ApplyBuffStats(MapleStatEffect effect, DateTimeOffset now)
+    /// <param name="statupsOverride">P156：以這組 statups 取代效果本身的（Java applyBuffEffect 的 Selfstat，例如變身）。</param>
+    public PlayerBuffChange? ApplyBuffStats(MapleStatEffect effect, DateTimeOffset now, IReadOnlyList<BuffStatValue>? statupsOverride = null)
     {
         ArgumentNullException.ThrowIfNull(effect);
 
-        if (!effect.IsOverTime || effect.Statups.Count == 0)
+        var source = statupsOverride ?? effect.Statups;
+        if (!effect.IsOverTime || source.Count == 0)
         {
             return null;
         }
 
-        var stats = effect.Statups.ToArray();
+        var stats = source.ToArray();
         lock (_skillsGate)
         {
             foreach (var stat in stats)
