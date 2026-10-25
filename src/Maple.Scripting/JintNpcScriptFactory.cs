@@ -331,6 +331,15 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         /// <summary>P178：Java <c>cm.getEventInstance()</c>＝<c>getPlayer().getEventInstance()</c>。</summary>
         public object? getEventInstance() => _events?.GetEventInstance(_cm.GetCharacterId());
 
+        // ── P192 ───────────────────────────────────────────────────────────────────────
+        public void expandInventory(int type, int amount) => _cm.ExpandInventory(type, amount);
+        public InventoryFacade? getInventory(int type) => _cm.GetInventory(type) is { } bag ? new(bag) : null;
+        public void setQuestRecord(object? chr, int questId, string data) => _cm.SetQuestRecord(questId, data);
+        public string getReadableMillis(double start, double end) => Maple.Core.Text.ReadableTime.Millis((long)start, (long)end);
+        public void gainExpR(int gain) => _cm.GainExpR(gain);
+        public string getName() => _cm.GetName();
+        public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
+
         // ── P191 ───────────────────────────────────────────────────────────────────────
         public int getBossLog(string bossId) => _cm.GetBossLog(bossId);
         public void setBossLog(string bossId) => _cm.SetBossLog(bossId);
@@ -643,5 +652,46 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public bool isEmpty() => _count == 0;
 
         public bool contains(object? value) => false;
+    }
+
+    /// <summary>P192：Java MapleInventory 子集（getNumFreeSlot／getNextFreeSlot／isFull／getItem／listById／countById）。</summary>
+    public sealed class InventoryFacade
+    {
+        private readonly Maple.Core.Inventory.Inventory _bag;
+
+        internal InventoryFacade(Maple.Core.Inventory.Inventory bag) => _bag = bag;
+
+        public int getSlotLimit() => _bag.SlotLimit;
+        public int getNumFreeSlot() => _bag.FreeSlotCount;
+        public int getNextFreeSlot() => _bag.FirstFreeSlot() ?? -1;
+        public bool isFull() => _bag.FreeSlotCount == 0;
+        public bool isFull(int margin) => _bag.Items.Count + margin >= _bag.SlotLimit;
+        public int countById(int itemId) => _bag.CountById(itemId);
+        public ItemFacade? getItem(int slot) => _bag.Get((short)slot) is { } item ? new(item) : null;
+        public ItemList listById(int itemId) => new(_bag.Items.Where(i => i.ItemId == itemId).OrderBy(static i => i.Slot).Select(static i => new ItemFacade(i)).ToArray());
+    }
+
+    public sealed class ItemFacade
+    {
+        private readonly Maple.Core.Inventory.Item _item;
+
+        internal ItemFacade(Maple.Core.Inventory.Item item) => _item = item;
+
+        public int getItemId() => _item.ItemId;
+        public int getQuantity() => _item.Quantity;
+        public int getPosition() => _item.Slot;
+        public string getOwner() => _item.Owner;
+        public double getExpiration() => _item.Expiration;
+    }
+
+    public sealed class ItemList
+    {
+        private readonly ItemFacade[] _items;
+
+        internal ItemList(ItemFacade[] items) => _items = items;
+
+        public int size() => _items.Length;
+        public bool isEmpty() => _items.Length == 0;
+        public ItemFacade get(int index) => _items[index];
     }
 }

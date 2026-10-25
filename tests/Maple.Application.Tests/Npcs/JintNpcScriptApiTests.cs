@@ -1,6 +1,7 @@
 using Maple.Application.Npcs;
 using Maple.Application.Quests;
 using Maple.Core.Characters;
+using Maple.Core.Inventory;
 using Maple.Core.Quests;
 using Maple.Core.World;
 using Maple.Scripting;
@@ -358,6 +359,38 @@ public sealed class JintNpcScriptApiTests : IDisposable
 
         Assert.Equal("1/0/1", Assert.Single(dialogs).Text);
         Assert.Single(player.Character.BossLog);
+    }
+
+    [Fact]
+    public async Task Script_ExpandInventoryGetInventoryAndHelpers()
+    {
+        // P192：expandInventory（上限 96）＋getSlotUpdate、getInventory(type) 查詢、setQuestRecord、getReadableMillis。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999989.js"), """
+            function start() {
+                cm.expandInventory(2, 4);
+                var inv = cm.getInventory(2);
+                cm.setQuestRecord(cm.getPlayer(), 7777, "abc");
+                cm.sendOk(inv.getSlotLimit() + "/" + inv.getNumFreeSlot() + "/" + inv.getNextFreeSlot() + "/" + inv.getItem(1).getQuantity()
+                    + "/" + cm.getReadableMillis(0, 3723000) + "/" + cm.getName());
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30 }, new Position(0, 0, 0, 0));
+        player.Inventory.By(InventoryType.Use).Put(new Item { ItemId = 2000000, Slot = 1, Quantity = 7 });
+        var ctx = new NpcContext(9999989, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        var slots = new List<(InventoryType, byte)>();
+        var convo = new NpcConversation(9999989, factory.TryCreate(9999989, ctx)!, ctx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (_, _) => Task.CompletedTask,
+            sendSlotUpdate: (t, n, _) => { slots.Add((t, n)); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal("28/27/2/7/1 hour, 2 minutes, and 3 seconds./Js", Assert.Single(dialogs).Text);
+        Assert.Equal([(InventoryType.Use, (byte)28)], slots);
+        Assert.Equal((byte)28, player.Character.UseSlots);
+        Assert.Equal("abc", player.GetOrAddQuest(7777).CustomData);
+        Assert.Equal((byte)96, player.ExpandInventory(InventoryType.Use, 200)); // 上限 96
     }
 
     private sealed class EmptyQuestCatalog : IQuestCatalog

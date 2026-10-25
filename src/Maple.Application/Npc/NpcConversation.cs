@@ -35,6 +35,7 @@ public sealed class NpcConversation
     private readonly Func<CancellationToken, Task>? _killAllMob;
     private readonly Func<NpcPartyAction, CancellationToken, Task>? _sendPartyAction;
     private readonly Func<Maple.Application.Squads.SquadNotice, CancellationToken, Task>? _sendSquadNotice;
+    private readonly Func<Maple.Core.Inventory.InventoryType, byte, CancellationToken, Task>? _sendSlotUpdate;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -63,8 +64,10 @@ public sealed class NpcConversation
         Func<NpcUiEffect, CancellationToken, Task>? sendUiEffect = null,
         Func<CancellationToken, Task>? killAllMob = null,
         Func<NpcPartyAction, CancellationToken, Task>? sendPartyAction = null,
-        Func<Maple.Application.Squads.SquadNotice, CancellationToken, Task>? sendSquadNotice = null)
+        Func<Maple.Application.Squads.SquadNotice, CancellationToken, Task>? sendSquadNotice = null,
+        Func<Maple.Core.Inventory.InventoryType, byte, CancellationToken, Task>? sendSlotUpdate = null)
     {
+        _sendSlotUpdate = sendSlotUpdate;
         _sendSquadNotice = sendSquadNotice;
         _sendPartyAction = sendPartyAction;
         _killAllMob = killAllMob;
@@ -199,6 +202,14 @@ public sealed class NpcConversation
             foreach (var action in _ctx.PendingPartyActions)
             {
                 await _sendPartyAction(action, ct);
+            }
+        }
+
+        if (_sendSlotUpdate is not null)
+        {
+            foreach (var (type, slots) in _ctx.PendingSlotUpdates)
+            {
+                await _sendSlotUpdate(type, slots, ct);
             }
         }
 

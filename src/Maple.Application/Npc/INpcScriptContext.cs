@@ -195,6 +195,15 @@ public interface INpcScriptContext
     // ── P176：隊伍（AbstractPlayerInteraction.getParty／isLeader／warpParty／givePartyExp／givePartyItems）──────
     Maple.Core.Parties.PartyState? GetPartyState();
 
+    // ── P192 ────────────────────────────────────────────────────────────────────────
+    /// <summary>Java expandInventory(type, amount)：欄位上限 +amount（≤ 96）並送 getSlotUpdate。</summary>
+    void ExpandInventory(int type, int amount) { }
+    /// <summary>Java getInventory(type)：唯讀背包（腳本端 facade 包裝）。</summary>
+    Maple.Core.Inventory.Inventory? GetInventory(int type) => null;
+    void SetQuestRecord(int questId, string data) { }
+    void GainExpR(int gain) { }
+    int GetMonsterCount(int mapId) => 0;
+
     // ── P191：打王／一次性紀錄 ─────────────────────────────────────────────────────────
     int GetBossLog(string bossId) => 0;
     void SetBossLog(string bossId) { }

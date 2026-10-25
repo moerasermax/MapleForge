@@ -48,6 +48,17 @@ public sealed class Character
     /// </summary>
     public Dictionary<string, int> SavedLocations { get; set; } = new();
 
+    /// <summary>P192：背包欄位上限（Java MapleInventory.slotLimit；expandInventory／擴充道具會增加，上限 96）。</summary>
+    public byte EquipSlots { get; set; } = 24;
+
+    public byte UseSlots { get; set; } = 24;
+
+    public byte SetupSlots { get; set; } = 24;
+
+    public byte EtcSlots { get; set; } = 24;
+
+    public byte CashSlots { get; set; } = 48;
+
     /// <summary>P191：Java <c>bosslog</c> 表（bossid＋時間）；getBossLog 數過去 24 小時。</summary>
     public List<BossLogEntry> BossLog { get; set; } = new();
 

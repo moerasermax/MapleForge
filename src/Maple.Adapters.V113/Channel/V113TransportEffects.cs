@@ -44,6 +44,16 @@ public sealed class V113TransportEffects : ITransportEffects
     }
 
     /// <summary>Java <c>getClock(seconds)</c>：<c>[0x8D][byte 2][int 秒]</c>。</summary>
+    /// <summary>P192：Java <c>getSlotUpdate(invType, newSlots)</c>（UPDATE_INVENTORY_SLOT 0x1C）。</summary>
+    public static byte[] SlotUpdate(byte inventoryType, byte newSlots)
+    {
+        var w = new PacketWriter(4);
+        w.WriteShort(0x1C);
+        w.WriteByte(inventoryType);
+        w.WriteByte(newSlots);
+        return w.ToArray();
+    }
+
     /// <summary>P190：Java <c>MaplePacketCreator.stopClock()</c>（STOP_CLOCK 0x93，無內容）。</summary>
     public static byte[] StopClock()
     {

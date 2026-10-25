@@ -40,7 +40,14 @@ public sealed partial class Player : IFieldObject
     {
         Character = character;
         Position = spawn;
-        Inventory = Inventories.Hydrate(character.Items);
+        Inventory = Inventories.Hydrate(character.Items, new Dictionary<InventoryType, byte>
+        {
+            [InventoryType.Equip] = character.EquipSlots,
+            [InventoryType.Use] = character.UseSlots,
+            [InventoryType.Setup] = character.SetupSlots,
+            [InventoryType.Etc] = character.EtcSlots,
+            [InventoryType.Cash] = character.CashSlots,
+        });
         _equipTemplates = equipTemplates;
     }
 
@@ -74,6 +81,26 @@ public sealed partial class Player : IFieldObject
             ? NewEquip(itemId)
             : new Item { ItemId = itemId, Quantity = quantity };
         return Inventory.By(type).Gain(item);
+    }
+
+    /// <summary>
+    /// P192：Java <c>MapleCharacter.expandInventory(type, amount)</c>：<c>addSlot</c>（上限 96），回傳新上限（呼叫端送 getSlotUpdate）。
+    /// 同步寫回角色文件的欄位上限。
+    /// </summary>
+    public byte ExpandInventory(InventoryType type, int amount)
+    {
+        var bag = Inventory.By(type);
+        bag.SlotLimit = (byte)Math.Min(bag.SlotLimit + amount, Maple.Core.Inventory.Inventory.MaxSlotLimit);
+        switch (type)
+        {
+            case InventoryType.Equip: Character.EquipSlots = bag.SlotLimit; break;
+            case InventoryType.Use: Character.UseSlots = bag.SlotLimit; break;
+            case InventoryType.Setup: Character.SetupSlots = bag.SlotLimit; break;
+            case InventoryType.Etc: Character.EtcSlots = bag.SlotLimit; break;
+            case InventoryType.Cash: Character.CashSlots = bag.SlotLimit; break;
+        }
+
+        return bag.SlotLimit;
     }
 
     /// <summary>P191：Java getBossLog：該 bossId 在過去 24 小時（subtime(now, '1 0:0:0')）內的筆數。</summary>

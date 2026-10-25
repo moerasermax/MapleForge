@@ -2270,6 +2270,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             killAllMob: c => _transportEffects is { } effects ? effects.KillAllMonstersAsync(player.Character.MapId, c, animate: true) : Task.CompletedTask,
             sendPartyAction: SendPartyActionAsync,
             sendSquadNotice: (notice, c) => _squadNotifier is { } notifier ? notifier.SendAsync(notice, c) : Task.CompletedTask,
+            sendSlotUpdate: (type, slots, c) => session.SendAsync(V113TransportEffects.SlotUpdate((byte)type, slots), c),
             sendUiEffect: (effect, c) => effect.Kind switch
             {
                 NpcUiEffectKind.Hint => session.SendAsync(V113StatsPackets.SendHint(effect.Text, effect.A, effect.B), c),

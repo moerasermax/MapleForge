@@ -8,8 +8,13 @@ public sealed class Inventory
 {
     private readonly Dictionary<short, Item> _slots = new();
 
+    /// <summary>Java MapleInventory.addSlot／setSlotLimit 上限。</summary>
+    public const byte MaxSlotLimit = 96;
+
     public InventoryType Type { get; }
     public byte SlotLimit { get; set; }
+
+    public int FreeSlotCount => Math.Max(0, SlotLimit - _slots.Count);
 
     public Inventory(InventoryType type, byte slotLimit)
     {
@@ -294,9 +299,17 @@ public sealed class Inventories
     public Inventory By(InventoryType type) => _bags[type];
 
     /// <summary>從持久扁平記錄 hydrate（正 slot 才入袋；負 slot=已穿戴由 Character.Equips 另管，MVP-0 略過）。</summary>
-    public static Inventories Hydrate(IEnumerable<ItemRecord> records)
+    public static Inventories Hydrate(IEnumerable<ItemRecord> records, IReadOnlyDictionary<InventoryType, byte>? slotLimits = null)
     {
         var inv = new Inventories();
+        foreach (var (type, limit) in slotLimits ?? new Dictionary<InventoryType, byte>())
+        {
+            if (limit > 0)
+            {
+                inv.By(type).SlotLimit = Math.Min(limit, Inventory.MaxSlotLimit);
+            }
+        }
+
         foreach (var r in records)
         {
             if (r.Slot <= 0 || !InventoryTypes.IsValid(r.Type)) continue;

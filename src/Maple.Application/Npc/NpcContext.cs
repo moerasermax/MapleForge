@@ -146,6 +146,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingKillAllMob = false;
         _pendingPartyActions.Clear();
         _pendingSquadNotices.Clear();
+        _pendingSlotUpdates.Clear();
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -888,4 +889,33 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public int GetOneTimeLog(string log) => _player.GetOneTimeLog(log);
 
     public void SetOneTimeLog(string log) => _player.SetOneTimeLog(log);
+
+    // ── P192 ───────────────────────────────────────────────────────────────────────────
+    private readonly List<(Maple.Core.Inventory.InventoryType Type, byte Slots)> _pendingSlotUpdates = new();
+
+    /// <summary>P192：getSlotUpdate(type, newSlots)。</summary>
+    internal IReadOnlyList<(Maple.Core.Inventory.InventoryType Type, byte Slots)> PendingSlotUpdates => _pendingSlotUpdates;
+
+    public void ExpandInventory(int type, int amount)
+    {
+        if (!Maple.Core.Inventory.InventoryTypes.IsValid((byte)type))
+        {
+            return;
+        }
+
+        var inventoryType = (Maple.Core.Inventory.InventoryType)type;
+        _pendingSlotUpdates.Add((inventoryType, _player.ExpandInventory(inventoryType, amount)));
+    }
+
+    public Maple.Core.Inventory.Inventory? GetInventory(int type)
+        => Maple.Core.Inventory.InventoryTypes.IsValid((byte)type) ? _player.Inventory.By((Maple.Core.Inventory.InventoryType)type) : null;
+
+    /// <summary>Java setQuestRecord(chr, questId, data)：getQuestNAdd(quest).setCustomData(data)（無封包）。</summary>
+    public void SetQuestRecord(int questId, string data) => _player.GetOrAddQuest(questId).CustomData = data;
+
+    /// <summary>Java gainExpR(gain)：gain × 頻道經驗倍率。</summary>
+    public void GainExpR(int gain) => GainExp((int)Math.Min(int.MaxValue, (long)gain * _expRate));
+
+    /// <summary>Java getMonsterCount(mapId)：該圖怪物數。</summary>
+    public int GetMonsterCount(int mapId) => _monstersOf(mapId).Count;
 }

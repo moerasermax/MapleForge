@@ -103,12 +103,12 @@ internal static class V113ChannelPackets
         w.WriteInt(0);                  // beans
         w.WriteInt(0);
 
-        // inventory slot limits
-        w.WriteByte(24);   // equip
-        w.WriteByte(24);   // use
-        w.WriteByte(24);   // setup
-        w.WriteByte(24);   // etc
-        w.WriteByte(48);   // cash
+        // inventory slot limits（P192：角色文件的欄位上限）
+        w.WriteByte(chr.EquipSlots);
+        w.WriteByte(chr.UseSlots);
+        w.WriteByte(chr.SetupSlots);
+        w.WriteByte(chr.EtcSlots);
+        w.WriteByte(chr.CashSlots);
 
         w.WriteLong(GetTime(-2L));      // -2 = marker timestamp
 
