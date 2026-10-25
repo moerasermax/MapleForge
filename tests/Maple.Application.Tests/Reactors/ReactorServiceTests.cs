@@ -118,6 +118,25 @@ public sealed class ReactorServiceTests
     }
 
     [Fact]
+    public void ScriptContext_ShowEffectAndGuildPoints()
+    {
+        // P206：rm.showEffect(broadcast, path)、rm.gainGP（無公會不累計）。
+        var player = CreatePlayer();
+        var service = new ReactorService(CreateProvider(reactorId: 1002008), new FakeReactorScriptFactory(_ => { }));
+        var reactor = Assert.Single(service.SpawnMapReactors(new FieldInstance(100000000), 100000000));
+        var ctx = new ReactorScriptContext(player, reactor);
+
+        ctx.ShowEffect(true, "quest/party/clear");
+        ctx.GainGuildPoints(50);
+        player.Character.GuildId = 7;
+        ctx.GainGuildPoints(30);
+        ctx.GainGuildPoints(20);
+
+        Assert.Equal([(true, "quest/party/clear")], ctx.Effects);
+        Assert.Equal(50, ctx.PendingGuildPoints);
+    }
+
+    [Fact]
     public void ScriptContext_SpawnKillMusic()
     {
         // P183：spawnMonster 在反應堆 y−10 下方生、killMonster 只殺第一隻、killAll 全殺（動畫 1）、changeMusic。

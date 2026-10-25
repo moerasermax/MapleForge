@@ -139,9 +139,9 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
         public void scheduleWarp(int delay, int mapId) => _rm.RecordUnsupported("scheduleWarp", delay, mapId);
         public void givePartyNX(int amount) => _rm.RecordUnsupported("givePartyNX", amount);
         public void givePartyExp(int amount) => _rm.RecordUnsupported("givePartyExp", amount);
-        public void gainGP(int amount) => _rm.RecordUnsupported("gainGP", amount);
+        public void gainGP(int amount) => _rm.GainGuildPoints(amount);
         public void forceCompleteQuest(int questId) => _rm.RecordUnsupported("forceCompleteQuest", questId);
-        public void showEffect(bool broadcast, string effect) => _rm.RecordUnsupported("showEffect", broadcast, effect);
+        public void showEffect(bool broadcast, string effect) => _rm.ShowEffect(broadcast, effect);
     }
 
     private sealed class ReactorFacade

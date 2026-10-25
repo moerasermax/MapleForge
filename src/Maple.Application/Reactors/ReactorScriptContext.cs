@@ -259,6 +259,29 @@ public sealed class ReactorScriptContext : IReactorScriptContext
         _music.Add(song);
     }
 
+    private readonly List<(bool Broadcast, string Effect)> _effects = new();
+
+    /// <summary>P206：showEffect 的 (是否全圖, 效果路徑)。</summary>
+    public IReadOnlyList<(bool Broadcast, string Effect)> Effects => _effects;
+
+    /// <summary>P206：gainGP 累計的公會點數（呼叫端交給公會服務並通知成員）。</summary>
+    public int PendingGuildPoints { get; private set; }
+
+    public void ShowEffect(bool broadcast, string effect)
+    {
+        Record(nameof(ShowEffect), broadcast, effect);
+        _effects.Add((broadcast, effect));
+    }
+
+    public void GainGuildPoints(int amount)
+    {
+        Record(nameof(GainGuildPoints), amount);
+        if (Player.Character.GuildId > 0)
+        {
+            PendingGuildPoints += amount;
+        }
+    }
+
     private void Kill(Mob mob, byte animation)
     {
         if (_field is not null && _combat is not null && _combat.KillMobWithoutRewards(_field, mob.ObjectId, animation).Killed)

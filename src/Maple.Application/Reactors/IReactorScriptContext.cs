@@ -35,6 +35,12 @@ public interface IReactorScriptContext
     void KillAll();
     void ChangeMusic(string song);
 
+    /// <summary>P206：Java <c>showEffect(broadcast, effect)</c> → environmentChange(effect, 3)，broadcast 時全圖。</summary>
+    void ShowEffect(bool broadcast, string effect);
+
+    /// <summary>P206：Java <c>gainGP(gp)</c>——沒有公會（guildId ≤ 0）時不動作。</summary>
+    void GainGuildPoints(int amount);
+
     /// <summary>P185：<c>rm.getMap(id).setReactorState(state)</c>／<c>resetReactors()</c>（腳本結束後由呼叫端套用）。</summary>
     void SetMapReactorState(int mapId, byte state);
     void RecordUnsupported(string name, params object?[] args);

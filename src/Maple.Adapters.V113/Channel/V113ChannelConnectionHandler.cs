@@ -4042,6 +4042,42 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await session.SendAsync(V113DropPackets.ShowItemGain(itemId, (short)quantity, inChat: true), ct);
         }
+
+        // P206：showEffect → environmentChange(effect, 3)。
+        foreach (var (broadcast, effect) in ctx.Effects)
+        {
+            var packet = V113CombatPackets.EnvironmentChange(effect, 3);
+            if (broadcast)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
+            }
+            else
+            {
+                await session.SendAsync(packet, ct);
+            }
+        }
+
+        if (ctx.PendingGuildPoints != 0)
+        {
+            await ApplyGuildPointsAsync(player.Character.GuildId, ctx.PendingGuildPoints, ct);
+        }
+    }
+
+    /// <summary>P196/P206：World.Guild.gainGP——加點後對線上成員送 UPDATE_GP。</summary>
+    private async Task ApplyGuildPointsAsync(int guildId, int amount, CancellationToken ct)
+    {
+        var gp = await _guildService.GainGuildPointsAsync(guildId, amount, ct);
+        if (gp.Succeeded && gp.Guild is { } guild)
+        {
+            var gpPacket = V113GuildPackets.UpdateGuildPoints(guild.Id, guild.GuildPoints);
+            foreach (var recipientId in gp.Recipients.Distinct())
+            {
+                if (_onlinePlayers.FindById(recipientId) is { } member)
+                {
+                    try { await member.SendPacket(gpPacket, ct); } catch { /* best-effort */ }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -4094,18 +4130,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         if (ctx.PendingGuildPoints != 0)
         {
-            var gp = await _guildService.GainGuildPointsAsync(player.Character.GuildId, ctx.PendingGuildPoints, ct);
-            if (gp.Succeeded && gp.Guild is { } guild)
-            {
-                var gpPacket = V113GuildPackets.UpdateGuildPoints(guild.Id, guild.GuildPoints);
-                foreach (var recipientId in gp.Recipients.Distinct())
-                {
-                    if (_onlinePlayers.FindById(recipientId) is { } member)
-                    {
-                        try { await member.SendPacket(gpPacket, ct); } catch { /* best-effort */ }
-                    }
-                }
-            }
+            await ApplyGuildPointsAsync(player.Character.GuildId, ctx.PendingGuildPoints, ct);
         }
 
         // P195：warpBack——getClock(秒)，到時排進自己的連線：stopClock、回 retmap、黃字提示。
