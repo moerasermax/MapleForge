@@ -340,6 +340,16 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public string getName() => _cm.GetName();
         public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
 
+        // ── P195 ───────────────────────────────────────────────────────────────────────
+        public int getNpc() => _cm.GetNpcId();
+        public void gainAp(int amount) => _cm.GainAp(amount);
+        public void warpBack(int mapId, int returnMapId, int seconds) => _cm.WarpBack(mapId, returnMapId, seconds);
+        /// <summary>Java removeNpc(mapId, npcId)：只移除腳本生成的自訂 NPC；MapleForge 尚無自訂 NPC → no-op（同 Java 對 WZ NPC 的結果）。</summary>
+        public void removeNpc(int mapId, int npcId) { }
+        public void removeNpc(int npcId) { }
+        public MapFactoryFacade getMapFactory() => new(_cm);
+        public ChannelServerFacade getChannelServer() => new(_cm, _events);
+
         // ── P194：教學 UI ─────────────────────────────────────────────────────────────
         public void summonMsg(string message) => _cm.SummonMessage(message);
         public void summonMsg(int type) => _cm.SummonMessage(type);
@@ -717,5 +727,32 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public int size() => _items.Length;
         public bool isEmpty() => _items.Length == 0;
         public ItemFacade get(int index) => _items[index];
+    }
+
+    /// <summary>P195：Java MapleMapFactory 子集（getMap(id)）。</summary>
+    public sealed class MapFactoryFacade
+    {
+        private readonly INpcScriptContext _cm;
+
+        internal MapFactoryFacade(INpcScriptContext cm) => _cm = cm;
+
+        public object getMap(int mapId) => new MapFacade(_cm, mapId);
+    }
+
+    /// <summary>P195：Java ChannelServer 子集：getMapFactory、getEvent（GM 活動未移植 → -1）、getEventSM().getEventManager。</summary>
+    public sealed class ChannelServerFacade
+    {
+        private readonly INpcScriptContext _cm;
+        private readonly Maple.Application.Events.IEventScriptHost? _events;
+
+        internal ChannelServerFacade(INpcScriptContext cm, Maple.Application.Events.IEventScriptHost? events) => (_cm, _events) = (cm, events);
+
+        public MapFactoryFacade getMapFactory() => new(_cm);
+
+        public int getEvent() => -1;
+
+        public ChannelServerFacade getEventSM() => this;
+
+        public object? getEventManager(string name) => _cm.HasEventManager(name) ? new EventManagerFacade(_cm, name) : _events?.GetEventManager(name);
     }
 }

@@ -4033,6 +4033,29 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
+        // P195：warpBack——getClock(秒)，到時排進自己的連線：stopClock、回 retmap、黃字提示。
+        if (ctx.PendingClock is { } clockSeconds && _onlinePlayers.FindById(player.Character.Id) is { } self)
+        {
+            await self.SendPacket(V113TransportEffects.Clock(clockSeconds), ct);
+        }
+
+        if (ctx.PendingWarpBack is { } back && _sessionCommands is { } commands)
+        {
+            var characterId = player.Character.Id;
+            var online = _onlinePlayers;
+            _ = Task.Delay(TimeSpan.FromSeconds(back.Seconds)).ContinueWith(async _ =>
+            {
+                if (online.FindById(characterId) is not { } target)
+                {
+                    return;
+                }
+
+                await target.SendPacket(V113TransportEffects.StopClock(), CancellationToken.None);
+                commands.Warp(characterId, back.ReturnMapId, 0);
+                await target.SendPacket(V113BroadcastPackets.ServerNotice(6, "已經到達目的地了!"), CancellationToken.None);
+            }, TaskScheduler.Default);
+        }
+
         if (ctx.PendingMapWarp is { } warp && _sessionCommands is not null)
         {
             foreach (var entry in _mapRegistry.GetAll(player.Character.MapId).ToArray())

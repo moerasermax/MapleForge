@@ -204,6 +204,11 @@ public interface INpcScriptContext
     void GainExpR(int gain) { }
     int GetMonsterCount(int mapId) => 0;
 
+    // ── P195 ────────────────────────────────────────────────────────────────────────
+    int GetNpcId() => 0;
+    /// <summary>Java warpBack(mid, retmap, time)：傳到 mid 並開 time 秒計時，到時回 retmap。</summary>
+    void WarpBack(int mapId, int returnMapId, int seconds) { }
+
     // ── P194：教學 UI ────────────────────────────────────────────────────────────────
     void SummonMessage(string message) { }
     void SummonMessage(int type) { }

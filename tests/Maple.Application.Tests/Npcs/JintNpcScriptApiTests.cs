@@ -462,6 +462,37 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal([(false, 3, "maplemap/enter/100000000"), (true, 2, "gate")], environment);
     }
 
+    [Fact]
+    public async Task Script_MapFactoryChannelServerNpcAndWarpBack()
+    {
+        // P195：getMapFactory().getMap(id)、getChannelServer().getEvent()（無活動 −1）、getNpc、warpBack、removeNpc（no-op）。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999986.js"), """
+            function start() {
+                var m = cm.getMapFactory().getMap(240060100);
+                cm.removeNpc(cm.getMapId(), cm.getNpc());
+                cm.warpBack(200090070, 104000000, 80);
+                cm.sendOk(m.getId() + "/" + cm.getChannelServer().getEvent() + "/" + cm.getNpc());
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(9999986, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        var warps = new List<int>();
+        (int, int)? back = null;
+        int? clock = null;
+        var convo = new NpcConversation(9999986, factory.TryCreate(9999986, ctx)!, ctx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (m, _) => { warps.Add(m); return Task.CompletedTask; },
+            applyWorldEffects: (c, _) => { back = c.PendingWarpBack; clock = c.PendingClock; return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal("240060100/-1/9999986", Assert.Single(dialogs).Text);
+        Assert.Equal([200090070], warps);
+        Assert.Equal((104000000, 80), back);
+        Assert.Equal(80, clock);
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

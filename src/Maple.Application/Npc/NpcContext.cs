@@ -153,6 +153,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingGachaponMegas.Clear();
         _pendingMobSpawns.Clear();
         _pendingMapWarp = null;
+        _pendingWarpBack = null;
+        _pendingEnvironmentClock = null;
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -1037,4 +1039,25 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
             PlayerSummonHint(true);
         }
     }
+
+    // ── P195 ───────────────────────────────────────────────────────────────────────────
+    private (int ReturnMapId, int Seconds)? _pendingWarpBack;
+
+    /// <summary>P195：warpBack 的延遲返回（呼叫端計時；到時 stopClock、換圖、黃字「已經到達目的地了!」）。</summary>
+    public (int ReturnMapId, int Seconds)? PendingWarpBack => _pendingWarpBack;
+
+    public int GetNpcId() => _npcId;
+
+    /// <summary>Java warpBack：立即 changeMap(mid, portal 0)＋getClock(time)，time 秒後回 retmap。</summary>
+    public void WarpBack(int mapId, int returnMapId, int seconds)
+    {
+        Warp(mapId);
+        _pendingEnvironmentClock = seconds;
+        _pendingWarpBack = (returnMapId, seconds);
+    }
+
+    private int? _pendingEnvironmentClock;
+
+    /// <summary>P195：warpBack 的 getClock(秒)。</summary>
+    public int? PendingClock => _pendingEnvironmentClock;
 }
