@@ -1756,10 +1756,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
 
             // Cleanup: remove from map, notify others
-            if (chr is not null)
+            // P104：對照 Java MapleClient.disconnect 整段包在 player != null 內。chr 讀到後、player 建立前
+            // （如帳號查詢拋例外）斷線時，舊碼對 player! 丟 NRE，蓋掉原始例外；此時尚未註冊地圖，無需清理。
+            if (chr is not null && player is not null)
             {
-                _partySearchHandler.NotifyMapLeave(player!);
-                await _partyOperationHandler.NotifyLogoutAsync(player!, CancellationToken.None);
+                _partySearchHandler.NotifyMapLeave(player);
+                await _partyOperationHandler.NotifyLogoutAsync(player, CancellationToken.None);
                 var removedFromMap = _mapRegistry.Deregister(chr.MapId, chr.Id, sessionToken);
                 if (removedFromMap)
                 {
