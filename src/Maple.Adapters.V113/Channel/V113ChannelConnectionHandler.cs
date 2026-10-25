@@ -4335,6 +4335,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await SendStackGainAsync(session, gainedType, gained, ct);
         }
 
+        // P211：存入——gainMeso(-cost) 後 removeFromSlot 的背包封包，再 sendStored。
+        if (result.Removed is { } removed)
+        {
+            await session.SendAsync(V113ItemUsePackets.ModifyInventoryQuantity(removed), ct);
+        }
+
+        if (result.EnableActions)
+        {
+            await session.SendAsync(V113StatsPackets.EnableActions(), ct);
+        }
+
         var packet = V113StoragePackets.EncodeResult(result, npcId, player.Storage);
         if (packet is not null)
         {

@@ -20,7 +20,9 @@ public sealed record StorageResult(
     InventoryType? ChangedType = null,
     InventoryStackGain? Gained = null,
     bool MesoChanged = false,
-    string? PopupMessage = null)
+    string? PopupMessage = null,
+    InventoryQuantityMutation? Removed = null,
+    bool EnableActions = false)
 {
     public static StorageResult None { get; } = new(StorageResultKind.None);
 }
@@ -35,14 +37,22 @@ public sealed class StorageService
         return new StorageResult(StorageResultKind.Opened);
     }
 
+    /// <summary>Java：存入手續費一般 100、自由市場 500。</summary>
+    public const int StoreFee = 100;
+    public const int FreeMarketStoreFee = 500;
+
+    /// <summary>P211：Java handleStorage mode 5（手續費、寵物／ID／數量檢查、removeFromSlot 背包封包）。</summary>
     public StorageResult Store(Player player, InventoryType type, short inventorySlot, short quantity, int expectedItemId = 0)
     {
-        if (player.Storage.IsFull)
-            return new StorageResult(StorageResultKind.Full);
-
-        return player.TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId)
-            ? new StorageResult(StorageResultKind.Stored, type)
-            : StorageResult.None;
+        var fee = player.Character.MapId == FreeMarketMapId ? FreeMarketStoreFee : StoreFee;
+        return player.TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee, out var removed) switch
+        {
+            StorageStoreStatus.Success => new StorageResult(StorageResultKind.Stored, type, MesoChanged: true, Removed: removed),
+            StorageStoreStatus.Full => new StorageResult(StorageResultKind.Full),
+            StorageStoreStatus.NotEnoughMeso => new StorageResult(StorageResultKind.None, PopupMessage: NotEnoughMesoMessage),
+            StorageStoreStatus.NotFound or StorageStoreStatus.Rejected when quantity >= 1 => new StorageResult(StorageResultKind.None, EnableActions: true),
+            _ => StorageResult.None,
+        };
     }
 
     /// <summary>Java：自由市場入口（910000000）取出收 1000 楓幣。</summary>

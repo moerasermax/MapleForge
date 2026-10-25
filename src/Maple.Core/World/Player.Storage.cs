@@ -31,25 +31,54 @@ public sealed partial class Player
     }
 
     public bool TryStoreItemToStorage(InventoryType type, short inventorySlot, short quantity, int expectedItemId = 0)
+        => TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee: 0, out _) == StorageStoreStatus.Success;
+
+    /// <summary>
+    /// P211：Java NPCHandler.handleStorage mode 5——數量 &lt; 1 不處理；倉庫滿；格子空；楓幣不足手續費（一般 100、自由市場 500）；
+    /// 寵物不可存；飛鏢／子彈整組存入；ID 不符或數量不足拒絕。成功時扣手續費、<c>removeFromSlot</c>（回傳數量異動供呼叫端送封包）後存入。
+    /// </summary>
+    public StorageStoreStatus TryStoreItemToStorage(
+        InventoryType type,
+        short inventorySlot,
+        short quantity,
+        int expectedItemId,
+        int fee,
+        out InventoryQuantityMutation? mutation)
     {
-        if (Storage.IsFull) return false;
+        mutation = null;
+        if (quantity < 1) return StorageStoreStatus.Rejected;
+        if (Storage.IsFull) return StorageStoreStatus.Full;
 
         var bag = Inventory.By(type);
-        if (expectedItemId > 0 && bag.Get(inventorySlot)?.ItemId != expectedItemId)
-            return false;
+        var source = bag.Get(inventorySlot);
+        if (source is null) return StorageStoreStatus.NotFound;
+        if (fee > 0 && Character.Meso < fee) return StorageStoreStatus.NotEnoughMeso;
+        if (source.ItemId / 1000 == 5000 || source.Quantity <= 0) return StorageStoreStatus.Rejected;
 
+        var rechargeable = Maple.Core.Inventory.Inventory.IsRechargeable(source.ItemId);
+        if ((expectedItemId > 0 && source.ItemId != expectedItemId) || (!rechargeable && source.Quantity < quantity))
+            return StorageStoreStatus.Rejected;
+
+        if (rechargeable)
+            quantity = source.Quantity;
+
+        var oldQuantity = source.Quantity;
         if (!bag.TryTake(inventorySlot, quantity, out var item) || item is null)
-            return false;
+            return StorageStoreStatus.Rejected;
 
         if (!Storage.TryStore(item))
         {
             RestoreTakenItem(bag, inventorySlot, item);
-            return false;
+            return StorageStoreStatus.Full;
         }
 
+        if (fee > 0)
+            GainMeso(-fee);
+
+        mutation = new InventoryQuantityMutation(type, inventorySlot, item.ItemId, oldQuantity, (short)(oldQuantity - quantity));
         FlushInventory();
         FlushStorage();
-        return true;
+        return StorageStoreStatus.Success;
     }
 
     public bool TryTakeItemFromStorage(InventoryType type, byte storageTypeSlot)
@@ -137,6 +166,16 @@ public sealed partial class Player
         item.Slot = originalSlot;
         bag.Put(item);
     }
+}
+
+/// <summary>P211：倉庫存入結果。</summary>
+public enum StorageStoreStatus
+{
+    Success,
+    Full,
+    NotFound,
+    NotEnoughMeso,
+    Rejected,
 }
 
 /// <summary>P210：倉庫取出結果。</summary>

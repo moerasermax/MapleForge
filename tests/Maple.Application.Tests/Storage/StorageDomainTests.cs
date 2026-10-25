@@ -177,6 +177,39 @@ public sealed class StorageDomainTests
         Assert.Empty(player.Storage.Items);
     }
 
+    [Fact]
+    public void Store_ChargesFee_ReportsRemoval_StarsStoreWholeStack()
+    {
+        // P211：Java handleStorage mode 5——手續費 100（自由市場 500）、removeFromSlot、飛鏢整組、寵物拒絕。
+        var account = new Account { Id = 7 };
+        var player = BuildPlayer(
+            account,
+            new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2000000, Slot = 1, Quantity = 30 },
+            new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2070000, Slot = 2, Quantity = 500 },
+            new ItemRecord { Type = (byte)InventoryType.Cash, ItemId = 5000000, Slot = 1, Quantity = 1 });
+        player.AttachStorage(account);
+        player.Character.Meso = 150;
+        var service = new StorageService();
+
+        var stored = service.Store(player, InventoryType.Use, 1, 20, 2000000);
+        Assert.Equal(StorageResultKind.Stored, stored.Kind);
+        Assert.True(stored.MesoChanged);
+        Assert.Equal(50, player.Character.Meso);
+        Assert.Equal((InventoryType.Use, (short)1, (short)30, (short)10), (stored.Removed!.Type, stored.Removed.Slot, stored.Removed.OldQuantity, stored.Removed.NewQuantity));
+
+        Assert.Equal(StorageService.NotEnoughMesoMessage, service.Store(player, InventoryType.Use, 1, 5, 2000000).PopupMessage);
+
+        player.Character.Meso = 1000;
+        var star = service.Store(player, InventoryType.Use, 2, 1, 2070000);
+        Assert.Equal((short)0, star.Removed!.NewQuantity);
+        Assert.Equal(500, player.Storage.Items.Single(i => i.ItemId == 2070000).Quantity);
+
+        Assert.True(service.Store(player, InventoryType.Cash, 1, 1, 5000000).EnableActions); // 寵物不可存
+        player.Character.MapId = StorageService.FreeMarketMapId;
+        service.Store(player, InventoryType.Use, 1, 1, 2000000);
+        Assert.Equal(400, player.Character.Meso);
+    }
+
     private static Player BuildPlayer(Account account, params ItemRecord[] inventoryItems)
     {
         var character = new Character
