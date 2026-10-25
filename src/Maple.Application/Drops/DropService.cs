@@ -60,12 +60,16 @@ public enum DropPickupStatus
     Success,
 }
 
+/// <param name="Stack">P181：疊加結果（補到既有堆疊的格與新格）；背包滿而只撿一部分時也帶，呼叫端照樣送更新。</param>
+/// <param name="PickedQuantity">P181：實際撿起的數量（getShowItemGain 用）。</param>
 public sealed record DropPickupResult(
     DropPickupStatus Status,
     MapDrop? Drop = null,
     Item? GainedItem = null,
     int GainedMeso = 0,
-    InventoryType? InventoryType = null)
+    InventoryType? InventoryType = null,
+    InventoryStackGain? Stack = null,
+    short PickedQuantity = 0)
 {
     public bool Success => Status == DropPickupStatus.Success;
 }
@@ -386,11 +390,15 @@ public sealed class DropService : IMobKillHandler
             return new DropPickupResult(DropPickupStatus.NotFound);
         }
 
+        // P181：Java addFromDrop——先補既有堆疊再開新格；背包滿時掉落物數量改成剩餘、留在地上（已撿的保留）。
         var type = Player.InventoryTypeOf(drop.Item.ItemId);
-        var gained = player.GainDropItem(drop.Item);
-        if (gained is null)
+        var requested = drop.Item.Quantity;
+        var stack = player.GainDropItemStacking(drop.Item);
+        if (!stack.Complete)
         {
-            return new DropPickupResult(DropPickupStatus.InventoryFull, drop, InventoryType: type);
+            var picked = (short)(requested - stack.Remaining);
+            drop.Item.Quantity = stack.Remaining;
+            return new DropPickupResult(DropPickupStatus.InventoryFull, drop, InventoryType: type, Stack: stack, PickedQuantity: picked);
         }
 
         if (!drop.TryMarkPickedUp())
@@ -399,7 +407,13 @@ public sealed class DropService : IMobKillHandler
         }
 
         field.Remove(drop.ObjectId);
-        return new DropPickupResult(DropPickupStatus.Success, drop, gained, InventoryType: type);
+        return new DropPickupResult(
+            DropPickupStatus.Success,
+            drop,
+            stack.Added.FirstOrDefault(),
+            InventoryType: type,
+            Stack: stack,
+            PickedQuantity: requested);
     }
 
     /// <summary>

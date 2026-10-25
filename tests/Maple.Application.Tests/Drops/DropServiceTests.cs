@@ -124,6 +124,48 @@ public sealed class DropServiceTests
     }
 
     [Fact]
+    public void TryPickup_Item_MergesIntoExistingStack()
+    {
+        // P181：Java addFromDrop——同擁有者、同期限的堆疊先補。
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        player.Inventory.By(InventoryType.Etc).Put(new Item { ItemId = 4000000, Slot = 1, Quantity = 7 });
+        var drop = MapDrop.ForItem(1_000_000, new Item { ItemId = 4000000, Quantity = 2 }, new Position(0, 0, 0, 0), new Position(0, 0, 0, 0), 100001, player.Character.Id, 0, DateTimeOffset.UtcNow);
+        field.Add(player);
+        field.Add(drop);
+
+        var result = service.TryPickup(field, player, drop.ObjectId);
+
+        Assert.True(result.Success);
+        Assert.Equal((short)9, player.Inventory.By(InventoryType.Etc).Get(1)!.Quantity);
+        Assert.Single(result.Stack!.Merged);
+        Assert.Null(result.GainedItem);
+        Assert.Equal((short)2, result.PickedQuantity);
+    }
+
+    [Fact]
+    public void TryPickup_Item_InventoryFull_PicksPartially_LeavesRemainderOnMap()
+    {
+        var service = MakeDropService();
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var etc = player.Inventory.By(InventoryType.Etc);
+        etc.SlotLimit = 1;
+        etc.Put(new Item { ItemId = 4000000, Slot = 1, Quantity = 98 });
+        var drop = MapDrop.ForItem(1_000_000, new Item { ItemId = 4000000, Quantity = 5 }, new Position(0, 0, 0, 0), new Position(0, 0, 0, 0), 100001, player.Character.Id, 0, DateTimeOffset.UtcNow);
+        field.Add(player);
+        field.Add(drop);
+
+        var result = service.TryPickup(field, player, drop.ObjectId);
+
+        Assert.Equal(DropPickupStatus.InventoryFull, result.Status);
+        Assert.Equal((short)100, etc.Get(1)!.Quantity);
+        Assert.Equal((short)3, drop.Item!.Quantity);
+        Assert.Same(drop, field.Get(drop.ObjectId));
+    }
+
+    [Fact]
     public void TryPickup_Meso_AddsMesoAndRemovesDrop()
     {
         var service = MakeDropService();

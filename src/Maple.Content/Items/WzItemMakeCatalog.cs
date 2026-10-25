@@ -68,6 +68,15 @@ public sealed class WzItemMakeCatalog : IItemMakeCatalog, IEquipTemplateProvider
     /// <summary>P168：Java itemExists（hairExists／faceExists 用）。</summary>
     public bool ItemExists(int itemId) => GetItemNode(itemId) is not null;
 
+    /// <summary>P181：Java DumpItems 的 slotMax：info/slotMax（getIntConvert）；缺值時裝備 1、其餘 100。</summary>
+    public short GetSlotMax(int itemId)
+    {
+        var info = GetInfoNode(itemId);
+        return info?["slotMax"] is null
+            ? Maple.Core.Items.ItemSlotMax.Default(itemId)
+            : (short)GetInt(info, "slotMax", -1);
+    }
+
     public ItemMakeEnhanceStats? GetEnhanceStats(int itemId)
     {
         lock (_itemGate)

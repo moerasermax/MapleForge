@@ -56,6 +56,37 @@ public sealed class ShopServiceTests
         Assert.Equal((short)1, player.Character.Items.Single(i => i.ItemId == 2000000).Quantity);
     }
 
+    [Fact]
+    public void Buy_MergesIntoExistingStack()
+    {
+        // P181：Java addById 先補既有堆疊。
+        var service = new ShopService(new FakeShopCatalog());
+        var player = NewPlayer(meso: 1000, new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2000000, Slot = 1, Quantity = 3 });
+        service.OpenShop(player, 35);
+
+        var result = service.Buy(player, 2000000, 2);
+
+        Assert.Equal(ShopTransactionStatus.Success, result.Status);
+        Assert.Equal((short)5, player.Inventory.By(InventoryType.Use).Get(1)!.Quantity);
+        Assert.Equal(new InventoryQuantityMutation(InventoryType.Use, 1, 2000000, 3, 5), Assert.Single(result.Stack!.Merged));
+        Assert.Empty(result.Stack.Added);
+    }
+
+    [Fact]
+    public void Buy_Rechargeable_ChargesUnitPrice_GivesSlotMax()
+    {
+        // P181：Java MapleShop.buy——飛鏢單價即總價、數量改成 slotMax（無模板時預設 100）。
+        var service = new ShopService(new FakeShopCatalog());
+        var player = NewPlayer(meso: 1000);
+        service.OpenShop(player, 35);
+
+        var result = service.Buy(player, 2070000, 1);
+
+        Assert.Equal(ShopTransactionStatus.Success, result.Status);
+        Assert.Equal(500, player.Character.Meso);
+        Assert.Equal(100, player.Inventory.By(InventoryType.Use).CountById(2070000));
+    }
+
     private static Player NewPlayer(int meso, params ItemRecord[] items)
         => new(
             new Character
@@ -76,6 +107,7 @@ public sealed class ShopServiceTests
             {
                 new ShopItem(2000000, 50, 1000, 0, 0, 25),
                 new ShopItem(2000001, 160, 1000, 0, 0, 80),
+                new ShopItem(2070000, 500, 1, 0, 0, 0),
             });
 
         public ShopDefinition? GetShop(int shopId) => shopId == _shop.ShopId ? _shop : null;

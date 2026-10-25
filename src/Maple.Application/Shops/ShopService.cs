@@ -22,7 +22,8 @@ public sealed record ShopBuyResult(
     ShopTransactionStatus Status,
     ShopDefinition? Shop = null,
     Item? GainedItem = null,
-    int Meso = 0);
+    int Meso = 0,
+    InventoryStackGain? Stack = null);
 
 public sealed record ShopSellResult(
     ShopTransactionStatus Status,
@@ -75,27 +76,33 @@ public sealed class ShopService
             return new ShopBuyResult(ShopTransactionStatus.RequiredItemTradeNotSupported, shop);
         }
 
-        var totalPrice = (long)item.Price * quantity;
+        // P181：Java MapleShop.buy——飛鏢／子彈單價即總價、實得 slotMax 個；checkSpace 計入既有堆疊；addById 疊加。
+        var rechargeable = Inventory.IsRechargeable(itemId);
+        var totalPrice = rechargeable ? item.Price : (long)item.Price * quantity;
         if (totalPrice < 0 || totalPrice > int.MaxValue || player.Character.Meso < totalPrice)
         {
             return new ShopBuyResult(ShopTransactionStatus.NotEnoughMeso, shop);
         }
 
-        var type = Player.InventoryTypeOf(itemId);
-        if (!player.CanGainItem(type))
+        if (!player.HasSpaceFor(itemId, quantity))
         {
             return new ShopBuyResult(ShopTransactionStatus.InventoryFull, shop);
         }
 
-        var gained = player.GainItem(type, itemId, quantity);
-        if (gained is null)
+        if (rechargeable)
+        {
+            quantity = player.GetSlotMax(itemId);
+        }
+
+        var stack = player.GainItemStacking(itemId, quantity);
+        if (!stack.AnyChange)
         {
             return new ShopBuyResult(ShopTransactionStatus.InventoryFull, shop);
         }
 
         player.GainMeso(-(int)totalPrice);
         player.FlushInventory();
-        return new ShopBuyResult(ShopTransactionStatus.Success, shop, gained, player.Character.Meso);
+        return new ShopBuyResult(ShopTransactionStatus.Success, shop, stack.Added.FirstOrDefault(), player.Character.Meso, stack);
     }
 
     public ShopSellResult Sell(Player player, short slot, int itemId, short quantity)

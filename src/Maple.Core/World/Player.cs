@@ -76,6 +76,27 @@ public sealed partial class Player : IFieldObject
         return Inventory.By(type).Gain(item);
     }
 
+    /// <summary>P181：Java <c>getSlotMax</c>。</summary>
+    public short GetSlotMax(int itemId) => Maple.Core.Items.ItemSlotMax.Resolve(_equipTemplates, itemId);
+
+    /// <summary>
+    /// P181：Java <c>addById(c, itemId, quantity[, owner=null, period])</c>：只合併到沒有期限的堆疊；
+    /// 新格帶 <paramref name="expiration"/>（-1 = 永久）。裝備依模板建立。
+    /// </summary>
+    public InventoryStackGain GainItemStacking(int itemId, short quantity, long expiration = -1)
+    {
+        var type = InventoryTypeOf(itemId);
+        Item item = type == InventoryType.Equip
+            ? NewEquip(itemId)
+            : new Item { ItemId = itemId, Quantity = quantity };
+        item.Expiration = expiration;
+        return Inventory.By(type).GainStacking(item, GetSlotMax(itemId), static existing => existing.Expiration == -1);
+    }
+
+    /// <summary>P181：Java <c>checkSpace(c, itemId, quantity, "")</c>。</summary>
+    public bool HasSpaceFor(int itemId, int quantity, string owner = "")
+        => Inventory.By(InventoryTypeOf(itemId)).HasSpaceFor(itemId, quantity, GetSlotMax(itemId), owner);
+
     /// <summary>背包是否持有指定道具（cm.haveItem 入口）。</summary>
     public bool HasItem(InventoryType type, int itemId) => Inventory.By(type).CountById(itemId) > 0;
 

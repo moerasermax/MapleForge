@@ -100,6 +100,10 @@ public sealed record QuestTransactionResult
 /// <summary>Quest use case; protocol encoding stays in the adapter layer.</summary>
 public sealed class QuestService
 {
+    /// <summary>P181：疊加合併的數量更新以任務結果的背包異動送出。</summary>
+    public static QuestInventoryMutation ToQuestMutation(InventoryQuantityMutation mutation)
+        => new(mutation.Type, mutation.Slot, mutation.ItemId, mutation.OldQuantity, mutation.NewQuantity);
+
     private readonly IQuestCatalog _catalog;
 
     private readonly Maple.Application.Combat.PlayerLocalStatsCalculator? _localStats;
@@ -260,14 +264,17 @@ public sealed class QuestService
             return new QuestTransactionResult(QuestTransactionStatus.Success);
         }
 
-        var gained = player.GainItem(Player.InventoryTypeOf(itemId), itemId, (short)Math.Clamp(itemAction.Count, 1, short.MaxValue));
-        if (gained is null)
+        var stack = player.GainItemStacking(itemId, (short)Math.Clamp(itemAction.Count, 1, short.MaxValue));
+        if (!stack.AnyChange)
         {
             return new QuestTransactionResult(QuestTransactionStatus.InventoryFull);
         }
 
         player.FlushInventory();
-        return new QuestTransactionResult(QuestTransactionStatus.Success, gainedItems: new[] { gained });
+        return new QuestTransactionResult(
+            QuestTransactionStatus.Success,
+            gainedItems: stack.Added,
+            inventoryMutations: stack.Merged.Select(ToQuestMutation).ToArray());
     }
 
     private QuestDefinition GetQuest(int questId) => _catalog.GetQuest(questId) ?? QuestDefinition.Empty(questId);
@@ -407,16 +414,15 @@ public sealed class QuestService
                         }
                         else if (item.Count > 0)
                         {
-                            var added = player.GainItem(
-                                Player.InventoryTypeOf(item.ItemId),
-                                item.ItemId,
-                                (short)Math.Clamp(item.Count, 1, short.MaxValue));
-                            if (added is null)
+                            // P181：Java MapleQuestAction item → addById 疊加。
+                            var stack = player.GainItemStacking(item.ItemId, (short)Math.Clamp(item.Count, 1, short.MaxValue));
+                            if (!stack.AnyChange)
                             {
                                 return new QuestTransactionResult(QuestTransactionStatus.InventoryFull);
                             }
 
-                            gained.Add(added);
+                            gained.AddRange(stack.Added);
+                            removed.AddRange(stack.Merged.Select(ToQuestMutation));
                         }
                     }
                     break;

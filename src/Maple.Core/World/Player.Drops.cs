@@ -18,6 +18,28 @@ public sealed partial class Player
         return Character.Exp - before;
     }
 
+    /// <summary>
+    /// P181：Java <c>addFromDrop</c>：合併到同擁有者、同期限的堆疊，其餘開新格（複製掉落物屬性）。
+    /// 有任何變動就 flush；背包滿時回報剩餘數量（呼叫端把掉落物數量改成剩餘、留在地上）。
+    /// </summary>
+    public InventoryStackGain GainDropItemStacking(Item item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        var copy = item.Copy();
+        copy.Slot = 0;
+        var result = Inventory.By(InventoryTypeOf(copy.ItemId)).GainStacking(
+            copy,
+            GetSlotMax(copy.ItemId),
+            existing => existing.Owner == copy.Owner && existing.Expiration == copy.Expiration);
+        if (result.AnyChange)
+        {
+            FlushInventory();
+        }
+
+        return result;
+    }
+
     public Item? GainDropItem(Item item)
     {
         ArgumentNullException.ThrowIfNull(item);

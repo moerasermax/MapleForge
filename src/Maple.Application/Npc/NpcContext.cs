@@ -554,19 +554,18 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
                 return;
             }
 
-            var added = _player.GainItem(type, itemId, (short)Math.Clamp(quantity, 1, short.MaxValue));
-            if (added is null)
+            // P181：Java addById 疊加（期限道具只開新格；既有堆疊需無期限才合併）。
+            var stack = _player.GainItemStacking(itemId, (short)Math.Clamp(quantity, 1, short.MaxValue), expiration > 0 ? expiration : -1);
+            if (!stack.AnyChange)
             {
                 return;
             }
 
-            if (expiration > 0)
-            {
-                added.Expiration = expiration;
-            }
-
             _player.FlushInventory();
-            EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success, gainedItems: [added])
+            EnqueueQuestResult(new QuestTransactionResult(
+                QuestTransactionStatus.Success,
+                gainedItems: stack.Added,
+                inventoryMutations: stack.Merged.Select(QuestService.ToQuestMutation).ToArray())
             {
                 ItemGainNotices = [(itemId, quantity)],
             });
@@ -597,10 +596,11 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         => new[] { InventoryType.Equip, InventoryType.Use, InventoryType.Setup, InventoryType.Etc, InventoryType.Cash }
             .All(t => _player.Inventory.By(t).FirstFreeSlot() is not null);
 
-    /// <summary>Java <c>canHold(itemId)</c>：該類背包有空格（MapleForge 背包不疊加，故等同 checkSpace）。</summary>
+    /// <summary>Java <c>canHold(itemId)</c>：該類背包有空格。</summary>
     public bool CanHold(int itemId) => _player.Inventory.By(InventoryTypeOf(itemId)).FirstFreeSlot() is not null;
 
-    public bool CanHold(int itemId, int quantity) => CanHold(itemId);
+    /// <summary>P181：Java <c>canHold(itemId, quantity)</c> → <c>checkSpace(c, itemId, quantity, "")</c>（計入既有堆疊）。</summary>
+    public bool CanHold(int itemId, int quantity) => _player.HasSpaceFor(itemId, quantity);
 
     /// <summary>Java <c>removeAll(id, show=true)</c>：清掉背包裡該道具全部數量並提示。</summary>
     public void RemoveAll(int itemId)

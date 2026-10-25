@@ -3883,6 +3883,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         if (!result.Success || result.Drop is null)
         {
+            // P181：背包滿只撿一部分（Java addFromDrop 已送的堆疊更新／新格），掉落物留在地上。
+            if (result.Stack is { AnyChange: true } partial && result.InventoryType is { } partialType)
+            {
+                await SendStackGainAsync(session, partialType, partial, ct);
+            }
+
             return;
         }
 
@@ -3892,15 +3898,29 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             V113DropPackets.RemoveItemFromMap(result.Drop.ObjectId, animation: 2, characterId: player.Character.Id),
             ct);
 
-        if (result.GainedItem is not null && result.InventoryType is not null)
+        if (result.Stack is { } stack && result.InventoryType is { } type && result.Drop.Item is { } pickedItem)
         {
-            await session.SendAsync(V113DropPackets.ModifyInventoryAdd(result.InventoryType.Value, result.GainedItem), ct);
-            await session.SendAsync(V113DropPackets.ShowItemGain(result.GainedItem.ItemId, result.GainedItem.Quantity), ct);
+            await SendStackGainAsync(session, type, stack, ct);
+            await session.SendAsync(V113DropPackets.ShowItemGain(pickedItem.ItemId, result.PickedQuantity), ct);
         }
         else if (result.GainedMeso > 0)
         {
             await session.SendAsync(V113DropPackets.UpdateMeso(player.Character.Meso), ct);
             await session.SendAsync(V113DropPackets.ShowMesoGain(result.GainedMeso), ct);
+        }
+    }
+
+    /// <summary>P181：疊加取得的背包封包：補到既有堆疊 → 數量更新（mode 1），新格 → 新增（mode 0）。</summary>
+    private static async Task SendStackGainAsync(MapleSession session, Maple.Core.Inventory.InventoryType type, Maple.Core.Inventory.InventoryStackGain stack, CancellationToken ct)
+    {
+        foreach (var merged in stack.Merged)
+        {
+            await session.SendAsync(V113ItemUsePackets.ModifyInventoryQuantity(merged), ct);
+        }
+
+        foreach (var added in stack.Added)
+        {
+            await session.SendAsync(V113DropPackets.ModifyInventoryAdd(type, added), ct);
         }
     }
 
@@ -3950,9 +3970,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             case V113NpcShopAction.Buy:
             {
                 var result = _shopService.Buy(player, req.ItemId, req.Quantity);
-                if (result.Status == ShopTransactionStatus.Success && result.GainedItem is not null)
+                if (result.Status == ShopTransactionStatus.Success && result.Stack is { } stack)
                 {
-                    await session.SendAsync(V113ShopPackets.ModifyInventoryAdd(Player.InventoryTypeOf(req.ItemId), result.GainedItem), ct);
+                    await SendStackGainAsync(session, Player.InventoryTypeOf(req.ItemId), stack, ct);
                     await session.SendAsync(V113ShopPackets.UpdateMeso(result.Meso), ct);
                     await session.SendAsync(V113ShopPackets.ConfirmShopTransaction(V113ShopPackets.ConfirmBuy), ct);
                 }

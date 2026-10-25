@@ -69,6 +69,104 @@ public sealed class Inventory
         return item;
     }
 
+    /// <summary>Java <c>GameConstants.isRechargable</c>：飛鏢（207）與子彈（233）不合併、整批放一格。</summary>
+    public static bool IsRechargeable(int itemId) => itemId / 10000 is 207 or 233;
+
+    /// <summary>
+    /// P181：對照 Java <c>MapleInventoryManipulator.addById／addFromDrop</c> 的疊加：非裝備非飛鏢子彈時，
+    /// 先依格序把 <paramref name="canMerge"/> 允許的同 ID 堆疊補到 <paramref name="slotMax"/>，剩下的每 slotMax 開新格
+    /// （新格複製 <paramref name="item"/> 的擁有者／期限／旗標）；背包滿時停止並回報剩餘數量（已合併／已放入的保留，同 Java）。
+    /// 裝備與飛鏢子彈：整件放一格。
+    /// </summary>
+    public InventoryStackGain GainStacking(Item item, short slotMax, Func<Item, bool> canMerge)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        ArgumentNullException.ThrowIfNull(canMerge);
+
+        if (item.IsEquip || IsRechargeable(item.ItemId))
+        {
+            item.Slot = 0;
+            return Gain(item) is { } placed
+                ? new InventoryStackGain([], [placed], 0)
+                : new InventoryStackGain([], [], item.Quantity);
+        }
+
+        var max = slotMax > 0 ? slotMax : (short)100;
+        var quantity = (int)item.Quantity;
+        var merged = new List<InventoryQuantityMutation>();
+        foreach (var existing in _slots.Values.Where(i => i.ItemId == item.ItemId).OrderBy(static i => i.Slot).ToArray())
+        {
+            if (quantity <= 0)
+            {
+                break;
+            }
+
+            var old = existing.Quantity;
+            if (old < max && canMerge(existing))
+            {
+                var next = (short)Math.Min(old + quantity, max);
+                quantity -= next - old;
+                existing.Quantity = next;
+                merged.Add(new InventoryQuantityMutation(Type, existing.Slot, item.ItemId, old, next));
+            }
+        }
+
+        var added = new List<Item>();
+        while (quantity > 0)
+        {
+            var batch = (short)Math.Min(quantity, max);
+            var fresh = item.Copy();
+            fresh.Slot = 0;
+            fresh.Quantity = batch;
+            if (Gain(fresh) is null)
+            {
+                return new InventoryStackGain(merged, added, (short)quantity);
+            }
+
+            quantity -= batch;
+            added.Add(fresh);
+        }
+
+        return new InventoryStackGain(merged, added, 0);
+    }
+
+    /// <summary>
+    /// P181：Java <c>checkSpace(c, itemId, quantity, owner)</c>：先扣掉同擁有者堆疊還能補的量，再看剩下需要的格數
+    /// （ceil(quantity / slotMax)；飛鏢子彈 1 格）是否放得下。裝備：有空格即可。
+    /// </summary>
+    public bool HasSpaceFor(int itemId, int quantity, short slotMax, string owner = "")
+    {
+        if (Type == InventoryType.Equip)
+        {
+            return FirstFreeSlot() is not null;
+        }
+
+        if (quantity <= 0 && !IsRechargeable(itemId))
+        {
+            return false;
+        }
+
+        var max = slotMax > 0 ? slotMax : (short)100;
+        if (!IsRechargeable(itemId))
+        {
+            foreach (var existing in _slots.Values.Where(i => i.ItemId == itemId).OrderBy(static i => i.Slot))
+            {
+                if (existing.Quantity < max && owner == existing.Owner)
+                {
+                    quantity -= Math.Min(existing.Quantity + quantity, max) - existing.Quantity;
+                }
+
+                if (quantity <= 0)
+                {
+                    break;
+                }
+            }
+        }
+
+        var needed = IsRechargeable(itemId) ? 1 : (int)Math.Ceiling((double)Math.Max(0, quantity) / max);
+        return _slots.Count + needed <= SlotLimit;
+    }
+
     public int CountById(int itemId)
     {
         var n = 0;
