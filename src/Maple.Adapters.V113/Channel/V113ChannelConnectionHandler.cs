@@ -65,6 +65,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly IEquipTemplateProvider? _equipTemplates;
     private readonly MobSkillService? _mobSkills;
     private readonly PlayerMistService? _playerMists;
+    private readonly PartyBuffService? _partyBuffs;
     private readonly INpcScriptFactory _npcScripts;
     private readonly ShopService _shopService;
     private readonly StorageService _storageService;
@@ -176,10 +177,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113PartyHpSync partyHpSync,
         IEquipTemplateProvider? equipTemplates = null,
         MobSkillService? mobSkills = null,
-        PlayerMistService? playerMists = null)
+        PlayerMistService? playerMists = null,
+        PartyBuffService? partyBuffs = null)
     {
         _log = log;
         _playerMists = playerMists;
+        _partyBuffs = partyBuffs;
         _equipTemplates = equipTemplates;
         _mobSkills = mobSkills;
         _partyHpSync = partyHpSync;
@@ -3179,6 +3182,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 : player.Position;
             var facingLeft = handled.Request?.FaceLeft is { } faceLeftFlag ? !faceLeftFlag : player.Position.Stance % 2 != 0;
             await SpawnPlayerMistAsync(player, field, mistEffect, mistPosition, facingLeft, session, ct);
+
+            // P145：Java applyTo primary 的 applyBuff——隊伍 buff 套到範圍內隊友（GM buff 不限隊伍）。
+            await ApplyPartyBuffAsync(player, field, mistEffect, facingLeft, ct);
         }
 
         if (handled.Cast is { Status: SkillCastStatus.Success } && DoorService.IsMagicDoorSkill(handled.SourceId))
@@ -3829,6 +3835,99 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (_skillService.GetAttackEffect(player, skillId) is { } effect)
         {
             await SpawnPlayerMistAsync(player, field, effect, position, player.Position.Stance % 2 != 0, session, ct);
+        }
+    }
+
+    /// <summary>
+    /// P145：隊伍 buff 封包（對照 Java applyBuff 對每位隊友：applyTo(primary=false) 的 updatePlayerStats(hpmpupdate, true)、
+    /// 驅散的 cancelDebuff、applyBuffEffect 的 giveBuff＋giveForeignBuff → showOwnBuffEffect(sid, 2) → 他人 showBuffeffect
+    /// （變身中不送）→ 時空置換 skillCooldown(id, 0)），並同步隊伍 HP。
+    /// </summary>
+    private async Task ApplyPartyBuffAsync(Player caster, FieldInstance field, MapleStatEffect effect, bool facingLeft, CancellationToken ct)
+    {
+        if (_partyBuffs is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<PartyBuffApplication> applied;
+        lock (field)
+        {
+            applied = _partyBuffs.Apply(field, caster, effect, facingLeft, DateTimeOffset.UtcNow);
+        }
+
+        foreach (var application in applied)
+        {
+            var target = application.Target;
+            var entry = _mapRegistry.GetAll(target.Character.MapId).FirstOrDefault(e => e.CharId == target.Character.Id);
+            if (entry is null)
+            {
+                continue;
+            }
+
+            var others = _mapRegistry.GetOthers(target.Character.MapId, target.Character.Id);
+            if (application.StatUpdates.Count > 0)
+            {
+                await SendBestEffortAsync(entry, V113StatsPackets.UpdateStats(application.StatUpdates, itemReaction: true), ct);
+            }
+
+            foreach (var cured in application.CuredDiseases)
+            {
+                await SendBestEffortAsync(entry, V113DiseasePackets.CancelDebuff(cured), ct);
+                await SendAllBestEffortAsync(others, V113DiseasePackets.CancelForeignDebuff(target.Character.Id, cured), ct);
+            }
+
+            if (application.Buff is { } buff)
+            {
+                await SendBestEffortAsync(entry, V113SkillPackets.GiveBuff(effect.SourceId, buff.DurationMilliseconds, buff.Stats, effect), ct);
+                if (SkillService.GetForeignBuffStats(effect) is { } foreign)
+                {
+                    await SendAllBestEffortAsync(
+                        others,
+                        V113BuffItemPackets.GiveForeignBuff(target.Character.Id, foreign, isMorph: false),
+                        ct);
+                }
+            }
+
+            if (application.StatUpdates.Count > 0)
+            {
+                await SendBestEffortAsync(entry, V113SkillPackets.ShowOwnBuffEffect(effect.SourceId, 2), ct);
+                if (target.GetBuffValue(MapleBuffStat.MORPH) is null)
+                {
+                    await SendAllBestEffortAsync(others, V113SkillPackets.ShowForeignBuffEffect(target.Character.Id, effect.SourceId, 2), ct);
+                }
+            }
+
+            foreach (var skillId in application.ResetCooldownSkillIds)
+            {
+                await SendBestEffortAsync(entry, V113SkillPackets.SkillCooldown(skillId, 0), ct);
+            }
+
+            await _partyHpSync.BroadcastIfChangedAsync(target, application.HpBefore, ct);
+        }
+    }
+
+    private static async Task SendBestEffortAsync(MapPlayerEntry entry, byte[] packet, CancellationToken ct)
+    {
+        try
+        {
+            await entry.SendPacket(packet, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // best-effort：對方 session 可能正在關閉。
+        }
+    }
+
+    private static async Task SendAllBestEffortAsync(IEnumerable<MapPlayerEntry> entries, byte[] packet, CancellationToken ct)
+    {
+        foreach (var entry in entries)
+        {
+            await SendBestEffortAsync(entry, packet, ct);
         }
     }
 
