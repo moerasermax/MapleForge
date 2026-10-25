@@ -558,6 +558,52 @@ public sealed class CombatServiceTests
         public override int Next(int maxValue) => value;
     }
 
+    // ── P124：鬼神之擊、物/魔反射（對照 Java DamageParse.applyAttack / applyAttackMagic）──
+
+    [Theory]
+    [InlineData(false, 99)]       // 一般怪：留 1 HP
+    [InlineData(true, 199_999)]   // 王：固定 199999（被夾在剩餘 HP）
+    public void ApplyAttack_HeavensHammer_OverridesDamage(bool boss, long expectedRequested)
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = new Mob(
+            new MapMonster { MonsterId = 100100, X = 0, Y = 0, Fh = 1 },
+            new MobStats(100100, 100, MaxMp: 0, Level: 1, Exp: 1, Boss: boss),
+            objectId: 100001);
+        field.Add(player);
+        field.Add(mob);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [5])], SkillId: CombatService.HeavensHammerSkillId)).Hits);
+
+        Assert.Equal(expectedRequested, hit.RequestedDamage);
+    }
+
+    [Theory]
+    [InlineData(MonsterStatus.WeaponDamageReflect, false, true)]
+    [InlineData(MonsterStatus.WeaponDamageReflect, true, false)]
+    [InlineData(MonsterStatus.MagicDamageReflect, true, true)]
+    public void ApplyAttack_Reflect_DamagesAttacker(MonsterStatus reflect, bool isMagic, bool expectReflect)
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()), random: new FixedRandom(500));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer(hp: 50);
+        player.Character.Stats.MaxHp = 20_000;
+        player.Character.Stats.Hp = 20_000;
+        var mob = MakeMob(objectId: 100001, hp: 1000);
+        mob.TryApplyStatus(new MonsterStatusEffect(reflect, 1, 0, new MobSkillSource(143, 1), null));
+        field.Add(player);
+        field.Add(mob);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])], IsMagic: isMagic)).Hits);
+
+        Assert.Equal(expectReflect ? 7500 : 0, hit.ReflectedDamage);
+        Assert.Equal(expectReflect ? 12_500 : 20_000, player.Hp);
+    }
+
     private static Player MakePlayer(short hp = 50)
     {
         var chr = new Character

@@ -6,7 +6,13 @@ using Maple.Core.World;
 namespace Maple.Application.Combat;
 
 /// <param name="SkillEffect">P111：攻擊技能效果（Java <c>getAttackEffect</c>）；命中存活怪物時依其 MonsterStatuses 附帶異常狀態。</param>
-public sealed record CombatAttack(IReadOnlyList<CombatAttackTarget> Targets, MapleStatEffect? SkillEffect = null);
+/// <param name="SkillId">P124：客戶端宣稱的攻擊技能 id（Java <c>attack.skill</c>，用於鬼神之擊等特例）。</param>
+/// <param name="IsMagic">P124：魔法攻擊（Java <c>applyAttackMagic</c>）——反射判斷改看 MAGIC_DAMAGE_REFLECT。</param>
+public sealed record CombatAttack(
+    IReadOnlyList<CombatAttackTarget> Targets,
+    MapleStatEffect? SkillEffect = null,
+    int SkillId = 0,
+    bool IsMagic = false);
 
 public sealed record CombatAttackTarget(int ObjectId, IReadOnlyList<int> DamageLines)
 {
@@ -29,7 +35,9 @@ public sealed record CombatMobHit(
     // P108：此次命中後攻擊者的武陵能量（Java HPDisplayType -1/2 存活命中時 mulungEnergyModify(true)）；null = 未變動。
     short? MulungEnergyAfter = null,
     // P111：此次命中成功套用的怪物異常狀態（呼叫端逐一廣播 APPLY_MONSTER_STATUS）。
-    IReadOnlyList<MonsterStatusEffect>? AppliedStatuses = null);
+    IReadOnlyList<MonsterStatusEffect>? AppliedStatuses = null,
+    // P124：怪物身上有物/魔反射時，攻擊者因此被扣的 HP（Java player.addHP(-(7000 + nextInt(8000)))，實際扣血量）。
+    int ReflectedDamage = 0);
 
 /// <summary>
 /// 怪物血條顯示所需快照（在戰鬥鎖內擷取）：顯示類型、血量、王血條顏色、最近攻擊者。
@@ -58,6 +66,7 @@ public sealed record CombatMobKillResult(int ObjectId, int MonsterId, byte Anima
 public sealed class CombatService
 {
     public const int DefaultMobObjectIdBase = 100_000;
+    public const int HeavensHammerSkillId = 1221011;
 
     private readonly MapService _maps;
     private readonly IMobKillHandler? _mobKillHandler;
@@ -199,7 +208,11 @@ public sealed class CombatService
                 mob.RecordAttacker(attacker.Character.Id, now);
             }
 
-            var result = mob.TakeDamage(target.TotalDamage);
+            // P124：Java DamageParse.applyAttack——鬼神之擊（1221011）打王固定 199999，其餘留 1 HP。
+            var requested = attack.SkillId == HeavensHammerSkillId && target.TotalDamage > 0
+                ? (mob.Stats.Boss ? 199_999 : Math.Max(0, mob.Hp - 1))
+                : target.TotalDamage;
+            var result = mob.TakeDamage(requested);
             // P108：對照 Java MapleMonster.damage case -1/2（存活時）→ from.mulungEnergyModify(true)。
             short? mulungEnergyAfter = result.AppliedDamage > 0 && !result.Killed && mob.Stats.HpDisplayType is -1 or 2
                 ? attacker.ModifyMulungEnergy(increase: true)
@@ -232,7 +245,8 @@ public sealed class CombatService
                         mob.GetRecentAttackers(now))
                     : null,
                 mulungEnergyAfter,
-                appliedStatuses));
+                appliedStatuses,
+                ApplyReflect(mob, attacker, attack.IsMagic, target.TotalDamage)));
 
             if (result.Killed)
             {
@@ -340,6 +354,26 @@ public sealed class CombatService
         }
 
         return hits;
+    }
+
+    /// <summary>
+    /// P124：對照 Java <c>applyAttack:370</c>／<c>applyAttackMagic:743</c>：本隻怪造成傷害（totDamageToOneMonster &gt; 0）後，
+    /// 怪物仍帶 WEAPON/MAGIC_DAMAGE_REFLECT（死亡也一樣，Java 不清狀態）→ 攻擊者扣 7000 + nextInt(8000)。
+    /// </summary>
+    private int ApplyReflect(Mob mob, Player attacker, bool isMagic, long totalDamage)
+    {
+        if (totalDamage <= 0)
+        {
+            return 0;
+        }
+
+        var reflect = isMagic ? MonsterStatus.MagicDamageReflect : MonsterStatus.WeaponDamageReflect;
+        if (!mob.Statuses.ContainsKey(reflect))
+        {
+            return 0;
+        }
+
+        return attacker.TakeDamage(7000 + _random.Next(8000));
     }
 
     /// <summary>Java <c>MapleStatEffect.makeChanceResult</c>：<c>prop == 100 || nextInt(99) &lt; prop</c>。</summary>

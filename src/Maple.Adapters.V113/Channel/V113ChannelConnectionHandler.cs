@@ -3506,7 +3506,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             result = _combatService.ApplyAttack(
                 field,
                 player,
-                attack.ToCombatAttack() with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId) });
+                attack.ToCombatAttack() with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId), SkillId = attack.SkillId });
         }
 
         if (_log.IsEnabled(LogLevel.Debug))
@@ -3520,6 +3520,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         await SendCombatHitsAsync(result.Hits, player, session, ct);
+        await ApplyReflectedDamageAsync(result.Hits, player, field, session, ct);
     }
 
     private async Task HandleRangedAttackAsync(
@@ -3582,7 +3583,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 player,
                 rangedAttack with
                 {
-                    Attack = rangedAttack.Attack with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId) },
+                    Attack = rangedAttack.Attack with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId), SkillId = attack.SkillId },
                 },
                 GetRangedConsumables(player));
         }
@@ -3608,6 +3609,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
         await SendCombatHitsAsync(result.Combat.Hits, player, session, ct);
+        await ApplyReflectedDamageAsync(result.Combat.Hits, player, field, session, ct);
     }
 
     private async Task HandleMagicAttackAsync(
@@ -3665,7 +3667,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             result = _rangedMagicCombatService.ApplyMagicAttack(
                 field,
                 player,
-                attack.ToCombatAttack() with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId) });
+                attack.ToCombatAttack() with
+                {
+                    SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId),
+                    SkillId = attack.SkillId,
+                    IsMagic = true,
+                });
         }
 
         var attackBroadcast = V113RangedMagicAttackPackets.MagicAttackBroadcast(
@@ -3676,6 +3683,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
         await SendCombatHitsAsync(result.Hits, player, session, ct);
+        await ApplyReflectedDamageAsync(result.Hits, player, field, session, ct);
     }
 
     /// <summary>
@@ -3770,29 +3778,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         var wasAlive = player.IsAlive;
         var applied = request.Damage > 0 ? player.TakeDamage(request.Damage) : (short)0;
-        if (wasAlive && !player.IsAlive)
-        {
-            // P076：對照 Java PlayerStats.setHp 死亡分支 → playerDead（經驗值/護身符），HP 更新在其後。
-            // P090：playerDead 前段取消的 buff 連帶移除召喚獸。
-            var outcome = _playerDeaths.OnPlayerDied(player);
-            foreach (var packet in V113DeathPackets.Build(player, outcome))
-            {
-                await session.SendAsync(packet, ct);
-            }
-
-            await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
-        }
-
-        if (applied > 0)
-        {
-            await session.SendAsync(
-                V113StatsPackets.UpdateStats(new[]
-                {
-                    new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp),
-                }),
-                ct);
-            await _partyHpSync.BroadcastAsync(player, ct); // P095：Java setHp → updatePartyMemberHP
-        }
+        await OnPlayerHpLostAsync(player, field, session, wasAlive, applied, ct);
 
         await BroadcastPacketToOthersAsync(
             player.Character,
@@ -3848,6 +3834,51 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 玩家扣血後的共用收尾（對照 Java <c>PlayerStats.setHp</c> → 死亡分支 <c>playerDead</c>、<c>updateSingleStat(HP)</c>、
+    /// <c>updatePartyMemberHP</c>）：P076 死亡序列、P090 buff 連帶效果、HP 更新、P095 隊伍血條。TAKE_DAMAGE 與 P124 反射共用。
+    /// </summary>
+    private async Task OnPlayerHpLostAsync(Player player, FieldInstance field, MapleSession session, bool wasAlive, short applied, CancellationToken ct)
+    {
+        if (wasAlive && !player.IsAlive)
+        {
+            var outcome = _playerDeaths.OnPlayerDied(player);
+            foreach (var packet in V113DeathPackets.Build(player, outcome))
+            {
+                await session.SendAsync(packet, ct);
+            }
+
+            await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
+        }
+
+        if (applied > 0)
+        {
+            await session.SendAsync(
+                V113StatsPackets.UpdateStats(new[]
+                {
+                    new PlayerStatUpdate(PlayerStatKind.Hp, player.Hp),
+                }),
+                ct);
+            await _partyHpSync.BroadcastAsync(player, ct); // P095：Java setHp → updatePartyMemberHP
+        }
+    }
+
+    /// <summary>
+    /// P124：命中帶反射狀態的怪物後的收尾（扣血已在 <c>CombatService</c> 依序套用）。Java 每隻怪各 addHP 一次、各送一次 HP；
+    /// MapleForge 合併成一次（死亡判斷以反射前 HP 是否 &gt; 0 為準），封包數不同、最終狀態相同。
+    /// </summary>
+    private async Task ApplyReflectedDamageAsync(IReadOnlyList<CombatMobHit> hits, Player player, FieldInstance field, MapleSession session, CancellationToken ct)
+    {
+        var reflected = hits.Sum(static h => h.ReflectedDamage);
+        if (reflected <= 0)
+        {
+            return;
+        }
+
+        var wasAlive = player.Hp + reflected > 0;
+        await OnPlayerHpLostAsync(player, field, session, wasAlive, (short)Math.Min(short.MaxValue, reflected), ct);
     }
 
     /// <summary>P107：命中後的血條顯示（分派規則見 <see cref="V113MobHpDisplayPackets"/>）。</summary>
