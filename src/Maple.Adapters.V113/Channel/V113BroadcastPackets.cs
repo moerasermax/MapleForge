@@ -138,6 +138,11 @@ internal static class V113BroadcastPackets
 
     private static void AddItemInfo(PacketWriter w, Item item)
     {
+        if (V113PetItemCodec.TryWrite(w, item))
+        {
+            return; // P198：寵物道具格式
+        }
+
         var hasUniqueId = item.UniqueId > 0 && item.ItemId / 10000 != 166;
 
         w.WriteByte(item.IsEquip ? 1 : 2);

@@ -423,7 +423,7 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal("2022217", Assert.Single(dialogs).Text);
         Assert.Equal("[測試轉蛋] Js : 被他抽到了，大家恭喜他吧！", seen.Item1);
         Assert.Equal(2022217, seen.Item2);
-        Assert.Equal([(104000000, 100100, 2, 15, 25)], seen.Item3);
+        Assert.Equal([(104000000, 100100, 2, 15, 25)], seen.Item3!);
         Assert.Equal((100000000, 3), seen.Item4);
         Assert.Equal(1, player.Inventory.By(InventoryType.Use).CountById(2022217));
     }

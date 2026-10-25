@@ -144,6 +144,11 @@ internal static class V113ChannelPackets
     {
         w.WriteByte((byte)r.Slot);              // 位置（背包格＝正數）
 
+        if (V113PetItemCodec.TryWrite(w, r))
+        {
+            return; // P198：寵物道具格式
+        }
+
         if (r.IsEquip)
         {
             w.WriteByte(1);                     // type = equip

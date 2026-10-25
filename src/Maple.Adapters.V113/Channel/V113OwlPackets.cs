@@ -108,6 +108,11 @@ internal static class V113OwlPackets
 
     private static void AddItemInfo(PacketWriter w, ItemRecord record)
     {
+        if (V113PetItemCodec.TryWrite(w, record))
+        {
+            return; // P198：寵物道具格式
+        }
+
         if (record.IsEquip)
         {
             w.WriteByte(1);

@@ -95,6 +95,11 @@ internal static class V113ScrollPackets
 
     private static void AddItemInfo(PacketWriter w, Item item)
     {
+        if (V113PetItemCodec.TryWrite(w, item))
+        {
+            return; // P198：寵物道具格式
+        }
+
         w.WriteByte(item.IsEquip ? 1 : 2);
         w.WriteInt(item.ItemId);
         w.WriteByte(0);
