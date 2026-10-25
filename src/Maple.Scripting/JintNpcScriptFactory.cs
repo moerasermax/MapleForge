@@ -174,8 +174,40 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public int[] getCanFace(int[] faces) => _cm.GetCanFace(faces).ToArray();
         public string getText() => _cm.GetText();
 
+        // ── P169 ─────────────────────────────────────────────────────────────────────
+        public void saveLocation(string type) => _cm.SaveLocation(type);
+        public void saveReturnLocation(string type) => _cm.SaveReturnLocation(type);
+        public int getSavedLocation(string type) => _cm.GetSavedLocation(type);
+        public void clearSavedLocation(string type) => _cm.ClearSavedLocation(type);
+        public void gainItemPeriod(int itemId, int quantity, int days) => _cm.GainItemPeriod(itemId, quantity, days);
+        public long getCurrentTime() => _cm.GetCurrentTime();
+        public int getPlayerCount(int mapId) => _cm.GetPlayerCount(mapId);
+        public void playSound(bool broadcast, string sound) => _cm.PlaySound(broadcast, sound);
+        public void showEffect(bool broadcast, string effect) => _cm.ShowEffect(broadcast, effect);
+        public void worldMessage(string text) => _cm.WorldMessage(text);
+        public void worldMessage(int type, string text) => _cm.WorldMessage(type, text);
+        public QuestRecordFacade getQuestRecord(int questId) => new(_cm, questId);
+
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);
+    }
+
+    /// <summary>P169：<c>cm.getQuestRecord(id)</c>（MapleQuestStatus 子集：customData／status）。</summary>
+    private sealed class QuestRecordFacade
+    {
+        private readonly INpcScriptContext _cm;
+        private readonly int _questId;
+
+        public QuestRecordFacade(INpcScriptContext cm, int questId) => (_cm, _questId) = (cm, questId);
+
+        public string? getCustomData()
+        {
+            var data = _cm.GetQuestCustomData(_questId);
+            return data.Length == 0 ? null : data;
+        }
+
+        public void setCustomData(string? data) => _cm.SetQuestCustomData(_questId, data);
+        public int getStatus() => _cm.GetQuestStatus(_questId);
     }
 
     /// <summary>P166：<c>cm.getPlayer()</c>／<c>cm.getChar()</c> 的 MapleCharacter 子集（只讀查詢＋gainAp）。</summary>

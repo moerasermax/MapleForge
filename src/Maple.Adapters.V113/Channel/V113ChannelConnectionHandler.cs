@@ -2029,7 +2029,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return null;
         }
 
-        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement, _equipTemplates is { } templates ? templates.ItemExists : null);
+        var ctx = NewNpcContext(npcId, player);
         var script = _npcScripts.TryCreate(npcId, ctx);
         if (script is null)
         {
@@ -2052,7 +2052,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
             warpToPortal: warpToPortal,
             sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
-            sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c));
+            sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c),
+            sendEnvironment: (broadcast, mode, name, c) => broadcast
+                ? BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.EnvironmentChange(name, mode), c)
+                : session.SendAsync(V113CombatPackets.EnvironmentChange(name, mode), c),
+            sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -2069,7 +2073,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CancellationToken ct,
         Func<int, int, CancellationToken, Task>? warpToPortal = null)
     {
-        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement, _equipTemplates is { } templates ? templates.ItemExists : null);
+        var ctx = NewNpcContext(npcId, player);
         var script = _npcScripts.TryCreate(npcId, ctx);
         if (script is null)
         {
@@ -2092,7 +2096,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
             warpToPortal: warpToPortal,
             sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
-            sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c));
+            sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c),
+            sendEnvironment: (broadcast, mode, name, c) => broadcast
+                ? BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.EnvironmentChange(name, mode), c)
+                : session.SendAsync(V113CombatPackets.EnvironmentChange(name, mode), c),
+            sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -2220,6 +2228,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// c2s NPC_TALK_MORE：[byte lastMsg][byte action(mode)][selection]。
     /// 對照 Java NPCMoreTalk：lastMsg==2(getText) 帶字串、否則 selection = 剩餘≥4 readInt / &gt;0 readByte / else -1。
     /// </summary>
+    /// <summary>P169：NPC cm 的領域依賴（道具存在、地圖人數、returnMap）。</summary>
+    private NpcContext NewNpcContext(int npcId, Player player)
+        => new(
+            npcId,
+            player,
+            _questService,
+            _jobAdvancement,
+            _equipTemplates is { } templates ? templates.ItemExists : null,
+            playerCount: mapId => _mapRegistry.GetAll(mapId).Count(),
+            returnMapOf: mapId => _mapService.LoadMap(mapId).ReturnMapId);
+
     private static async Task ContinueNpcConversationAsync(PacketReader reader, NpcConversation convo, CancellationToken ct)
     {
         var lastMsg = reader.ReadByte();

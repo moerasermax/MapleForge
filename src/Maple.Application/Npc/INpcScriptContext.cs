@@ -142,4 +142,17 @@ public interface INpcScriptContext
     IReadOnlyList<int> GetCanHair(IReadOnlyList<int> hairs);
     IReadOnlyList<int> GetCanFace(IReadOnlyList<int> faces);
     string GetText();
+
+    // ── P169：位置記錄、定時道具、環境效果、世界訊息 ─────────────────────────────────────
+    void SaveLocation(string type);
+    void SaveReturnLocation(string type);
+    int GetSavedLocation(string type);
+    void ClearSavedLocation(string type);
+    void GainItemPeriod(int itemId, int quantity, int days);
+    long GetCurrentTime();
+    int GetPlayerCount(int mapId);
+    void PlaySound(bool broadcast, string sound);
+    void ShowEffect(bool broadcast, string effect);
+    void WorldMessage(string text);
+    void WorldMessage(int type, string text);
 }

@@ -437,6 +437,46 @@ public sealed class NpcContextTests
         Assert.Equal([(5, "hello")], messages);
     }
 
+    [Fact]
+    public async Task SavedLocation_ItemPeriod_EnvironmentAndWorldMessage()
+    {
+        // P169：Java saveLocation／getSavedLocation（未記錄 → 100000000）、gainItemPeriod、playSound／showEffect、worldMessage。
+        var player = NewPlayer();
+        player.Character.MapId = 101000000;
+        var ctx = new NpcContext(9000000, player, NewQuestService(), playerCount: id => id == 910000000 ? 3 : 0);
+        Assert.Equal(100000000, ctx.GetSavedLocation("FREE_MARKET"));
+        ctx.SaveLocation("FREE_MARKET");
+        Assert.Equal(101000000, ctx.GetSavedLocation("FREE_MARKET"));
+        ctx.ClearSavedLocation("FREE_MARKET");
+        Assert.Equal(100000000, ctx.GetSavedLocation("FREE_MARKET"));
+        Assert.Equal(3, ctx.GetPlayerCount(910000000));
+
+        var env = new List<(bool, int, string)>();
+        var world = new List<(int, string)>();
+        var results = new List<QuestTransactionResult>();
+        var convo = new NpcConversation(
+            9000000,
+            new ActionScript(() =>
+            {
+                ctx.GainItemPeriod(1302000, 1, 7);
+                ctx.PlaySound(true, "Party1/Clear");
+                ctx.ShowEffect(false, "quest/party/clear");
+                ctx.WorldMessage("恭喜");
+            }),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            sendQuestResult: (r, _) => { results.Add(r); return Task.CompletedTask; },
+            sendEnvironment: (b, m, n, _) => { env.Add((b, m, n)); return Task.CompletedTask; },
+            sendWorldMessage: (t, m, _) => { world.Add((t, m)); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.True(Assert.Single(Assert.Single(results).GainedItems).Expiration > DateTimeOffset.UtcNow.AddDays(6).ToUnixTimeMilliseconds());
+        Assert.Equal([(true, 4, "Party1/Clear"), (false, 3, "quest/party/clear")], env);
+        Assert.Equal([(6, "恭喜")], world);
+    }
+
     private sealed class CountingScript(Action start, Action resume) : INpcScript
     {
         public void Start() => start();

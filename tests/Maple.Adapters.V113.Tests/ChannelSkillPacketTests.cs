@@ -31,6 +31,11 @@ public sealed class ChannelSkillPacketTests
             V113SkillPackets.CancelSkillEffect(7, 3121020));
 
     [Fact]
+    public void EnvironmentChange_MatchesJava()
+        // P169：environmentChange(env, mode)：[0x87][byte mode][string]。
+        => Assert.Equal(new byte[] { 0x87, 0x00, 0x04, 0x01, 0x00, (byte)'a' }, V113CombatPackets.EnvironmentChange("a", 4));
+
+    [Fact]
     public void NpcStyle_MatchesJavaGetNpcTalkStyle()
     {
         // P168：getNPCTalkStyle：[0x13C][4][int npc][short 7][text][byte n][int…]。

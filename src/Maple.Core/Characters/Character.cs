@@ -42,6 +42,12 @@ public sealed class Character
 
     public short RemainingSp { get; set; }
 
+    /// <summary>
+    /// P169：Java <c>savedLocations[SavedLocationType]</c>（FREE_MARKET、MULUNG_TC、WORLDTOUR…）→ 地圖 ID；
+    /// 鍵為 Java enum 名稱字串，未存視為 -1。
+    /// </summary>
+    public Dictionary<string, int> SavedLocations { get; set; } = new();
+
     /// <summary>P162：Java <c>hpApUsed</c>（hpmpApUsed）——投入 MAXHP/MAXMP 的 AP 數。</summary>
     public short HpMpApUsed { get; set; }
 

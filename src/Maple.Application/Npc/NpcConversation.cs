@@ -28,6 +28,8 @@ public sealed class NpcConversation
     private readonly Func<int, int, CancellationToken, Task>? _warpToPortal;
     private readonly Func<int, string, CancellationToken, Task>? _sendMessage;
     private readonly Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? _sendJobChange;
+    private readonly Func<bool, int, string, CancellationToken, Task>? _sendEnvironment;
+    private readonly Func<int, string, CancellationToken, Task>? _sendWorldMessage;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -49,8 +51,12 @@ public sealed class NpcConversation
         Func<int, CancellationToken, Task>? sendRepairWindow = null,
         Func<int, int, CancellationToken, Task>? warpToPortal = null,
         Func<int, string, CancellationToken, Task>? sendMessage = null,
-        Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? sendJobChange = null)
+        Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? sendJobChange = null,
+        Func<bool, int, string, CancellationToken, Task>? sendEnvironment = null,
+        Func<int, string, CancellationToken, Task>? sendWorldMessage = null)
     {
+        _sendEnvironment = sendEnvironment;
+        _sendWorldMessage = sendWorldMessage;
         _sendJobChange = sendJobChange;
         _warpToPortal = warpToPortal;
         _sendMessage = sendMessage;
@@ -140,6 +146,22 @@ public sealed class NpcConversation
             foreach (var (type, message) in _ctx.PendingMessages)
             {
                 await _sendMessage(type, message, ct);
+            }
+        }
+
+        if (_sendEnvironment is not null)
+        {
+            foreach (var (broadcast, mode, name) in _ctx.PendingEnvironment)
+            {
+                await _sendEnvironment(broadcast, mode, name, ct);
+            }
+        }
+
+        if (_sendWorldMessage is not null)
+        {
+            foreach (var (type, message) in _ctx.PendingWorldMessages)
+            {
+                await _sendWorldMessage(type, message, ct);
             }
         }
 

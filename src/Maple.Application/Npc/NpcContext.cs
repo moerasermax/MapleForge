@@ -26,6 +26,13 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly List<Maple.Application.Stats.JobChangeResult> _pendingJobChanges = new();
 
     private readonly Func<int, bool> _itemExists;
+    private readonly Func<int, int> _playerCount;
+    private readonly Func<int, int> _returnMapOf;
+    private readonly List<(bool Broadcast, int Mode, string Name)> _pendingEnvironment = new();
+    private readonly List<(int Type, string Message)> _pendingWorldMessages = new();
+
+    internal IReadOnlyList<(bool Broadcast, int Mode, string Name)> PendingEnvironment => _pendingEnvironment;
+    internal IReadOnlyList<(int Type, string Message)> PendingWorldMessages => _pendingWorldMessages;
     private readonly Random _random;
 
     public NpcContext(
@@ -34,8 +41,12 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         QuestService quests,
         Maple.Application.Stats.JobAdvancementService? jobs = null,
         Func<int, bool>? itemExists = null,
-        Random? random = null)
+        Random? random = null,
+        Func<int, int>? playerCount = null,
+        Func<int, int>? returnMapOf = null)
     {
+        _playerCount = playerCount ?? (static _ => 0);
+        _returnMapOf = returnMapOf ?? (static id => id);
         _npcId = npcId;
         _player = player;
         _quests = quests;
@@ -82,6 +93,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingInfoQuestUpdates.Clear();
         _pendingMessages.Clear();
         _pendingJobChanges.Clear();
+        _pendingEnvironment.Clear();
+        _pendingWorldMessages.Clear();
     }
 
     // ── cm surface（暴露給腳本）────────────────────────────────────────────────
@@ -189,6 +202,40 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 
     public string GetText() => LastText;
 
+    // ── P169：對照 AbstractPlayerInteraction.saveLocation／getSavedLocation／gainItemPeriod 等 ─────────────
+
+    /// <summary>Java <c>saveLocation(type)</c>：記錄目前地圖。</summary>
+    public void SaveLocation(string type) => _player.Character.SavedLocations[type] = _player.Character.MapId;
+
+    /// <summary>Java <c>saveReturnLocation(type)</c>：記錄目前地圖的 returnMap。</summary>
+    public void SaveReturnLocation(string type) => _player.Character.SavedLocations[type] = _returnMapOf(_player.Character.MapId);
+
+    /// <summary>Java <c>getSavedLocation(type)</c>：未記錄或 -1 → 100000000（弓箭手村）。</summary>
+    public int GetSavedLocation(string type)
+        => _player.Character.SavedLocations.TryGetValue(type, out var mapId) && mapId != -1 ? mapId : 100000000;
+
+    public void ClearSavedLocation(string type) => _player.Character.SavedLocations[type] = -1;
+
+    /// <summary>Java <c>gainItemPeriod(id, qty, days)</c> → gainItem(period)：expiration = now + days 天。</summary>
+    public void GainItemPeriod(int itemId, int quantity, int days)
+        => GainItemCore(itemId, quantity, days > 0 ? DateTimeOffset.UtcNow.AddDays(days).ToUnixTimeMilliseconds() : -1);
+
+    public long GetCurrentTime() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    /// <summary>Java <c>getPlayerCount(mapId)</c>：該地圖目前人數。</summary>
+    public int GetPlayerCount(int mapId) => _playerCount(mapId);
+
+    /// <summary>Java <c>playSound(broadcast, sound)</c> → environmentChange(sound, 4)。</summary>
+    public void PlaySound(bool broadcast, string sound) => _pendingEnvironment.Add((broadcast, 4, sound));
+
+    /// <summary>Java <c>showEffect(broadcast, effect)</c> → environmentChange(effect, 3)。</summary>
+    public void ShowEffect(bool broadcast, string effect) => _pendingEnvironment.Add((broadcast, 3, effect));
+
+    /// <summary>Java <c>worldMessage(text)</c> → getItemNotice = broadcastMessage(6, …) 全世界。</summary>
+    public void WorldMessage(string text) => WorldMessage(6, text);
+
+    public void WorldMessage(int type, string text) => _pendingWorldMessages.Add((type, text));
+
     private void EnqueueLook(PlayerStatUpdate? update)
         => EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success)
         {
@@ -268,7 +315,9 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     /// quantity &lt; 0 → 數量不足則不扣；否則 removeById。兩者成功後都送 <c>getShowItemGain(id, quantity, true)</c>。
     /// 背包封包隨 <see cref="QuestTransactionResult"/> 送出。
     /// </summary>
-    public void GainItem(int itemId, int quantity)
+    public void GainItem(int itemId, int quantity) => GainItemCore(itemId, quantity, expiration: -1);
+
+    private void GainItemCore(int itemId, int quantity, long expiration)
     {
         var type = InventoryTypeOf(itemId);
         if (quantity >= 0)
@@ -282,6 +331,11 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
             if (added is null)
             {
                 return;
+            }
+
+            if (expiration > 0)
+            {
+                added.Expiration = expiration;
             }
 
             _player.FlushInventory();

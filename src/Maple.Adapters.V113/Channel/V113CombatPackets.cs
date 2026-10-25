@@ -139,6 +139,16 @@ internal static class V113CombatPackets
         return w.ToArray();
     }
 
+    /// <summary>P169：Java <c>environmentChange(env, mode)</c>：<c>[BOSS_ENV][byte mode][string]</c>（3 = showEffect、4 = playSound）。</summary>
+    public static byte[] EnvironmentChange(string env, int mode)
+    {
+        var w = new PacketWriter(env.Length + 5);
+        w.WriteShort(BossEnvOp);
+        w.WriteByte((byte)mode);
+        w.WriteMapleString(env);
+        return w.ToArray();
+    }
+
     /// <summary>對照 Java <c>MobPacket.showBossHP(MapleMonster)</c>：BOSS_ENV type 5（unverified）。</summary>
     public static byte[] ShowBossHp(int monsterId, long hp, long maxHp, byte tagColor, byte tagBgColor)
     {
