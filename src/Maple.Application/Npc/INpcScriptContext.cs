@@ -131,4 +131,15 @@ public interface INpcScriptContext
     void SendOkS(string text, int type);
     void SendYesNoS(string text, int type);
     void SendSimpleS(string text, int type);
+
+    // ── P168：美容院與輸入文字 ───────────────────────────────────────────────────────────
+    void SendStyle(string text, IReadOnlyList<int> styles);
+    void SetHair(int hair);
+    void SetFace(int face);
+    void SetSkin(int color);
+    int SetAvatar(int ticket, int style);
+    int SetRandomAvatar(int ticket, IReadOnlyList<int> styles);
+    IReadOnlyList<int> GetCanHair(IReadOnlyList<int> hairs);
+    IReadOnlyList<int> GetCanFace(IReadOnlyList<int> faces);
+    string GetText();
 }

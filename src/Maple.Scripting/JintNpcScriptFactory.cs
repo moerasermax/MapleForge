@@ -162,6 +162,18 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public void sendYesNoS(string text, int type) => _cm.SendYesNoS(text, type);
         public void sendSimpleS(string text, int type) => _cm.SendSimpleS(text, type);
 
+        // ── P168：美容院與輸入文字 ────────────────────────────────────────────────────
+        public void sendStyle(string text, int[] styles) => _cm.SendStyle(text, styles);
+        public void askAvatar(string text, params int[] styles) => _cm.SendStyle(text, styles);
+        public void setHair(int hair) => _cm.SetHair(hair);
+        public void setFace(int face) => _cm.SetFace(face);
+        public void setSkin(int color) => _cm.SetSkin(color);
+        public int setAvatar(int ticket, int style) => _cm.SetAvatar(ticket, style);
+        public int setRandomAvatar(int ticket, params int[] styles) => _cm.SetRandomAvatar(ticket, styles);
+        public int[] getCanHair(int[] hairs) => _cm.GetCanHair(hairs).ToArray();
+        public int[] getCanFace(int[] faces) => _cm.GetCanFace(faces).ToArray();
+        public string getText() => _cm.GetText();
+
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);
     }

@@ -2029,7 +2029,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return null;
         }
 
-        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement);
+        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement, _equipTemplates is { } templates ? templates.ItemExists : null);
         var script = _npcScripts.TryCreate(npcId, ctx);
         if (script is null)
         {
@@ -2069,7 +2069,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CancellationToken ct,
         Func<int, int, CancellationToken, Task>? warpToPortal = null)
     {
-        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement);
+        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement, _equipTemplates is { } templates ? templates.ItemExists : null);
         var script = _npcScripts.TryCreate(npcId, ctx);
         if (script is null)
         {
@@ -2224,12 +2224,31 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     {
         var lastMsg = reader.ReadByte();
         int mode = (sbyte)reader.ReadByte();   // 1=下一步/是, 0=上一步/否, -1=ESC
-        int selection = -1;
 
-        if (lastMsg != 2)   // getText 的輸入字串 MVP 不消費（selection 維持 -1）
+        // P168：對照 Java NPCMoreTalk：getText（lastMsg 2）→ action ≠ 0 讀字串後推進，否則 dispose。
+        if (lastMsg == 2)
         {
-            if (reader.Remaining >= 4) selection = reader.ReadInt();
-            else if (reader.Remaining > 0) selection = reader.ReadByte();
+            if (mode != 0 && reader.Remaining >= 2)
+            {
+                await convo.ContinueWithTextAsync(mode, lastMsg, reader.ReadMapleString(), ct);
+            }
+            else
+            {
+                await convo.ContinueAsync(-1, lastMsg, -1, ct);
+            }
+
+            return;
+        }
+
+        int selection = -1;
+        if (reader.Remaining >= 4) selection = reader.ReadInt();
+        else if (reader.Remaining > 0) selection = (sbyte)reader.ReadByte();
+
+        // Java：npc ≠ 9000069 且選單（lastMsg 4）沒選項 → dispose；selection < -1 或 ESC 也 dispose。
+        if ((convo.NpcId != 9000069 && lastMsg == 4 && selection == -1) || selection < -1)
+        {
+            await convo.ContinueAsync(-1, lastMsg, selection, ct);
+            return;
         }
 
         await convo.ContinueAsync(mode, lastMsg, selection, ct);
@@ -3082,6 +3101,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (result.MesoChanged)
         {
             await session.SendAsync(V113QuestPackets.UpdateMeso(result.Meso), ct);
+        }
+
+        // P168：外觀改變 → Java equipChanged：他人 updateCharLook、聊天室外觀同步。
+        if (result.LookChanged)
+        {
+            await BroadcastPacketToOthersAsync(player.Character, V113MapPackets.UpdateCharLook(player), ct);
+            await _messengerHandler.NotifyLookChangedAsync(player, _options.ChannelIndex + 1, ct);
         }
 
         // P166：cm.gainMeso／gainItem 的聊天欄提示（showMesoGain／getShowItemGain inChat）。

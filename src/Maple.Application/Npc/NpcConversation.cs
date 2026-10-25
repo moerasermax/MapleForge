@@ -78,10 +78,24 @@ public sealed class NpcConversation
         await FlushAsync(ct);
     }
 
+    /// <summary>P168：getText 對話的回應（Java setGetText 後再 action）。</summary>
+    public Task ContinueWithTextAsync(int mode, int type, string text, CancellationToken ct)
+    {
+        _ctx.LastText = text;
+        return ContinueAsync(mode, type, -1, ct);
+    }
+
     /// <summary>玩家回應推進（呼叫 action(mode,type,selection) 並 flush 結果）。</summary>
     public async Task ContinueAsync(int mode, int type, int selection, CancellationToken ct)
     {
         if (!Active) return;
+
+        // P168：Java NPCScriptManager.action 只在 mode != -1 時呼叫腳本；NPCMoreTalk 的 ESC 走 dispose。
+        if (mode == -1)
+        {
+            Active = false;
+            return;
+        }
 
         // P166：Java safeDispose 的 pendingDisposal：下一次回應直接結束對話，不再呼叫腳本。
         if (_ctx.PendingDisposal)

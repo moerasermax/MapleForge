@@ -65,6 +65,9 @@ public sealed class WzItemMakeCatalog : IItemMakeCatalog, IEquipTemplateProvider
     /// <summary>P154：Java <c>isCash</c>——裝備 info/cash 存在。</summary>
     public bool IsCash(int itemId) => GetInfoNode(itemId)?["cash"] is not null;
 
+    /// <summary>P168：Java itemExists（hairExists／faceExists 用）。</summary>
+    public bool ItemExists(int itemId) => GetItemNode(itemId) is not null;
+
     public ItemMakeEnhanceStats? GetEnhanceStats(int itemId)
     {
         lock (_itemGate)

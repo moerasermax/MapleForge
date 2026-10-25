@@ -84,6 +84,64 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal((1, 3), (player.GetSkillLevel(1000001), player.GetMasterLevel(1000001)));
     }
 
+    [Fact]
+    public async Task Script_SalonStyleWithJsArray_SetHair_GetText()
+    {
+        // P168：美容院腳本把 JS 陣列傳給 sendStyle，選擇後 setHair(hairnew[selection])。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999997.js"), """
+            var hairnew = Array();
+            function start() {
+                hairnew.push(30000 + parseInt(cm.getPlayer().getHair() % 10));
+                hairnew.push(30030);
+                cm.sendStyle("選擇", cm.getCanHair(hairnew));
+            }
+            function action(mode, type, selection) {
+                cm.setHair(hairnew[selection]);
+                cm.sendGetText("名字?");
+                cm.dispose();
+            }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 10, Hair = 30002 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(9999997, player, new QuestService(new EmptyQuestCatalog()), itemExists: id => id != 30030);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        var results = new List<QuestTransactionResult>();
+        var convo = new NpcConversation(
+            9999997,
+            factory.TryCreate(9999997, ctx)!,
+            ctx,
+            (d, _) => { dialogs.Add(d); return Task.CompletedTask; },
+            (_, _) => Task.CompletedTask,
+            sendQuestResult: (r, _) => { results.Add(r); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+        Assert.Equal(NpcDialogKind.Style, dialogs[0].Kind);
+        Assert.Equal([30002], dialogs[0].Styles); // 30030 不存在被 getCanHair 濾掉
+
+        await convo.ContinueAsync(1, 7, 0, CancellationToken.None);
+        Assert.Equal(30002, player.Character.Hair);
+        Assert.True(Assert.Single(results).LookChanged);
+    }
+
+    [Fact]
+    public async Task EscResponse_EndsWithoutCallingScript()
+    {
+        File.WriteAllText(Path.Combine(_root, "npc", "9999996.js"), """
+            function start() { cm.sendNext("hi"); }
+            function action(mode, type, selection) { cm.gainMeso(100); cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js" }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(9999996, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var convo = new NpcConversation(9999996, factory.TryCreate(9999996, ctx)!, ctx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask);
+
+        await convo.StartAsync(CancellationToken.None);
+        await convo.ContinueAsync(-1, 0, -1, CancellationToken.None);
+
+        Assert.False(convo.Active);
+        Assert.Equal(0, player.Character.Meso); // Java：mode -1 不呼叫 action
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

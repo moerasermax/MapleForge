@@ -92,6 +92,9 @@ public sealed record QuestTransactionResult
 
     /// <summary>P166：cm.gainItem／removeAll → getShowItemGain(id, quantity, true)（負數為扣除）。</summary>
     public IReadOnlyList<(int ItemId, int Quantity)> ItemGainNotices { get; init; } = [];
+
+    /// <summary>P168：外觀改變（Java equipChanged → 他人 updateCharLook）。</summary>
+    public bool LookChanged { get; init; }
 }
 
 /// <summary>Quest use case; protocol encoding stays in the adapter layer.</summary>

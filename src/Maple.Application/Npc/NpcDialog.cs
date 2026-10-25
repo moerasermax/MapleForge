@@ -26,6 +26,8 @@ public enum NpcDialogKind
     AcceptDecline,
     /// <summary>P167：接受／拒絕、不可 ESC（askAcceptDeclineNoESC，msgType 0x0C）。</summary>
     AcceptDeclineNoEsc,
+    /// <summary>P168：髮型／臉型選擇（sendStyle／askAvatar，msgType 7 + 選項清單）。</summary>
+    Style,
 }
 
 /// <summary>
@@ -39,4 +41,5 @@ public sealed record NpcDialog(
     byte SpeakerType = 0,
     int NumberDefault = 0,
     int NumberMin = 0,
-    int NumberMax = 0);
+    int NumberMax = 0,
+    IReadOnlyList<int>? Styles = null);

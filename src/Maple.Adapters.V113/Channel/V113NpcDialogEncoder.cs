@@ -49,6 +49,17 @@ internal static class V113NpcDialogEncoder
                 w.WriteInt(0);
                 break;
 
+            case NpcDialogKind.Style:
+                // P168：Java getNPCTalkStyle：writeShort(7) + text + byte 數量 + int[]。
+                var styles = dialog.Styles ?? [];
+                w.WriteByte((byte)styles.Count);
+                foreach (var style in styles)
+                {
+                    w.WriteInt(style);
+                }
+
+                break;
+
             // YesNo / Simple：無 trailing
         }
 
@@ -68,6 +79,7 @@ internal static class V113NpcDialogEncoder
         NpcDialogKind.Simple => (4, 0, 0),
         NpcDialogKind.AcceptDecline => (0x0B, 0, 0), // P167：Java getNPCTalk(npc, 0x0B, text, "", 0)
         NpcDialogKind.AcceptDeclineNoEsc => (0x0C, 0, 0),
+        NpcDialogKind.Style => (7, 0, 0),
         _ => (0, 0, 0),
     };
 }

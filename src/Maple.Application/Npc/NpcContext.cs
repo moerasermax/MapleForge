@@ -25,13 +25,27 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly Maple.Application.Stats.JobAdvancementService? _jobs;
     private readonly List<Maple.Application.Stats.JobChangeResult> _pendingJobChanges = new();
 
-    public NpcContext(int npcId, Player player, QuestService quests, Maple.Application.Stats.JobAdvancementService? jobs = null)
+    private readonly Func<int, bool> _itemExists;
+    private readonly Random _random;
+
+    public NpcContext(
+        int npcId,
+        Player player,
+        QuestService quests,
+        Maple.Application.Stats.JobAdvancementService? jobs = null,
+        Func<int, bool>? itemExists = null,
+        Random? random = null)
     {
         _npcId = npcId;
         _player = player;
         _quests = quests;
         _jobs = jobs;
+        _itemExists = itemExists ?? (static _ => true);
+        _random = random ?? Random.Shared;
     }
+
+    /// <summary>P168：NPC_TALK_MORE 的 getText 輸入（Java cm.setGetText）。</summary>
+    internal string LastText { get; set; } = string.Empty;
 
     internal IReadOnlyList<Maple.Application.Stats.JobChangeResult> PendingJobChanges => _pendingJobChanges;
 
@@ -91,6 +105,96 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         => PendingDialog = text.Contains("#L", StringComparison.Ordinal)
             ? new NpcDialog(_npcId, NpcDialogKind.Simple, text, (byte)type)
             : new NpcDialog(_npcId, kind, text, (byte)type);
+
+    // ── P168：美容院（對照 NPCConversationManager.sendStyle／askAvatar／setHair／setFace／setSkin／setAvatar／setRandomAvatar）─
+
+    public void SendStyle(string text, IReadOnlyList<int> styles)
+        => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.Style, text, Styles: styles.ToArray());
+
+    /// <summary>Java <c>setHair</c>：hairExists 才換 → updateSingleStat(HAIR) → equipChanged。</summary>
+    public void SetHair(int hair)
+    {
+        if (_itemExists(hair))
+        {
+            _player.Character.Hair = hair;
+            EnqueueLook(new PlayerStatUpdate(PlayerStatKind.Hair, hair));
+        }
+    }
+
+    public void SetFace(int face)
+    {
+        if (_itemExists(face))
+        {
+            _player.Character.Face = face;
+            EnqueueLook(new PlayerStatUpdate(PlayerStatKind.Face, face));
+        }
+    }
+
+    public void SetSkin(int color)
+    {
+        _player.Character.SkinColor = (byte)color;
+        EnqueueLook(new PlayerStatUpdate(PlayerStatKind.Skin, color));
+    }
+
+    /// <summary>
+    /// Java <c>setAvatar(ticket, args)</c>：沒有券回 -1；扣一張券 → args &lt; 100 膚色、&lt; 30000 臉（faceExists）、其餘髮型（hairExists）
+    /// → equipChanged；回 1。
+    /// </summary>
+    public int SetAvatar(int ticket, int style)
+    {
+        if (!HaveItem(ticket))
+        {
+            return -1;
+        }
+
+        GainItem(ticket, -1);
+        if (style < 100)
+        {
+            _player.Character.SkinColor = (byte)style;
+            EnqueueLook(new PlayerStatUpdate(PlayerStatKind.Skin, style));
+        }
+        else if (style < 30000)
+        {
+            if (_itemExists(style))
+            {
+                _player.Character.Face = style;
+                EnqueueLook(new PlayerStatUpdate(PlayerStatKind.Face, style));
+            }
+            else
+            {
+                EnqueueLook(null);
+            }
+        }
+        else if (_itemExists(style))
+        {
+            _player.Character.Hair = style;
+            EnqueueLook(new PlayerStatUpdate(PlayerStatKind.Hair, style));
+        }
+        else
+        {
+            EnqueueLook(null);
+        }
+
+        return 1;
+    }
+
+    /// <summary>Java <c>setRandomAvatar(ticket, args...)</c>：同 setAvatar，樣式從清單隨機挑。</summary>
+    public int SetRandomAvatar(int ticket, IReadOnlyList<int> styles)
+        => !HaveItem(ticket) || styles.Count == 0 ? -1 : SetAvatar(ticket, styles[_random.Next(styles.Count)]);
+
+    /// <summary>Java <c>getCanHair</c>：濾掉客戶端沒有的髮型（管理員提示省略：MapleForge 尚無 GM）。</summary>
+    public IReadOnlyList<int> GetCanHair(IReadOnlyList<int> hairs) => hairs.Where(_itemExists).ToArray();
+
+    public IReadOnlyList<int> GetCanFace(IReadOnlyList<int> faces) => faces.Where(_itemExists).ToArray();
+
+    public string GetText() => LastText;
+
+    private void EnqueueLook(PlayerStatUpdate? update)
+        => EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success)
+        {
+            StatUpdates = update is { } u ? [u] : [],
+            LookChanged = true,
+        });
 
     /// <summary>P167：Java <c>cm.changeJob</c> → <c>MapleCharacter.changeJob</c>（結果由呼叫端送包與廣播）。</summary>
     public void ChangeJob(int job)

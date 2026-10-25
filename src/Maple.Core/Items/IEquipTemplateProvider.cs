@@ -13,4 +13,7 @@ public interface IEquipTemplateProvider
 
     /// <summary>P154：Java <c>MapleItemInformationProvider.isCash</c>（裝備 info/cash 存在）；預設 false。</summary>
     bool IsCash(int itemId) => false;
+
+    /// <summary>P168：Java <c>MapleItemInformationProvider.itemExists</c>（Item.wz／Character.wz 有該 ID 節點）；預設 true。</summary>
+    bool ItemExists(int itemId) => true;
 }
