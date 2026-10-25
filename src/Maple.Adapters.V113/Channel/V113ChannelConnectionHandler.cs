@@ -4350,6 +4350,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
+        // P128：Java spawnMonsterWithEffect → spawnMonster(monster, -2, effect, 0) 給全圖，控制者收 SPAWN_MONSTER_CONTROL。
+        if (skillUse?.Summoned is { } summoned)
+        {
+            foreach (var summon in summoned)
+            {
+                await BroadcastPacketToMapAsync(
+                    player.Character,
+                    session,
+                    V113CombatPackets.SpawnMonster(summon, spawnType: -2, effect: skillUse.Skill.SpawnEffect),
+                    ct);
+                await session.SendAsync(V113CombatPackets.SpawnMonsterControl(summon, newSpawn: true, aggro: false), ct);
+            }
+        }
+
         // Response 給控制者
         await session.SendAsync(
             V113MobMovementPackets.MoveMonsterResponse(

@@ -1,3 +1,6 @@
+using Maple.Application.Combat;
+using Maple.Application.Maps;
+using Maple.Core.Maps;
 using Maple.Core.World;
 
 namespace Maple.Application.Mobs;
@@ -7,7 +10,9 @@ public sealed record MobSkillUse(
     MobSkillDefinition Skill,
     IReadOnlyList<MobBuffApplication>? Buffs = null,
     IReadOnlyList<MobHeal>? Heals = null,
-    ActiveDisease? Disease = null);
+    ActiveDisease? Disease = null,
+    // P128：召喚出的怪物（已加入 field；呼叫端以技能 SpawnEffect 廣播 SPAWN_MONSTER）。
+    IReadOnlyList<Mob>? Summoned = null);
 
 /// <summary>P125：怪物補血（Java healMonster 廣播的 oid 與補血量）。</summary>
 public sealed record MobHeal(int ObjectId, int Amount);
@@ -24,11 +29,14 @@ public sealed class MobSkillService
 {
     private readonly IMobSkillCatalog _catalog;
     private readonly Random _random;
+    private readonly MapService? _maps;
 
-    public MobSkillService(IMobSkillCatalog catalog, Random? random = null)
+    /// <param name="maps">P128：召喚（200）需要怪物模板與地圖踏腳石；未注入時不召喚。</param>
+    public MobSkillService(IMobSkillCatalog catalog, Random? random = null, MapService? maps = null)
     {
         _catalog = catalog;
         _random = random ?? Random.Shared;
+        _maps = maps;
     }
 
     /// <param name="controller">送出 MOVE_LIFE 的控制者（Java applyEffect 的 player）；異常狀態只會施加在他身上。</param>
@@ -67,8 +75,9 @@ public sealed class MobSkillService
         var buffs = ApplyEffect(field, mob, skill, now);
         var heals = skill.SkillId == HealSkillId ? ApplyHeal(field, mob, skill) : null;
         var disease = ApplyDisease(mob, skill, controller, now);
+        var summoned = skill.SkillId == SummonSkillId ? Summon(field, mob, skill, controller) : null;
         mob.ConsumeMp(skill.MpCon);
-        return new MobSkillUse(skill, buffs, heals, disease);
+        return new MobSkillUse(skill, buffs, heals, disease, summoned);
     }
 
     /// <summary>
@@ -98,6 +107,90 @@ public sealed class MobSkillService
     }
 
     public const int HealSkillId = 114;
+    public const int SummonSkillId = 200;
+
+    /// <summary>
+    /// P128：逐字對照 Java <c>MobSkill.applyEffect</c> case 200：依 summons 清單生怪（<c>getCustomSpawnID</c>：
+    /// 9400589/9400748 改 9400706），拉圖炸彈 8500003/8500004、海怒斯炸彈 8510100 的座標特例與 220080001/230040420
+    /// 地圖邊界夾回，8820007 跳過；落點為 <c>calcPointBelow(x, y - 1)</c>，找不到踏腳石就不生（Java 例外被吞）。
+    /// 新怪物的控制者設為施放者的控制者（Java <c>updateMonsterController</c>）。
+    /// </summary>
+    private List<Mob>? Summon(FieldInstance field, Mob mob, MobSkillDefinition skill, Player? controller)
+    {
+        if (_maps is null)
+        {
+            return null;
+        }
+
+        var footholds = _maps.LoadMap(field.MapId).Footholds;
+        var nextObjectId = Math.Max(
+            CombatService.DefaultMobObjectIdBase,
+            field.Objects.Select(static o => o.ObjectId).DefaultIfEmpty(0).Max()) + 1;
+        var spawned = new List<Mob>();
+        foreach (var summonId in skill.Summons)
+        {
+            if (summonId == 8820007)
+            {
+                continue;
+            }
+
+            var monsterId = mob.Definition.MonsterId is 9400589 or 9400748 ? 9400706 : summonId;
+            var stats = _maps.LoadMobStats(monsterId);
+            if (stats is null)
+            {
+                continue;
+            }
+
+            int x = mob.Position.X, y = mob.Position.Y;
+            switch (summonId)
+            {
+                case 8500003:
+                    y = -590;
+                    break;
+                case 8500004:
+                    x = mob.Position.X + (int)Math.Ceiling(_random.NextDouble() * 1000.0) - 500;
+                    break;
+                case 8510100:
+                    if (Math.Ceiling(_random.NextDouble() * 5) == 1)
+                    {
+                        y = 78;
+                        x = (int)Math.Ceiling(_random.NextDouble() * 5) + (Math.Ceiling(_random.NextDouble() * 2) == 1 ? 180 : 0);
+                    }
+                    else
+                    {
+                        x = mob.Position.X + (int)Math.Ceiling(_random.NextDouble() * 1000.0) - 500;
+                    }
+
+                    break;
+            }
+
+            x = field.MapId switch
+            {
+                220080001 when x < -890 => (int)(-890 + Math.Ceiling(_random.NextDouble() * 150)),
+                220080001 when x > 230 => (int)(230 - Math.Ceiling(_random.NextDouble() * 150)),
+                230040420 when x < -239 => (int)(-239 + Math.Ceiling(_random.NextDouble() * 150)),
+                230040420 when x > 371 => (int)(371 - Math.Ceiling(_random.NextDouble() * 150)),
+                _ => x,
+            };
+
+            if (FootholdMath.CalcPointBelow(footholds, x, y - 1) is not { } point)
+            {
+                continue;
+            }
+
+            var summoned = new Mob(
+                new MapMonster { MonsterId = monsterId, X = point.X, Y = point.Y, Cy = point.Y, Fh = point.FootholdId, Team = -1 },
+                stats,
+                nextObjectId++)
+            {
+                ControllerId = controller?.Character.Id ?? 0,
+            };
+            field.Add(summoned);
+            spawned.Add(summoned);
+        }
+
+        return spawned;
+    }
 
     /// <summary>
     /// P126：對照 Java <c>applyEffect</c> 的 disease 分支 → <c>getDiseaseBuff(disease, x, duration, skillId, level)</c>。

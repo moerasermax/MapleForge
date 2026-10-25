@@ -239,6 +239,70 @@ public sealed class MobSkillServiceTests
         Assert.Empty(controller.Diseases);
     }
 
+    // ── P128：召喚（Java applyEffect case 200）──
+
+    [Fact]
+    public void TryUseSkill_Summon_SpawnsOnFootholdBelowWithController()
+    {
+        var (field, mob) = Setup([new MobSkillRef(200, 1)]);
+        var controller = new Player(new Maple.Core.Characters.Character { Id = 9, Name = "Ctrl" }, new Position(0, 0, 0, 0));
+        var skill = Skill(200, limit: 10) with { Summons = [100100, 8820007], SpawnEffect = 2 };
+        var service = new MobSkillService(new SingleSkillCatalog(skill), new FirstRandom(), new Maple.Application.Maps.MapService(new SummonMapProvider()));
+
+        var use = service.TryUseSkill(field, mob, T0, controller)!;
+
+        var summoned = Assert.Single(use.Summoned!); // 8820007 跳過
+        Assert.Equal(100100, summoned.Definition.MonsterId);
+        Assert.Equal(new Position(0, 30, Mob.DefaultStance, 1), summoned.Position);
+        Assert.Equal(9, summoned.ControllerId);
+        Assert.Same(summoned, field.Get(summoned.ObjectId));
+    }
+
+    [Fact]
+    public void TryUseSkill_Summon_WithoutMapService_DoesNotSpawn()
+    {
+        var (field, mob) = Setup([new MobSkillRef(200, 1)]);
+        var skill = Skill(200, limit: 10) with { Summons = [100100] };
+
+        Assert.Null(Service(skill).TryUseSkill(field, mob, T0)!.Summoned);
+    }
+
+    private sealed class SummonMapProvider : IDataProvider
+    {
+        public IDataNode GetRoot(string fileName) => new Node(fileName);
+
+        public IDataNode? GetAt(string fileName, string path) => (fileName, path) switch
+        {
+            ("Map", "Map/Map1/100000000.img") => new Node("100000000.img", children: new Dictionary<string, IDataNode>
+            {
+                ["foothold"] = new Node("foothold", children: new Dictionary<string, IDataNode>
+                {
+                    ["0"] = new Node("0", children: new Dictionary<string, IDataNode>
+                    {
+                        ["1"] = new Node("1", children: new Dictionary<string, IDataNode>
+                        {
+                            ["1"] = new Node("1", children: new Dictionary<string, IDataNode>
+                            {
+                                ["x1"] = new Node("x1", -100),
+                                ["y1"] = new Node("y1", 30),
+                                ["x2"] = new Node("x2", 100),
+                                ["y2"] = new Node("y2", 30),
+                            }),
+                        }),
+                    }),
+                }),
+            }),
+            ("Mob", "0100100.img") => new Node("0100100.img", children: new Dictionary<string, IDataNode>
+            {
+                ["info"] = new Node("info", children: new Dictionary<string, IDataNode>
+                {
+                    ["maxHP"] = new Node("maxHP", 42),
+                }),
+            }),
+            _ => null,
+        };
+    }
+
     private static Mob AddMob(FieldInstance field, int objectId, short x, short y)
     {
         var mob = new Mob(
