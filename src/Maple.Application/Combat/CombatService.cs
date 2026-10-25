@@ -74,7 +74,11 @@ public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits, bool A
 }
 
 /// <param name="Revived">P148：死亡後生成的 revive 怪物（呼叫端廣播 SPAWN_MONSTER，link = 死亡怪物 oid）。</param>
-public sealed record CombatMobKillResult(int ObjectId, int MonsterId, byte Animation, bool Killed, IReadOnlyList<Mob>? Revived = null);
+public sealed record CombatMobKillResult(int ObjectId, int MonsterId, byte Animation, bool Killed, IReadOnlyList<Mob>? Revived = null)
+{
+    /// <summary>P187：自爆擊殺的經驗分配（不掉寶）。</summary>
+    public MobKillRewards? Rewards { get; init; }
+}
 
 /// <summary>戰鬥用例：建立場上怪物、套用攻擊傷害、處理怪物死亡生命週期。</summary>
 public sealed class CombatService
@@ -682,6 +686,24 @@ public sealed class CombatService
         field.Remove(mob.ObjectId);
         NotifySpawnPointKilled(field, mob);
         return new CombatMobKillResult(mob.ObjectId, mob.Definition.MonsterId, animation, Killed: true, SpawnRevives(field, mob, controllerId));
+    }
+
+    /// <summary>
+    /// P187：Java <c>MobHandler.MonsterBomb</c> → <c>killMonster(monster, chr, withDrops: false, second: false, selfd)</c>：
+    /// 同 <see cref="KillMobWithoutRewards"/> 的移除／重生點／revive，再走 killBy 經驗分配（不掉寶）。呼叫端持有 field 鎖。
+    /// </summary>
+    public CombatMobKillResult KillMobBySelfDestruct(FieldInstance field, int mobObjectId, byte animation, Player killer)
+    {
+        ArgumentNullException.ThrowIfNull(killer);
+        var mob = field.Get(mobObjectId) as Mob;
+        var result = KillMobWithoutRewards(field, mobObjectId, animation, killer.Character.Id);
+        if (!result.Killed || mob is null || _mobKillHandler is null)
+        {
+            return result;
+        }
+
+        var rewards = _mobKillHandler.OnMobKilledWithoutDrops(field, killer, mob);
+        return rewards.KillerAward is null && rewards.OtherAwards is null ? result : result with { Rewards = rewards };
     }
 
     /// <summary>

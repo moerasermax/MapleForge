@@ -14,6 +14,9 @@ internal sealed record V113MonsterBombResult(
 {
     /// <summary>P186：自爆的怪物 ID（事件實例 unregisterMonster 用）。</summary>
     public int MonsterId { get; init; }
+
+    /// <summary>P187：killBy 的經驗分配（呼叫端送經驗與升級封包）。</summary>
+    public Maple.Application.Drops.MobKillRewards? Rewards { get; init; }
 }
 
 internal static class V113MonsterBombHandler
@@ -51,7 +54,7 @@ internal static class V113MonsterBombHandler
                 return EnableActionsOnly(request);
             }
 
-            var killed = combat.KillMobWithoutRewards(field, request.MobObjectId, (byte)mob.Stats.SelfDestructAnimation, player.Character.Id);
+            var killed = combat.KillMobBySelfDestruct(field, request.MobObjectId, (byte)mob.Stats.SelfDestructAnimation, player);
             if (!killed.Killed)
             {
                 return EnableActionsOnly(request);
@@ -70,6 +73,7 @@ internal static class V113MonsterBombHandler
                 ])
             {
                 MonsterId = killed.MonsterId,
+                Rewards = killed.Rewards,
             };
         }
     }

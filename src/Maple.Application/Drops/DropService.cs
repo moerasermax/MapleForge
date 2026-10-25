@@ -46,6 +46,9 @@ public interface IMobKillHandler
 {
     MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob);
 
+    /// <summary>P187：Java <c>killMonster(mob, chr, withDrops: false, ...)</c>（怪物自爆）——只跑 killBy 經驗分配、不掉寶。</summary>
+    MobKillRewards OnMobKilledWithoutDrops(FieldInstance field, Player killer, Mob mob) => MobKillRewards.Empty;
+
     /// <summary>P144：神偷偷錢（Java <c>DamageParse.handlePickPocket</c>）；預設不掉落。</summary>
     IReadOnlyList<MapDrop> OnPickPocket(FieldInstance field, Player attacker, Mob mob, IReadOnlyList<int> damageLines, int maxMeso, int prop)
         => [];
@@ -143,6 +146,35 @@ public sealed class DropService : IMobKillHandler
             : new MobKillRewards(
                 killerAward?.Exp ?? 0,
                 drops,
+                killerAward?.StatsMutation,
+                killerAward?.HighestDamage ?? false,
+                others.Length > 0 ? others : null,
+                killerAward);
+    }
+
+    /// <summary>
+    /// P187：怪物自爆（Java withDrops=false）——killBy 照常依傷害分配經驗，但不掉寶；Java 的 attackers 為空時不給任何人經驗
+    /// （不同於一般擊殺的「無紀錄全歸擊殺者」fallback）。
+    /// </summary>
+    public MobKillRewards OnMobKilledWithoutDrops(FieldInstance field, Player killer, Mob mob)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(killer);
+        ArgumentNullException.ThrowIfNull(mob);
+
+        if (mob.AttackerDamages.Count == 0)
+        {
+            return MobKillRewards.Empty;
+        }
+
+        var awards = DistributeExp(field, killer, mob);
+        var killerAward = awards.FirstOrDefault(a => ReferenceEquals(a.Receiver, killer));
+        var others = awards.Where(a => !ReferenceEquals(a.Receiver, killer)).ToArray();
+        return killerAward is null && others.Length == 0
+            ? MobKillRewards.Empty
+            : new MobKillRewards(
+                killerAward?.Exp ?? 0,
+                Array.Empty<MapDrop>(),
                 killerAward?.StatsMutation,
                 killerAward?.HighestDamage ?? false,
                 others.Length > 0 ? others : null,

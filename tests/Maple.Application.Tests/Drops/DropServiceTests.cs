@@ -166,6 +166,34 @@ public sealed class DropServiceTests
     }
 
     [Fact]
+    public void SelfDestruct_GivesKillByExp_ButNoDrops_AndNothingWithoutAttackers()
+    {
+        // P187：Java MonsterBomb → killMonster(mob, chr, withDrops=false) → killBy 經驗照分、不掉寶；無攻擊紀錄不給經驗。
+        var drops = MakeDropService(new MonsterDropEntry(4000000, 999_999, 1, 1, 0));
+        var combat = new Maple.Application.Combat.CombatService(new Maple.Application.Maps.MapService(new EmptyDataProvider()), drops);
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        player.Character.Level = 30;
+        field.Add(player);
+        var attacked = MakeMob(exp: 50);
+        attacked.AddAttackerDamage(player.Character.Id, 20);
+        field.Add(attacked);
+
+        var result = combat.KillMobBySelfDestruct(field, attacked.ObjectId, 3, player);
+
+        Assert.True(result.Killed);
+        Assert.True(result.Rewards!.ExpGained > 0);
+        Assert.Empty(result.Rewards.SpawnedDrops);
+        Assert.Empty(field.Objects.OfType<MapDrop>());
+
+        var untouched = new Mob(new Maple.Core.Maps.MapMonster { MonsterId = 100100 }, new MobStats(100100, 20, 0, 1, 50), 200002);
+        field.Add(untouched);
+        var none = combat.KillMobBySelfDestruct(field, untouched.ObjectId, 3, player);
+        Assert.True(none.Killed);
+        Assert.Null(none.Rewards);
+    }
+
+    [Fact]
     public void TryPickup_Meso_AddsMesoAndRemovesDrop()
     {
         var service = MakeDropService();

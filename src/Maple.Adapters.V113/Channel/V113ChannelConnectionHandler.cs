@@ -5756,10 +5756,23 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
         }
 
-        // P186：Java 自爆走 killMonster → killBy → eventInstance.unregisterMonster（自爆無經驗分配，不計 monsterKilled）。
+        // P187：killBy 的經驗分配（不掉寶）。
+        if (result.Rewards is { } bombRewards)
+        {
+            await SendMobKillRewardsAsync(player, session, bombRewards, ct);
+        }
+
+        // P186：Java 自爆走 killMonster → killBy → eventInstance.monsterKilled（最高傷害者）／unregisterMonster。
         if (result.Killed && _eventScripts is not null)
         {
-            RunEventHook(() => _eventScripts.OnMonsterKilled(field.MapId, result.Request.MobObjectId, result.MonsterId, null));
+            int? highest = result.Rewards switch
+            {
+                null => null,
+                { KillerHighestDamage: true } => player.Character.Id,
+                { OtherAwards: { } others } => others.FirstOrDefault(static a => a.HighestDamage)?.Receiver.Character.Id,
+                _ => null,
+            };
+            RunEventHook(() => _eventScripts.OnMonsterKilled(field.MapId, result.Request.MobObjectId, result.MonsterId, highest));
         }
     }
 
