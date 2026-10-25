@@ -154,6 +154,21 @@ public static class MapleServerHost
             log.LogInformation("[Drops] 載入怪物掉落表 {Count} 隻怪物：{Path}", catalog.MonsterCount, path);
             return catalog;
         });
+        // P182：反應堆掉落表（Java reactordrops）。tools/drop-data/convert_reactor_drops.py 轉出；未設定時反應堆只掉 minItems 補的楓幣。
+        builder.Services.AddSingleton<IReactorDropCatalog>(sp =>
+        {
+            var path = builder.Configuration["Content:ReactorDropCatalogPath"];
+            var log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Maple.Content.Drops");
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                log.LogWarning("[Drops] 未設定或找不到反應堆掉落表 Content:ReactorDropCatalogPath={Path}", path);
+                return new InMemoryReactorDropCatalog(new Dictionary<int, IReadOnlyList<ReactorDropEntry>>());
+            }
+
+            var catalog = new JsonReactorDropCatalog(path);
+            log.LogInformation("[Drops] 載入反應堆掉落表 {Count} 個反應堆：{Path}", catalog.ReactorCount, path);
+            return catalog;
+        });
         builder.Services.AddSingleton(sp =>
         {
             var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;

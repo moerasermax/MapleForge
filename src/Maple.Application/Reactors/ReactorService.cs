@@ -32,10 +32,19 @@ public sealed class ReactorService
     private readonly object _gate = new();
     private readonly Dictionary<int, ReactorStats> _statsCache = new();
 
-    public ReactorService(IDataProvider data, IReactorScriptFactory? scripts = null)
+    private readonly Maple.Application.Drops.DropService? _drops;
+    private readonly Maple.Core.Drops.IReactorDropCatalog? _reactorDrops;
+
+    public ReactorService(
+        IDataProvider data,
+        IReactorScriptFactory? scripts = null,
+        Maple.Application.Drops.DropService? drops = null,
+        Maple.Core.Drops.IReactorDropCatalog? reactorDrops = null)
     {
         _data = data;
         _scripts = scripts;
+        _drops = drops;
+        _reactorDrops = reactorDrops;
     }
 
     public IReadOnlyList<Reactor> SpawnMapReactors(FieldInstance field, int mapId, int firstObjectId = DefaultReactorObjectIdBase + 1)
@@ -133,7 +142,7 @@ public sealed class ReactorService
         }
 
         var (scriptInvoked, ctx) = hit.ShouldInvokeScript
-            ? TryAct(player, reactor)
+            ? TryAct(field, player, reactor)
             : (false, null);
 
         return new ReactorInteractionResult(
@@ -173,7 +182,7 @@ public sealed class ReactorService
         }
 
         var (scriptInvoked, ctx) = hit.ShouldInvokeScript
-            ? TryAct(player, reactor)
+            ? TryAct(field, player, reactor)
             : (false, null);
 
         return new ReactorInteractionResult(
@@ -245,14 +254,14 @@ public sealed class ReactorService
         return new ReactorStats(states);
     }
 
-    private (bool Invoked, ReactorScriptContext? Context) TryAct(Player player, Reactor reactor)
+    private (bool Invoked, ReactorScriptContext? Context) TryAct(FieldInstance field, Player player, Reactor reactor)
     {
         if (_scripts is null)
         {
             return (false, null);
         }
 
-        var ctx = new ReactorScriptContext(player, reactor);
+        var ctx = new ReactorScriptContext(player, reactor, field, _drops, _reactorDrops);
         var script = _scripts.TryCreate(reactor.ReactorId, ctx);
         if (script is null)
         {

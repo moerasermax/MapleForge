@@ -614,6 +614,78 @@ public sealed class DropService : IMobKillHandler
         return drops;
     }
 
+    /// <summary>
+    /// P182：對照 Java <c>ReactorActionManager.dropItems(meso, mesoChance, minMeso, maxMeso, minItems)</c>：
+    /// meso 時以 1/mesoChance 加一筆楓幣；每筆掉落以 1/chance 入選（有 questid 需任務進行中）；不足 minItems 補楓幣；
+    /// 起點 x = 反應堆 x − 12×入選數，每筆 +25。楓幣 = nextInt(max − min) + min × 楓幣倍率（Java 原式，倍率只乘 min），
+    /// dropType 0、擁有者＝觸發者；道具（裝備 randomizeStats）dropType 2。位置皆 calcDropPos。呼叫端持有 field 鎖並廣播。
+    /// </summary>
+    public IReadOnlyList<MapDrop> DropFromReactor(
+        FieldInstance field,
+        Player owner,
+        Reactor reactor,
+        IReadOnlyList<ReactorDropEntry> chances,
+        bool meso,
+        int mesoChance,
+        int minMeso,
+        int maxMeso,
+        int minItems)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(reactor);
+        ArgumentNullException.ThrowIfNull(chances);
+
+        var items = new List<int>();
+        if (meso && _random.NextDouble() < 1 / (double)mesoChance)
+        {
+            items.Add(0);
+        }
+
+        var numItems = 0;
+        foreach (var entry in chances)
+        {
+            if (_random.NextDouble() < 1 / (double)entry.Chance
+                && (entry.QuestId <= 0 || owner.GetQuestStatus(entry.QuestId) == 1))
+            {
+                numItems++;
+                items.Add(entry.ItemId);
+            }
+        }
+
+        while (items.Count < minItems)
+        {
+            items.Add(0);
+            numItems++;
+        }
+
+        var x = reactor.Position.X - (12 * numItems);
+        var spawned = new List<MapDrop>(items.Count);
+        foreach (var itemId in items)
+        {
+            var position = CalcDropPos(field, x, reactor.Position.Y, new Position(ClampShort(x), reactor.Position.Y, 0, reactor.Position.Foothold));
+            MapDrop drop;
+            if (itemId == 0)
+            {
+                var amount = _random.Next(Math.Max(1, maxMeso - minMeso)) + (minMeso * _options.MesoRate);
+                drop = MapDrop.ForMeso(AllocateDropObjectId(field), amount, position, reactor.Position, reactor.ObjectId, owner.Character.Id, dropType: 0, _timeProvider.GetUtcNow());
+            }
+            else
+            {
+                Item item = Player.InventoryTypeOf(itemId) == InventoryType.Equip
+                    ? EquipStatRandomizer.Randomize(_equipTemplates?.Create(itemId) ?? new Equip { ItemId = itemId, Quantity = 1 }, _random)
+                    : new Item { ItemId = itemId, Quantity = 1 };
+                drop = MapDrop.ForItem(AllocateDropObjectId(field), item, position, reactor.Position, reactor.ObjectId, owner.Character.Id, dropType: 2, _timeProvider.GetUtcNow());
+            }
+
+            field.Add(drop);
+            spawned.Add(drop);
+            x += 25;
+        }
+
+        return spawned;
+    }
+
     /// <summary>Java <c>calcDropPos</c>；未注入 MapService 或找不到踏腳石時用 fallback。</summary>
     private Position CalcDropPos(FieldInstance field, int x, int y, Position fallback)
         => _maps is not null && FootholdMath.CalcDropPos(_maps.LoadMap(field.MapId).Footholds, x, y) is { } point

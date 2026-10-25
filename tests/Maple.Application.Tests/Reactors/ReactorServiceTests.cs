@@ -1,4 +1,7 @@
+using Maple.Application.Drops;
 using Maple.Application.Reactors;
+using Maple.Core.Drops;
+using Maple.Core.Inventory;
 using Maple.Core.Characters;
 using Maple.Core.Data;
 using Maple.Core.World;
@@ -56,6 +59,62 @@ public sealed class ReactorServiceTests
         Assert.True(result.Success);
         Assert.True(result.ScriptInvoked);
         Assert.Equal(1, scripts.ActCount);
+    }
+
+    [Fact]
+    public void DropItems_RollsReactorDrops_QuestGated_MesoAndMinItemsFill()
+    {
+        // P182：Java ReactorActionManager.dropItems——1/chance 入選、questid 需任務進行中、不足 minItems 補楓幣。
+        var reactorDrops = new InMemoryReactorDropCatalog(new Dictionary<int, IReadOnlyList<ReactorDropEntry>>
+        {
+            [1002008] = [new ReactorDropEntry(4001000, 1, -1), new ReactorDropEntry(4001001, 1, 2000)],
+        });
+        var drops = new DropService(
+            new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>()),
+            new DropServiceOptions(MesoRate: 2),
+            random: new ZeroRandom());
+        var scripts = new FakeReactorScriptFactory(rm => rm.DropItems(true, 1, 10, 20, 3));
+        var service = new ReactorService(CreateProvider(reactorId: 1002008), scripts, drops, reactorDrops);
+        var field = new FieldInstance(100000000);
+        var reactor = Assert.Single(service.SpawnMapReactors(field, 100000000));
+
+        var ctx = service.HitReactor(field, CreatePlayer(), reactor.ObjectId, charPosition: 1, stance: 7).ScriptContext!;
+
+        // meso（1/1）＋ 4001000；4001001 任務未進行不掉；補 1 筆楓幣到 3 筆。
+        Assert.Equal(3, ctx.SpawnedDrops.Count);
+        Assert.True(ctx.SpawnedDrops[0].IsMeso);
+        Assert.Equal(20, ctx.SpawnedDrops[0].Meso); // nextInt(10)=0 + 10 × 倍率 2
+        Assert.Equal(4001000, ctx.SpawnedDrops[1].Item!.ItemId);
+        Assert.Equal((byte)2, ctx.SpawnedDrops[1].DropType);
+        Assert.Equal((byte)0, ctx.SpawnedDrops[0].DropType);
+        Assert.Equal(reactor.Position.X - 24 + 25, ctx.SpawnedDrops[1].Position.X); // 入選 2 筆（含補的）→ 起點 −24，每筆 +25
+        Assert.All(ctx.SpawnedDrops, d => Assert.Same(d, field.Get(d.ObjectId)));
+    }
+
+    [Fact]
+    public void ScriptContext_MessagesGainItemHaveItemCanHold()
+    {
+        var player = CreatePlayer();
+        player.Inventory.By(InventoryType.Etc).Put(new Item { ItemId = 4031000, Slot = 1, Quantity = 3 });
+        var scripts = new FakeReactorScriptFactory(rm =>
+        {
+            rm.MapMessage("全圖");
+            rm.PlayerMessage(6, "本人");
+            rm.GainItem(4031000, 2);
+            rm.GainItem(4031000, -1);
+            rm.PlayerMessage(rm.HaveItem(4031000, 4) ? "有4" : "沒4");
+        });
+        var service = new ReactorService(CreateProvider(reactorId: 1002008), scripts);
+        var field = new FieldInstance(100000000);
+        var reactor = Assert.Single(service.SpawnMapReactors(field, 100000000));
+
+        var ctx = service.HitReactor(field, player, reactor.ObjectId, charPosition: 1, stance: 7).ScriptContext!;
+
+        Assert.Equal([(true, 5, "全圖"), (false, 6, "本人"), (false, 5, "有4")], ctx.Notices);
+        Assert.Equal((short)4, player.Inventory.By(InventoryType.Etc).Get(1)!.Quantity);
+        Assert.Single(Assert.Single(ctx.InventoryGains).Merged);
+        Assert.Single(ctx.InventoryRemovals);
+        Assert.Equal([(4031000, 2), (4031000, -1)], ctx.ItemGainNotices);
     }
 
     private static Player CreatePlayer(int mapId = 100000000) => new(
@@ -139,7 +198,7 @@ public sealed class ReactorServiceTests
         public IDataNode? this[string name] => Children.TryGetValue(name, out var node) ? node : null;
     }
 
-    private sealed class FakeReactorScriptFactory : IReactorScriptFactory
+    private sealed class FakeReactorScriptFactory(Action<IReactorScriptContext>? act = null) : IReactorScriptFactory
     {
         public int ActCount { get; private set; }
 
@@ -147,8 +206,15 @@ public sealed class ReactorServiceTests
             => new FakeReactorScript(() =>
             {
                 ActCount++;
-                rm.DropItems();
+                (act ?? (static r => r.DropItems()))(rm);
             });
+    }
+
+    private sealed class ZeroRandom : Random
+    {
+        public override int Next(int maxValue) => 0;
+
+        public override double NextDouble() => 0;
     }
 
     private sealed class FakeReactorScript : IReactorScript

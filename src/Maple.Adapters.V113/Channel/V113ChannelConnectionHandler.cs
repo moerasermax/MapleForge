@@ -797,13 +797,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.DamageReactor:
                         if (player is null || currentField is null) break;
-                        await V113ReactorHandler.HandleDamageReactorAsync(
+                        var damageResult = await V113ReactorHandler.HandleDamageReactorAsync(
                             reader,
                             player,
                             currentField,
                             _reactorService,
                             (packet, tkn) => BroadcastPacketToMapAsync(player.Character, s, packet, tkn),
                             token);
+                        await SendReactorScriptEffectsAsync(damageResult?.ScriptContext, player, s, token);
                         break;
 
                     case V113ChannelRecvOp.TouchReactor:
@@ -816,6 +817,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         {
                             await BroadcastPacketToMapAsync(player.Character, s, touchPacket, token);
                         }
+
+                        await SendReactorScriptEffectsAsync(touchResult?.ScriptContext, player, s, token);
                         break;
                     }
 
@@ -3907,6 +3910,52 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await session.SendAsync(V113DropPackets.UpdateMeso(player.Character.Meso), ct);
             await session.SendAsync(V113DropPackets.ShowMesoGain(result.GainedMeso), ct);
+        }
+    }
+
+    /// <summary>
+    /// P182：反應堆腳本（rm）效果的封包：dropItems 的掉落物全圖 DROP_ITEM_FROM_MAPOBJECT、mapMessage 全圖／playerMessage 本人
+    /// serverNotice、gainItem 的背包更新與 getShowItemGain(id, qty, true)。
+    /// </summary>
+    private async Task SendReactorScriptEffectsAsync(Maple.Application.Reactors.ReactorScriptContext? ctx, Player player, MapleSession session, CancellationToken ct)
+    {
+        if (ctx is null)
+        {
+            return;
+        }
+
+        foreach (var drop in ctx.SpawnedDrops)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, V113DropPackets.DropItemFromMapObject(drop), ct);
+        }
+
+        foreach (var (mapWide, type, message) in ctx.Notices)
+        {
+            var packet = V113BroadcastPackets.ServerNotice(type, message);
+            if (mapWide)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
+            }
+            else
+            {
+                await session.SendAsync(packet, ct);
+            }
+        }
+
+        foreach (var gain in ctx.InventoryGains)
+        {
+            var type = gain.Added.Count > 0 ? Player.InventoryTypeOf(gain.Added[0].ItemId) : gain.Merged[0].Type;
+            await SendStackGainAsync(session, type, gain, ct);
+        }
+
+        foreach (var removal in ctx.InventoryRemovals)
+        {
+            await session.SendAsync(V113ItemUsePackets.ModifyInventoryQuantity(removal), ct);
+        }
+
+        foreach (var (itemId, quantity) in ctx.ItemGainNotices)
+        {
+            await session.SendAsync(V113DropPackets.ShowItemGain(itemId, (short)quantity, inChat: true), ct);
         }
     }
 
