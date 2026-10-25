@@ -195,6 +195,12 @@ public interface INpcScriptContext
     // ── P176：隊伍（AbstractPlayerInteraction.getParty／isLeader／warpParty／givePartyExp／givePartyItems）──────
     Maple.Core.Parties.PartyState? GetPartyState();
 
+    // ── P191：打王／一次性紀錄 ─────────────────────────────────────────────────────────
+    int GetBossLog(string bossId) => 0;
+    void SetBossLog(string bossId) { }
+    int GetOneTimeLog(string log) => 0;
+    void SetOneTimeLog(string log) { }
+
     // ── P190：遠征隊（Java NPCConversationManager squad API）──────────────────────────────
     int GetSquadAvailability(string type) => -1;
     bool RegisterSquad(string type, int minutes, string startText) => false;

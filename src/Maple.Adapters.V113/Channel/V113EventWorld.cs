@@ -77,7 +77,12 @@ public sealed class V113EventWorld : IEventWorld
             ? new EventCharacterInfo(online.Character.Id, online.Character.Name, online.Character.Level, online.Character.Job, online.Character.MapId)
             : null;
 
-    public void SetQuestCustomData(int characterId, int questId, string data)
+    public void SetBossLog(int characterId, string bossId) => RunOnPlayer(characterId, player => player.SetBossLog(bossId, _time.GetUtcNow()));
+
+    public void SetQuestCustomData(int characterId, int questId, string data) => RunOnPlayer(characterId, player => player.GetOrAddQuest(questId).CustomData = data);
+
+    /// <summary>排進該玩家連線序列執行；不在線略過，連線佇列不可用時直接在鎖內執行。</summary>
+    private void RunOnPlayer(int characterId, Action<Player> work)
     {
         if (_online.FindById(characterId) is not { } online)
         {
@@ -85,11 +90,11 @@ public sealed class V113EventWorld : IEventWorld
         }
 
         var player = online.Player;
-        if (_sessions?.TryPost(characterId, _ => { player.GetOrAddQuest(questId).CustomData = data; return Task.CompletedTask; }) != true)
+        if (_sessions?.TryPost(characterId, _ => { work(player); return Task.CompletedTask; }) != true)
         {
             lock (player)
             {
-                player.GetOrAddQuest(questId).CustomData = data;
+                work(player);
             }
         }
     }

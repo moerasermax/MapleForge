@@ -76,6 +76,26 @@ public sealed partial class Player : IFieldObject
         return Inventory.By(type).Gain(item);
     }
 
+    /// <summary>P191：Java getBossLog：該 bossId 在過去 24 小時（subtime(now, '1 0:0:0')）內的筆數。</summary>
+    public int GetBossLog(string bossId, DateTimeOffset now)
+    {
+        var since = now.AddDays(-1).ToUnixTimeMilliseconds();
+        return Character.BossLog.Count(e => e.BossId == bossId && e.Timestamp >= since);
+    }
+
+    /// <summary>P191：Java setBossLog：新增一筆（順便清掉超過 24 小時、已不影響計數的舊紀錄）。</summary>
+    public void SetBossLog(string bossId, DateTimeOffset now)
+    {
+        var since = now.AddDays(-1).ToUnixTimeMilliseconds();
+        Character.BossLog.RemoveAll(e => e.Timestamp < since);
+        Character.BossLog.Add(new BossLogEntry { BossId = bossId, Timestamp = now.ToUnixTimeMilliseconds() });
+    }
+
+    /// <summary>P191：Java getOneTimeLog／setOneTimeLog（累計次數）。</summary>
+    public int GetOneTimeLog(string log) => Character.OneTimeLog.GetValueOrDefault(log);
+
+    public void SetOneTimeLog(string log) => Character.OneTimeLog[log] = GetOneTimeLog(log) + 1;
+
     /// <summary>P181：Java <c>getSlotMax</c>。</summary>
     public short GetSlotMax(int itemId) => Maple.Core.Items.ItemSlotMax.Resolve(_equipTemplates, itemId);
 

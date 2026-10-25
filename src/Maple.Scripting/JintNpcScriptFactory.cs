@@ -331,6 +331,12 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         /// <summary>P178：Java <c>cm.getEventInstance()</c>＝<c>getPlayer().getEventInstance()</c>。</summary>
         public object? getEventInstance() => _events?.GetEventInstance(_cm.GetCharacterId());
 
+        // ── P191 ───────────────────────────────────────────────────────────────────────
+        public int getBossLog(string bossId) => _cm.GetBossLog(bossId);
+        public void setBossLog(string bossId) => _cm.SetBossLog(bossId);
+        public int getOneTimeLog(string log) => _cm.GetOneTimeLog(log);
+        public void setOneTimeLog(string log) => _cm.SetOneTimeLog(log);
+
         // ── P190：遠征隊 ─────────────────────────────────────────────────────────────
         public int getSquadAvailability(string type) => _cm.GetSquadAvailability(type);
         public bool registerSquad(string type, int minutes, string startText) => _cm.RegisterSquad(type, minutes, startText);
@@ -565,6 +571,12 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
 
         /// <summary>P178：Java <c>chr.getEventInstance()</c>。</summary>
         public object? getEventInstance() => _events?.GetEventInstance(_cm.GetCharacterId());
+
+        // P191
+        public int getBossLog(string bossId) => _cm.GetBossLog(bossId);
+        public void setBossLog(string bossId) => _cm.SetBossLog(bossId);
+        public int getOneTimeLog(string log) => _cm.GetOneTimeLog(log);
+        public void setOneTimeLog(string log) => _cm.SetOneTimeLog(log);
 
         public int getId() => _cm.GetCharacterId();
         public string getName() => _cm.GetName();

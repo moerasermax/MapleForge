@@ -336,6 +336,30 @@ public sealed class JintNpcScriptApiTests : IDisposable
             actions);
     }
 
+    [Fact]
+    public async Task Script_BossLogAndOneTimeLog()
+    {
+        // P191：cm.getBossLog／setBossLog、cm.getPlayer().getOneTimeLog／setOneTimeLog。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999990.js"), """
+            function start() {
+                cm.setBossLog("ZAK");
+                cm.getPlayer().setOneTimeLog("fk1");
+                cm.sendOk(cm.getBossLog("ZAK") + "/" + cm.getPlayer().getBossLog("HT") + "/" + cm.getOneTimeLog("fk1"));
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(9999990, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        var convo = new NpcConversation(9999990, factory.TryCreate(9999990, ctx)!, ctx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (_, _) => Task.CompletedTask);
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal("1/0/1", Assert.Single(dialogs).Text);
+        Assert.Single(player.Character.BossLog);
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

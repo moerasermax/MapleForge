@@ -110,7 +110,7 @@ public sealed class EventInstanceApi
     /// <summary>
     /// P190：Java registerSquad(squad, map, questID, bossname)：遠征隊成員中在線且在該地圖者——questID &gt; 0 時
     /// 該任務 customData = 現在毫秒（BOSS 冷卻），registerPlayer；之後遠征隊狀態 2（取消到期）、開始地圖 stopClock。
-    /// bossLog 尚無系統，略過。
+    /// bossname 非 null 時 setBossLog（P191）。
     /// </summary>
     public void registerSquad(IScriptSquadRef squadRef, IScriptMapRef map, int questId, string? bossName)
     {
@@ -127,6 +127,11 @@ public sealed class EventInstanceApi
                 if (questId > 0)
                 {
                     World.SetQuestCustomData(chr.Id, questId, _runtime.Now.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+
+                if (bossName is not null)
+                {
+                    World.SetBossLog(chr.Id, bossName); // P191
                 }
 
                 registerPlayer(new EventCharacterApi(_runtime, chr.Id));

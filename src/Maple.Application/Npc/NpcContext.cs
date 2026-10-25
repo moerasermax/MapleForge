@@ -879,4 +879,13 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public void SetSquadNextPlayer(string type, string name) => _squads?.SetNextPlayer(type, name);
 
     public IReadOnlyList<string> GetSquadQueue(string type) => _squads?.GetQueue(type).Select(static q => q.Name).ToArray() ?? [];
+
+    // ── P191：打王／一次性紀錄 ───────────────────────────────────────────────────────────
+    public int GetBossLog(string bossId) => _player.GetBossLog(bossId, DateTimeOffset.UtcNow);
+
+    public void SetBossLog(string bossId) => _player.SetBossLog(bossId, DateTimeOffset.UtcNow);
+
+    public int GetOneTimeLog(string log) => _player.GetOneTimeLog(log);
+
+    public void SetOneTimeLog(string log) => _player.SetOneTimeLog(log);
 }

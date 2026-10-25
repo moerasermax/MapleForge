@@ -48,6 +48,12 @@ public sealed class Character
     /// </summary>
     public Dictionary<string, int> SavedLocations { get; set; } = new();
 
+    /// <summary>P191：Java <c>bosslog</c> 表（bossid＋時間）；getBossLog 數過去 24 小時。</summary>
+    public List<BossLogEntry> BossLog { get; set; } = new();
+
+    /// <summary>P191：Java <c>OneTimelog</c> 表：log 名稱 → 次數。</summary>
+    public Dictionary<string, int> OneTimeLog { get; set; } = new();
+
     /// <summary>P162：Java <c>hpApUsed</c>（hpmpApUsed）——投入 MAXHP/MAXMP 的 AP 數。</summary>
     public short HpMpApUsed { get; set; }
 
@@ -331,4 +337,12 @@ public sealed class Character
         slots[index] = EmptyRockMapId;
         return true;
     }
+}
+
+/// <summary>P191：一筆打王紀錄（Unix 毫秒）。</summary>
+public sealed class BossLogEntry
+{
+    public string BossId { get; set; } = string.Empty;
+
+    public long Timestamp { get; set; }
 }

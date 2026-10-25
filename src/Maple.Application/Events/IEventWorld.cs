@@ -49,6 +49,9 @@ public interface IEventWorld
     /// <summary>P190：Java <c>getQuestNAdd(quest).setCustomData(data)</c>（排進該玩家連線序列寫入）。</summary>
     void SetQuestCustomData(int characterId, int questId, string data) { }
 
+    /// <summary>P191：Java <c>player.setBossLog(bossname)</c>（registerSquad 的 bossname；排進該玩家連線序列寫入）。</summary>
+    void SetBossLog(int characterId, string bossId) { }
+
     /// <summary>Java <c>map.resetFully()</c>：清怪、重生出生點怪物、重設反應堆。</summary>
     void ResetMap(int mapId);
 
