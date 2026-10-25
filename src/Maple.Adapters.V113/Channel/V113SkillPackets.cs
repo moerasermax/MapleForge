@@ -23,12 +23,14 @@ internal sealed record V113SkillHandleResult(
     byte[]? CooldownPacket = null,
     byte[]? StatsPacket = null,
     V113SpecialMoveRequest? Request = null,
-    IReadOnlyList<byte[]>? CooldownResetPackets = null);
+    IReadOnlyList<byte[]>? CooldownResetPackets = null,
+    byte[]? MulungEnergyPacket = null);
 
 /// <summary>v113 技能/buff 封包。對照 Java PlayerHandler.SpecialMove/CancelBuffHandler 與 MaplePacketCreator.giveBuff/cancelBuff。</summary>
 internal static class V113SkillPackets
 {
     public const short SpecialMoveRecvOp = 0x55;
+    public const short SessionValueOp = 0x54; // P108：send.properties SESSION_VALUE
     public const short CancelBuffRecvOp = 0x56;
     public const short SkillEffectRecvOp = 0x57;
 
@@ -42,6 +44,19 @@ internal static class V113SkillPackets
     public const short CancelForeignBuffOp = unchecked((short)0xC1);
     public const short CooldownOp = unchecked((short)0xE3); // COOLDOWN（send.properties 0xE3）
 
+
+    /// <summary>
+    /// 對照 Java <c>MaplePacketCreator.MulungEnergy</c> → <c>sendString(1, "energy", value)</c>：
+    /// SESSION_VALUE 兩個 MapleAsciiString（unverified：未經真機擷取）。
+    /// </summary>
+    public static byte[] MulungEnergy(int energy)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(SessionValueOp);
+        w.WriteMapleString("energy");
+        w.WriteMapleString(energy.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return w.ToArray();
+    }
     public static V113SpecialMoveRequest ParseSpecialMove(PacketReader reader)
     {
         var oldX = reader.ReadShort();
@@ -237,7 +252,9 @@ internal static class V113SkillMoveHandler
             .Select(static id => V113SkillPackets.SkillCooldown(id, 0))
             .ToArray();
 
-        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket, request, resetPackets);
+        var mulungPacket = result.MulungEnergyReset ? V113SkillPackets.MulungEnergy(player.MulungEnergy) : null;
+
+        return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket, request, resetPackets, mulungPacket);
     }
 
     private static IEnumerable<PlayerStatUpdate> BuildCastStatUpdates(Player player, short mpBefore)

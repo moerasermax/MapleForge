@@ -3043,7 +3043,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
-        // 封包順序對照 Java SpecialMove：skillCooldown（套用前）→ applyTo 的 HP/MP 更新 → buff。
+        // 封包順序對照 Java SpecialMove：武陵能量歸零（P108）→ skillCooldown（套用前）→ applyTo 的 HP/MP 更新 → buff。
+        if (handled.MulungEnergyPacket is not null)
+        {
+            await session.SendAsync(handled.MulungEnergyPacket, ct);
+        }
+
         if (handled.CooldownPacket is not null)
         {
             await session.SendAsync(handled.CooldownPacket, ct);
@@ -3471,6 +3476,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var attackBroadcast = V113CombatPackets.CloseRangeAttackBroadcast(player.Character.Id, attack, player.Character.Level);
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
+        if (!await CheckMulungAttackAsync(player, attack.SkillId, requireFullEnergy: true, session, ct))
+        {
+            return;
+        }
+
         CombatAttackResult result;
         lock (field)
         {
@@ -3532,6 +3542,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         if (!await CheckAttackCooldownAsync(player, attack.SkillId, session, ct))
+        {
+            return;
+        }
+
+        if (!await CheckMulungAttackAsync(player, attack.SkillId, requireFullEnergy: true, session, ct))
         {
             return;
         }
@@ -3613,6 +3628,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        if (!await CheckMulungAttackAsync(player, attack.SkillId, requireFullEnergy: false, session, ct))
+        {
+            return;
+        }
+
         CombatAttackResult result;
         lock (field)
         {
@@ -3643,6 +3663,30 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         _log.LogWarning("[Channel] 玩家 {Name} 使用未學習的{Kind}攻擊技能 skill={Skill}", player.Character.Name, kind, skillId);
         return false;
+    }
+
+    /// <summary>
+    /// P108：武陵技能攻擊的能量判斷（對照 Java <c>DamageParse.applyAttack</c>／<c>applyAttackMagic</c>）：
+    /// 被擋回 false（整次攻擊丟棄、不送封包）；通過時能量歸零並送能量封包。
+    /// </summary>
+    private async Task<bool> CheckMulungAttackAsync(
+        Player player,
+        int skillId,
+        bool requireFullEnergy,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        switch (SkillService.CheckMulungAttack(player, skillId, requireFullEnergy))
+        {
+            case MulungAttackGate.Blocked:
+                _log.LogDebug("[Channel] 武陵技能攻擊被擋 skill={SkillId} energy={Energy}", skillId, player.MulungEnergy);
+                return false;
+            case MulungAttackGate.Consumed:
+                await session.SendAsync(V113SkillPackets.MulungEnergy(player.MulungEnergy), ct);
+                return true;
+            default:
+                return true;
+        }
     }
 
     private async Task<bool> CheckAttackCooldownAsync(Player player, int skillId, MapleSession session, CancellationToken ct)
@@ -3743,6 +3787,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             if (hit.HpDisplay is { } display)
             {
                 await SendMobHpDisplayAsync(hit, display, player, session, ct);
+            }
+
+            // P108：Java damage() 的血條分派後 mulungEnergyModify(true) 送能量封包。
+            if (hit.MulungEnergyAfter is { } energy)
+            {
+                await session.SendAsync(V113SkillPackets.MulungEnergy(energy), ct);
             }
 
             if (hit.Killed)

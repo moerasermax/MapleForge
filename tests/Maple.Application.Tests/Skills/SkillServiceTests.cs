@@ -293,6 +293,92 @@ public sealed class SkillServiceTests
         Assert.Equal((byte)3, result.Effect!.Level);
     }
 
+    // ── P108：武陵能量 ──
+
+    [Fact]
+    public void Cast_UnlearnedMulungSkill_InDojo_ResetsEnergy()
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = 925020100;
+        player.ModifyMulungEnergy(increase: true);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { EventSkill(1009) }));
+
+        var result = service.Cast(player, 1009, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.True(result.MulungEnergyReset);
+        Assert.Equal((short)0, player.MulungEnergy);
+    }
+
+    [Fact]
+    public void Cast_PyramidSkill_DoesNotTouchMulungEnergy()
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = 926020000;
+        player.ModifyMulungEnergy(increase: true);
+        var service = new SkillService(new InMemorySkillCatalog(new[] { EventSkill(1020) }));
+
+        var result = service.Cast(player, 1020, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.False(result.MulungEnergyReset);
+        Assert.Equal((short)100, player.MulungEnergy);
+    }
+
+    [Fact]
+    public void CheckMulungAttack_NonMulungSkill_NotApplicable()
+    {
+        Assert.Equal(MulungAttackGate.NotApplicable, SkillService.CheckMulungAttack(MakePlayer(mp: 50), 2001002, requireFullEnergy: true));
+    }
+
+    [Fact]
+    public void CheckMulungAttack_PhysicalWithoutFullEnergy_Blocked()
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = 925020100;
+        player.ModifyMulungEnergy(increase: true);
+
+        Assert.Equal(MulungAttackGate.Blocked, SkillService.CheckMulungAttack(player, 1009, requireFullEnergy: true));
+        Assert.Equal((short)100, player.MulungEnergy);
+    }
+
+    [Fact]
+    public void CheckMulungAttack_FullEnergyOutsideDojo_Blocked()
+    {
+        var player = FullEnergyPlayer(mapId: 100000000);
+
+        Assert.Equal(MulungAttackGate.Blocked, SkillService.CheckMulungAttack(player, 1009, requireFullEnergy: true));
+        Assert.Equal(Player.MaxMulungEnergy, player.MulungEnergy);
+    }
+
+    [Fact]
+    public void CheckMulungAttack_FullEnergyInDojo_ConsumesEnergy()
+    {
+        var player = FullEnergyPlayer(mapId: 925020100);
+
+        Assert.Equal(MulungAttackGate.Consumed, SkillService.CheckMulungAttack(player, 1009, requireFullEnergy: true));
+        Assert.Equal((short)0, player.MulungEnergy);
+    }
+
+    [Fact]
+    public void CheckMulungAttack_MagicInDojo_DoesNotRequireEnergy()
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = 925020100;
+
+        Assert.Equal(MulungAttackGate.Consumed, SkillService.CheckMulungAttack(player, 1009, requireFullEnergy: false));
+    }
+
+    private static Player FullEnergyPlayer(int mapId)
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = mapId;
+        for (var i = 0; i < 100; i++)
+        {
+            player.ModifyMulungEnergy(increase: true);
+        }
+
+        return player;
+    }
+
     private static MapleSkill EventSkill(int skillId)
         => new()
         {

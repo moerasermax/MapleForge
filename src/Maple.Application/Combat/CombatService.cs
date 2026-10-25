@@ -23,7 +23,9 @@ public sealed record CombatMobHit(
     // 對照 Java MapleMonster 死亡流程對控制者送 stopControllingMonster。
     int ControllerId = 0,
     // P107：命中後的血條顯示快照（傷害 > 0 時才有；對照 Java MapleMonster.damage 的 HPDisplayType 分派）。
-    CombatMobHpDisplay? HpDisplay = null);
+    CombatMobHpDisplay? HpDisplay = null,
+    // P108：此次命中後攻擊者的武陵能量（Java HPDisplayType -1/2 存活命中時 mulungEnergyModify(true)）；null = 未變動。
+    short? MulungEnergyAfter = null);
 
 /// <summary>
 /// 怪物血條顯示所需快照（在戰鬥鎖內擷取）：顯示類型、血量、王血條顏色、最近攻擊者。
@@ -188,6 +190,11 @@ public sealed class CombatService
             }
 
             var result = mob.TakeDamage(target.TotalDamage);
+            // P108：對照 Java MapleMonster.damage case -1/2（存活時）→ from.mulungEnergyModify(true)。
+            short? mulungEnergyAfter = result.AppliedDamage > 0 && !result.Killed && mob.Stats.HpDisplayType is -1 or 2
+                ? attacker.ModifyMulungEnergy(increase: true)
+                : null;
+
             var rewards = result.Killed
                 ? _mobKillHandler?.OnMobKilled(field, attacker, mob)
                 : null;
@@ -209,7 +216,8 @@ public sealed class CombatService
                         mob.Stats.TagColor,
                         mob.Stats.TagBgColor,
                         mob.GetRecentAttackers(now))
-                    : null));
+                    : null,
+                mulungEnergyAfter));
 
             if (result.Killed)
             {

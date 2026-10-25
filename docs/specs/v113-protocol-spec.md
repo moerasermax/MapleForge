@@ -1728,3 +1728,13 @@ DAMAGE_MONSTER:  writeShort(0xEF) writeInt(oid) writeByte(1) writeInt(damage) wr
 `HPDisplayType`（`MapleLifeFactory`）：`tagColor>0`→0 王血條（全圖）；friendly→1（全圖 DAMAGE_MONSTER）；武陵 9300184~9300215→2 小血條（全圖）；非王或 9410066→3 小血條只送給同地圖 4 秒內攻擊過的玩家；其餘（王但無 `hpTagColor`）→-1 小血條（全圖，死亡時再送一次 0%）。
 
 **行為變更**：P107 前 MapleForge 每次玩家攻擊命中都廣播一般 `DAMAGE_MONSTER`（`writeByte(0) writeInt(damage)`）；Java 只在持續傷害（中毒等）與反彈傷害才送此包，玩家攻擊不送。P107 起移除。證據層級：Java source + Adapters focused tests；**unverified**（真 v113 client 未 smoke 血條顯示與傷害數字是否重複）。
+
+### 武陵能量 `SESSION_VALUE(0x54)` "energy"（P108）
+
+對照 Java `MaplePacketCreator.MulungEnergy` → `sendString(1, "energy", String.valueOf(energy))`：
+
+```text
+writeShort(0x54) writeMapleAsciiString("energy") writeMapleAsciiString(<能量十進位字串>)
+```
+
+送出時機（每次 `mulungEnergyModify` 都送）：命中 HPDisplayType -1/2 且存活的怪 +100（上限 10000）；近戰/遠程武陵技能（需能量滿且在 92502xxxx）與魔法武陵技能（只需在道場）施放前歸零；`SPECIAL_MOVE` 未學武陵技能在道場施放時歸零。能量為執行期狀態不持久化。證據層級：Java source + Adapters focused tests；**unverified**。未實作：地圖腳本 `dojang_1st` 進場補送能量（MapleForge 尚無 onFirstUserEnter 腳本）。

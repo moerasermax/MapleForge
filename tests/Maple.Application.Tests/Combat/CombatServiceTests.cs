@@ -354,6 +354,31 @@ public sealed class CombatServiceTests
         Assert.Equal(expected, MapService.GetHpDisplayType(monsterId, boss, friendly, tagColor));
     }
 
+    [Theory]
+    [InlineData((sbyte)2, false, (short)100)]   // 武陵怪存活：+100
+    [InlineData((sbyte)-1, false, (short)100)]  // -1 同分支
+    [InlineData((sbyte)3, false, null)]         // 一般怪：不加
+    [InlineData((sbyte)2, true, null)]          // 打死：Java 只在 hp > 0 分支加
+    public void ApplyAttack_MulungEnergy_FollowsHpDisplayType(sbyte displayType, bool kill, short? expected)
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(925020100);
+        var player = MakePlayer();
+        var mob = new Mob(
+            new MapMonster { MonsterId = 9300184, X = 0, Y = 0, Fh = 1 },
+            new MobStats(9300184, 100, MaxMp: 0, Level: 1, Exp: 1, HpDisplayType: displayType),
+            objectId: 100001);
+        field.Add(player);
+        field.Add(mob);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [kill ? 500 : 10]),
+        ])).Hits);
+
+        Assert.Equal(expected, hit.MulungEnergyAfter);
+        Assert.Equal(expected ?? 0, player.MulungEnergy);
+    }
+
     private static Player MakePlayer(short hp = 50)
     {
         var chr = new Character

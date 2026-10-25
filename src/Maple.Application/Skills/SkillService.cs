@@ -42,7 +42,20 @@ public sealed record SkillCastResult(
     MapleStatEffect? Effect,
     PlayerBuffChange? AppliedBuff,
     int CooldownStartedSeconds = 0,
-    IReadOnlyList<int>? ResetCooldownSkillIds = null);
+    IReadOnlyList<int>? ResetCooldownSkillIds = null,
+    // P108：未學武陵技能在道場施放時能量歸零（呼叫端送能量封包）。
+    bool MulungEnergyReset = false);
+
+/// <summary>P108：武陵技能攻擊前的能量判斷（對照 Java DamageParse.applyAttack／applyAttackMagic）。</summary>
+public enum MulungAttackGate
+{
+    /// <summary>不是武陵技能。</summary>
+    NotApplicable,
+    /// <summary>可施放，能量已歸零（呼叫端送能量封包）。</summary>
+    Consumed,
+    /// <summary>能量不足或不在武陵道場：整次攻擊丟棄（Java return，不送封包）。</summary>
+    Blocked,
+}
 
 public enum AttackCooldownStatus
 {
@@ -107,6 +120,7 @@ public sealed class SkillService
 
         // P106：對照 Java PlayerHandler.SpecialMove——未學或等級不符時，只有武陵／金字塔技能可放行，
         // 但必須在其專屬地圖（武陵道場 92502xxxx、金字塔 92602xxxx）。
+        var mulungEnergyReset = false;
         var serverLevel = player.GetSkillLevel(skillId);
         if (serverLevel <= 0 || serverLevel != clientSkillLevel)
         {
@@ -121,6 +135,13 @@ public sealed class SkillService
             {
                 return new SkillCastResult(SkillCastStatus.OutsideEventMap, skillId, skill, null, null);
             }
+
+            // P108：對照 Java chr.mulungEnergyModify(false)——在道場施放武陵技能時能量歸零。
+            if (IsMulungSkill(skillId))
+            {
+                player.ModifyMulungEnergy(increase: false);
+                mulungEnergyReset = true;
+            }
         }
 
         // P106：效果等級取 getLinkedSkill 對應後的技能等級（Java skill.getEffect(getSkillLevel(getLinkedSkill(id)))；
@@ -128,12 +149,12 @@ public sealed class SkillService
         var effect = skill.GetEffect(player.GetSkillLevel(GetLinkedSkillId(skillId)));
         if (effect is null)
         {
-            return new SkillCastResult(SkillCastStatus.NoEffect, skillId, skill, null, null);
+            return new SkillCastResult(SkillCastStatus.NoEffect, skillId, skill, null, null, MulungEnergyReset: mulungEnergyReset);
         }
 
         if (effect.CooldownSeconds > 0 && player.SkillIsCooling(skillId, now))
         {
-            return new SkillCastResult(SkillCastStatus.OnCooldown, skillId, skill, effect, null);
+            return new SkillCastResult(SkillCastStatus.OnCooldown, skillId, skill, effect, null, MulungEnergyReset: mulungEnergyReset);
         }
 
         var applied = player.ApplySkillEffect(effect, now);
@@ -159,7 +180,7 @@ public sealed class SkillService
             ? player.ResetSkillCooldownsExcept(TimeLeapSkillId)
             : null;
 
-        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted, reset);
+        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted, reset, mulungEnergyReset);
     }
 
     /// <summary>
@@ -204,6 +225,33 @@ public sealed class SkillService
     {
         ArgumentNullException.ThrowIfNull(player);
         return IsMulungSkill(skillId) || IsPyramidSkill(skillId) || player.GetSkillLevel(GetLinkedSkillId(skillId)) > 0;
+    }
+
+    /// <summary>
+    /// P108：武陵技能攻擊的能量判斷（呼叫端在套用傷害前呼叫）。近戰／遠程（Java <c>applyAttack</c>）需能量滿 10000；
+    /// 魔法（<c>applyAttackMagic</c>）不檢查能量。兩者都必須在武陵道場（92502xxxx），通過時能量歸零。
+    /// </summary>
+    public static MulungAttackGate CheckMulungAttack(Player player, int skillId, bool requireFullEnergy)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (!IsMulungSkill(skillId))
+        {
+            return MulungAttackGate.NotApplicable;
+        }
+
+        if (requireFullEnergy && player.MulungEnergy < Player.MaxMulungEnergy)
+        {
+            return MulungAttackGate.Blocked;
+        }
+
+        if (player.Character.MapId / 10000 != MulungDojoMapGroup)
+        {
+            return MulungAttackGate.Blocked;
+        }
+
+        player.ModifyMulungEnergy(increase: false);
+        return MulungAttackGate.Consumed;
     }
 
     /// <summary>對照 Java <c>GameConstants.isMulungSkill</c>。</summary>

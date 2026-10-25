@@ -10,6 +10,20 @@ namespace Maple.Adapters.V113.Tests;
 public sealed class ChannelSkillPacketTests
 {
     [Fact]
+    public void MulungEnergy_WritesSessionValueEnergyStrings()
+    {
+        // P108：Java sendString(1, "energy", "10000") → SESSION_VALUE(0x54) + 兩個 MapleAsciiString。
+        Assert.Equal(
+            new byte[]
+            {
+                0x54, 0x00,
+                0x06, 0x00, (byte)'e', (byte)'n', (byte)'e', (byte)'r', (byte)'g', (byte)'y',
+                0x05, 0x00, (byte)'1', (byte)'0', (byte)'0', (byte)'0', (byte)'0',
+            },
+            V113SkillPackets.MulungEnergy(10000));
+    }
+
+    [Fact]
     public void GiveBuff_MatchesJavaGiveBuffShape()
     {
         var packet = V113SkillPackets.GiveBuff(
