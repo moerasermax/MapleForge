@@ -1,6 +1,7 @@
 using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Core.Maps;
+using Maple.Core.Skills;
 using Maple.Core.World;
 
 namespace Maple.Application.Mobs;
@@ -12,7 +13,9 @@ public sealed record MobSkillUse(
     IReadOnlyList<MobHeal>? Heals = null,
     ActiveDisease? Disease = null,
     // P128：召喚出的怪物（已加入 field；呼叫端以技能 SpawnEffect 廣播 SPAWN_MONSTER）。
-    IReadOnlyList<Mob>? Summoned = null);
+    IReadOnlyList<Mob>? Summoned = null,
+    // P129：被驅散的控制者 buff（呼叫端送 CANCEL_BUFF 與 buff 連帶效果）。
+    IReadOnlyList<PlayerBuffCancellation>? DispelledBuffs = null);
 
 /// <summary>P125：怪物補血（Java healMonster 廣播的 oid 與補血量）。</summary>
 public sealed record MobHeal(int ObjectId, int Amount);
@@ -76,8 +79,11 @@ public sealed class MobSkillService
         var heals = skill.SkillId == HealSkillId ? ApplyHeal(field, mob, skill) : null;
         var disease = ApplyDisease(mob, skill, controller, now);
         var summoned = skill.SkillId == SummonSkillId ? Summon(field, mob, skill, controller) : null;
+        var dispelled = skill.SkillId == DispelSkillId && controller is not null && InRange(mob, skill, controller)
+            ? controller.DispelSkillBuffs()
+            : null;
         mob.ConsumeMp(skill.MpCon);
-        return new MobSkillUse(skill, buffs, heals, disease, summoned);
+        return new MobSkillUse(skill, buffs, heals, disease, summoned, dispelled is { Count: > 0 } ? dispelled : null);
     }
 
     /// <summary>
@@ -108,6 +114,11 @@ public sealed class MobSkillService
 
     public const int HealSkillId = 114;
     public const int SummonSkillId = 200;
+    public const int DispelSkillId = 127;
+
+    /// <summary>Java <c>getPlayersInRange</c>（候選只有控制者）：無 lt/rb 時恆在範圍內。</summary>
+    private static bool InRange(Mob mob, MobSkillDefinition skill, Player controller)
+        => skill.Area is not { } area || Contains(BoundingBox(area, mob), controller.Position);
 
     /// <summary>
     /// P128：逐字對照 Java <c>MobSkill.applyEffect</c> case 200：依 summons 清單生怪（<c>getCustomSpawnID</c>：
@@ -203,7 +214,7 @@ public sealed class MobSkillService
             return null;
         }
 
-        if (skill.Area is { } area && !Contains(BoundingBox(area, mob), controller.Position))
+        if (!InRange(mob, skill, controller))
         {
             return null;
         }

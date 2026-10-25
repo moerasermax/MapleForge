@@ -4341,6 +4341,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await BroadcastPacketToOthersAsync(player.Character, V113DiseasePackets.GiveForeignDebuff(player.Character.Id, disease), ct);
         }
 
+        // P129：Java player.dispel() → cancelEffect（CANCEL_BUFF）；連帶移除召喚獸、壓回 HP/MP 上限。
+        if (skillUse?.DispelledBuffs is { } dispelled)
+        {
+            foreach (var cancellation in dispelled)
+            {
+                await session.SendAsync(V113SkillPackets.CancelBuff(cancellation.Stats), ct);
+            }
+
+            await _buffEffects.ApplyAsync(player, field, dispelled, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
+        }
+
         // P125：Java heal(…, broadcast=true) → map.broadcastMessage(healMonster)。
         if (skillUse?.Heals is { } heals)
         {

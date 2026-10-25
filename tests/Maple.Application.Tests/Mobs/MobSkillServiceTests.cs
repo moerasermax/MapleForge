@@ -303,6 +303,33 @@ public sealed class MobSkillServiceTests
         };
     }
 
+    // ── P129：驅散玩家 buff（Java applyEffect case 127 → player.dispel）──
+
+    [Fact]
+    public void TryUseSkill_Dispel_CancelsControllerTimedSkillBuffs()
+    {
+        var (field, mob) = Setup([new MobSkillRef(127, 1)]);
+        var controller = new Player(new Maple.Core.Characters.Character { Id = 9, Name = "Ctrl" }, new Position(0, 0, 0, 0));
+        controller.ApplySkillEffect(TimedBuff(2001002, Maple.Core.Skills.MapleBuffStat.MAGIC_GUARD), T0);
+        controller.ApplySkillEffect(TimedBuff(5110001, Maple.Core.Skills.MapleBuffStat.ENERGY_CHARGE), T0);
+
+        var use = Service(Skill(127)).TryUseSkill(field, mob, T0, controller)!;
+
+        Assert.Equal(2001002, Assert.Single(use.DispelledBuffs!).SourceId);
+        Assert.DoesNotContain(controller.ActiveBuffs, b => b.SourceId == 2001002);
+        Assert.Contains(controller.ActiveBuffs, b => b.SourceId == 5110001); // 能量蓄積不驅散
+    }
+
+    private static Maple.Core.Skills.MapleStatEffect TimedBuff(int sourceId, Maple.Core.Skills.MapleBuffStat stat)
+        => new()
+        {
+            SourceId = sourceId,
+            Level = 1,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = [new Maple.Core.Skills.BuffStatValue(stat, 1)],
+        };
+
     private static Mob AddMob(FieldInstance field, int objectId, short x, short y)
     {
         var mob = new Mob(

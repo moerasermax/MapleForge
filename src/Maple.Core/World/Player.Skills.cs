@@ -252,6 +252,32 @@ public sealed partial class Player
         }
     }
 
+    /// <summary>
+    /// P129：對照 Java <c>MapleCharacter.dispel</c>（怪物技能 127）：取消所有「技能來源、有到期排程、非變身、非能量蓄積」的 buff。
+    /// MapleForge 以 SourceId &gt; 0 視為技能、ExpiresAt 非空視為有排程、同來源含 MORPH 視為變身。
+    /// </summary>
+    public IReadOnlyList<PlayerBuffCancellation> DispelSkillBuffs()
+    {
+        lock (_skillsGate)
+        {
+            var groups = _activeBuffs.Values
+                .GroupBy(static b => b.SourceId)
+                .Where(g => g.Key > 0
+                    && g.Key is not (5110001 or 15100004)
+                    && g.Any(static b => b.ExpiresAt is not null)
+                    && g.All(static b => b.Stat != MapleBuffStat.MORPH))
+                .Select(g => new PlayerBuffCancellation(g.Key, g.Select(static b => b.Stat).Distinct().ToArray()))
+                .ToArray();
+
+            foreach (var stat in groups.SelectMany(static g => g.Stats))
+            {
+                _activeBuffs.Remove(stat);
+            }
+
+            return groups;
+        }
+    }
+
     public IReadOnlyList<PlayerBuffCancellation> CancelExpiredBuffs(DateTimeOffset now)
     {
         lock (_skillsGate)
