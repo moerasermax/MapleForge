@@ -379,6 +379,40 @@ public sealed class SkillServiceTests
         return player;
     }
 
+    // ── P111：GetAttackEffect（Java AttackInfo.getAttackEffect）──
+
+    [Fact]
+    public void GetAttackEffect_LinkedSkill_UsesBaseSkillLevel()
+    {
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(4321000, level: 2, masterLevel: 0);
+        var skill = new MapleSkill
+        {
+            Id = 4321000,
+            Effects = Enumerable.Range(1, 3).Select(l => new MapleStatEffect { SourceId = 4321000, Level = (byte)l }).ToArray(),
+        };
+        var service = new SkillService(new InMemorySkillCatalog(new[] { skill }));
+
+        Assert.Equal((byte)2, service.GetAttackEffect(player, 4321001)!.Level);
+    }
+
+    [Fact]
+    public void GetAttackEffect_UnlearnedSkill_ReturnsNull()
+    {
+        var service = new SkillService(new InMemorySkillCatalog(new[] { MagicGuardSkill() }));
+
+        Assert.Null(service.GetAttackEffect(MakePlayer(mp: 50), 2001002));
+        Assert.Null(service.GetAttackEffect(MakePlayer(mp: 50), 0));
+    }
+
+    [Fact]
+    public void GetAttackEffect_MulungSkill_LevelOneWithoutLearning()
+    {
+        var service = new SkillService(new InMemorySkillCatalog(new[] { EventSkill(1009) }));
+
+        Assert.Equal((byte)1, service.GetAttackEffect(MakePlayer(mp: 50), 1009)!.Level);
+    }
+
     private static MapleSkill EventSkill(int skillId)
         => new()
         {

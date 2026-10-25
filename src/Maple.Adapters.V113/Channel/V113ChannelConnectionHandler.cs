@@ -3492,7 +3492,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CombatAttackResult result;
         lock (field)
         {
-            result = _combatService.ApplyAttack(field, player, attack.ToCombatAttack());
+            result = _combatService.ApplyAttack(
+                field,
+                player,
+                attack.ToCombatAttack() with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId) });
         }
 
         if (_log.IsEnabled(LogLevel.Debug))
@@ -3562,10 +3565,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         RangedAttackApplyResult result;
         lock (field)
         {
+            var rangedAttack = attack.ToCombatRangedAttack();
             result = _rangedMagicCombatService.ApplyRangedAttack(
                 field,
                 player,
-                attack.ToCombatRangedAttack(),
+                rangedAttack with
+                {
+                    Attack = rangedAttack.Attack with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId) },
+                },
                 GetRangedConsumables(player));
         }
 
@@ -3644,7 +3651,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CombatAttackResult result;
         lock (field)
         {
-            result = _rangedMagicCombatService.ApplyMagicAttack(field, player, attack.ToCombatAttack());
+            result = _rangedMagicCombatService.ApplyMagicAttack(
+                field,
+                player,
+                attack.ToCombatAttack() with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId) });
         }
 
         var attackBroadcast = V113RangedMagicAttackPackets.MagicAttackBroadcast(
@@ -3801,6 +3811,19 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             if (hit.MulungEnergyAfter is { } energy)
             {
                 await session.SendAsync(V113SkillPackets.MulungEnergy(energy), ct);
+            }
+
+            // P111：Java applyStatus → applyMonsterStatus（廣播全圖，含控制者）。
+            if (hit.AppliedStatuses is { } statuses)
+            {
+                foreach (var status in statuses)
+                {
+                    await BroadcastPacketToMapAsync(
+                        player.Character,
+                        session,
+                        V113MonsterStatusCodec.ApplyMonsterStatus(hit.ObjectId, [status]),
+                        ct);
+                }
             }
 
             if (hit.Killed)

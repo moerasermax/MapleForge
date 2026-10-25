@@ -1,10 +1,12 @@
 using Maple.Application.Maps;
 using Maple.Application.Drops;
+using Maple.Core.Skills;
 using Maple.Core.World;
 
 namespace Maple.Application.Combat;
 
-public sealed record CombatAttack(IReadOnlyList<CombatAttackTarget> Targets);
+/// <param name="SkillEffect">P111：攻擊技能效果（Java <c>getAttackEffect</c>）；命中存活怪物時依其 MonsterStatuses 附帶異常狀態。</param>
+public sealed record CombatAttack(IReadOnlyList<CombatAttackTarget> Targets, MapleStatEffect? SkillEffect = null);
 
 public sealed record CombatAttackTarget(int ObjectId, IReadOnlyList<int> DamageLines)
 {
@@ -25,7 +27,9 @@ public sealed record CombatMobHit(
     // P107：命中後的血條顯示快照（傷害 > 0 時才有；對照 Java MapleMonster.damage 的 HPDisplayType 分派）。
     CombatMobHpDisplay? HpDisplay = null,
     // P108：此次命中後攻擊者的武陵能量（Java HPDisplayType -1/2 存活命中時 mulungEnergyModify(true)）；null = 未變動。
-    short? MulungEnergyAfter = null);
+    short? MulungEnergyAfter = null,
+    // P111：此次命中成功套用的怪物異常狀態（呼叫端逐一廣播 APPLY_MONSTER_STATUS）。
+    IReadOnlyList<MonsterStatusEffect>? AppliedStatuses = null);
 
 /// <summary>
 /// 怪物血條顯示所需快照（在戰鬥鎖內擷取）：顯示類型、血量、王血條顏色、最近攻擊者。
@@ -58,12 +62,18 @@ public sealed class CombatService
     private readonly MapService _maps;
     private readonly IMobKillHandler? _mobKillHandler;
     private readonly TimeProvider _timeProvider;
+    private readonly Random _random;
 
-    public CombatService(MapService maps, IMobKillHandler? mobKillHandler = null, TimeProvider? timeProvider = null)
+    public CombatService(
+        MapService maps,
+        IMobKillHandler? mobKillHandler = null,
+        TimeProvider? timeProvider = null,
+        Random? random = null)
     {
         _maps = maps;
         _mobKillHandler = mobKillHandler;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _random = random ?? Random.Shared;
     }
 
     /// <summary>
@@ -195,6 +205,10 @@ public sealed class CombatService
                 ? attacker.ModifyMulungEnergy(increase: true)
                 : null;
 
+            var appliedStatuses = result.AppliedDamage > 0 && !result.Killed
+                ? ApplySkillStatuses(mob, attack.SkillEffect, attacker, now)
+                : null;
+
             var rewards = result.Killed
                 ? _mobKillHandler?.OnMobKilled(field, attacker, mob)
                 : null;
@@ -217,7 +231,8 @@ public sealed class CombatService
                         mob.Stats.TagBgColor,
                         mob.GetRecentAttackers(now))
                     : null,
-                mulungEnergyAfter));
+                mulungEnergyAfter,
+                appliedStatuses));
 
             if (result.Killed)
             {
@@ -228,6 +243,46 @@ public sealed class CombatService
 
         return new CombatAttackResult(hits);
     }
+
+    /// <summary>
+    /// P111：對照 Java <c>DamageParse.applyAttack</c>／<c>applyAttackMagic</c> 尾段——命中且怪物仍存活時，
+    /// 技能有 monsterStatus 且 <c>makeChanceResult</c> 成功（每隻怪各擲一次）就逐一 <c>applyStatus</c>。
+    /// 持續時間＝技能 duration（≥ 2e9 改 5000，同 Java）；毒／影網／忍者伏擊的持續傷害數值留待 P113，暫不套用。
+    /// </summary>
+    private IReadOnlyList<MonsterStatusEffect>? ApplySkillStatuses(Mob mob, MapleStatEffect? effect, Player attacker, DateTimeOffset now)
+    {
+        if (effect is null || effect.MonsterStatuses.Count == 0 || !MakeChanceResult(effect.Prop))
+        {
+            return null;
+        }
+
+        var duration = effect.DurationMilliseconds >= 2_000_000_000 ? 5000 : Math.Max(0, effect.DurationMilliseconds);
+        var applied = new List<MonsterStatusEffect>();
+        foreach (var (status, value) in effect.MonsterStatuses.OrderBy(static p => (int)p.Key))
+        {
+            if (status is MonsterStatus.Poison or MonsterStatus.NinjaAmbush or MonsterStatus.ShadowWeb)
+            {
+                continue;
+            }
+
+            var statusEffect = new MonsterStatusEffect(
+                status,
+                value,
+                effect.SourceId,
+                null,
+                now.AddMilliseconds(duration),
+                FromCharacterId: attacker.Character.Id);
+            if (mob.TryApplyStatus(statusEffect) == MonsterStatusApplyResult.Applied)
+            {
+                applied.Add(statusEffect);
+            }
+        }
+
+        return applied.Count > 0 ? applied : null;
+    }
+
+    /// <summary>Java <c>MapleStatEffect.makeChanceResult</c>：<c>prop == 100 || nextInt(99) &lt; prop</c>。</summary>
+    private bool MakeChanceResult(int prop) => prop == 100 || _random.Next(99) < prop;
 
     /// <summary>Kill a mob without EXP/drop rewards. Used by Java MonsterBomb self-destruction path.</summary>
     public CombatMobKillResult KillMobWithoutRewards(FieldInstance field, int mobObjectId, byte animation)

@@ -1,3 +1,5 @@
+using Maple.Core.Skills;
+using Maple.Application.Skills;
 using Maple.Application.Combat;
 using Maple.Application.Drops;
 using Maple.Application.Maps;
@@ -377,6 +379,125 @@ public sealed class CombatServiceTests
 
         Assert.Equal(expected, hit.MulungEnergyAfter);
         Assert.Equal(expected ?? 0, player.MulungEnergy);
+    }
+
+    // ── P111：技能附帶怪物異常狀態（對照 Java DamageParse.applyAttack 尾段）──
+
+    [Fact]
+    public void ApplyAttack_SkillWithStun_AppliesStatusWithDuration()
+    {
+        var now = new DateTimeOffset(2026, 10, 25, 0, 0, 0, TimeSpan.Zero);
+        var service = new CombatService(new MapService(new EmptyDataProvider()), timeProvider: new FakeTimeProvider(now));
+        var (field, player, mob) = MakeFieldWithMob(hp: 100);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])],
+            StatusEffect(1111005, MonsterStatus.Stun, 1, durationMs: 3000))).Hits);
+
+        var status = Assert.Single(hit.AppliedStatuses!);
+        Assert.Equal(MonsterStatus.Stun, status.Status);
+        Assert.Equal(1111005, status.SkillId);
+        Assert.Equal(now.AddSeconds(3), status.ExpiresAt);
+        Assert.True(mob.Statuses.ContainsKey(MonsterStatus.Stun));
+    }
+
+    [Fact]
+    public void ApplyAttack_KillingBlow_DoesNotApplyStatus()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var (field, player, mob) = MakeFieldWithMob(hp: 5);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])],
+            StatusEffect(1111005, MonsterStatus.Stun, 1))).Hits);
+
+        Assert.Null(hit.AppliedStatuses);
+    }
+
+    [Fact]
+    public void ApplyAttack_ChanceFails_DoesNotApplyStatus()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()), random: new FixedRandom(50));
+        var (field, player, mob) = MakeFieldWithMob(hp: 100);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])],
+            StatusEffect(2201004, MonsterStatus.Freeze, 1, prop: 30))).Hits);
+
+        Assert.Null(hit.AppliedStatuses);
+    }
+
+    [Fact]
+    public void ApplyAttack_ChanceSucceeds_AppliesStatus()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()), random: new FixedRandom(29));
+        var (field, player, mob) = MakeFieldWithMob(hp: 100);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])],
+            StatusEffect(2201004, MonsterStatus.Freeze, 1, prop: 30))).Hits);
+
+        Assert.Equal(MonsterStatus.Freeze, Assert.Single(hit.AppliedStatuses!).Status);
+    }
+
+    [Fact]
+    public void ApplyAttack_PoisonStatus_DeferredUntilDamageOverTime()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var (field, player, mob) = MakeFieldWithMob(hp: 100);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])],
+            StatusEffect(2101005, MonsterStatus.Poison, 1))).Hits);
+
+        Assert.Null(hit.AppliedStatuses);
+    }
+
+    [Theory]
+    [InlineData(1111005, MonsterStatus.Stun, 1)]
+    [InlineData(2201004, MonsterStatus.Freeze, 1)]
+    [InlineData(2101003, MonsterStatus.Speed, 7)]
+    [InlineData(2311005, MonsterStatus.Doom, 1)]
+    [InlineData(4121004, MonsterStatus.NinjaAmbush, 250)]
+    [InlineData(3221006, MonsterStatus.Acc, 7)]
+    public void WzSkillCatalog_GetMonsterStatuses_MatchesJavaSwitch(int skillId, MonsterStatus status, int value)
+    {
+        var map = WzSkillCatalog.GetMonsterStatuses(skillId, x: 7, y: 9, damage: 250);
+
+        Assert.Equal(value, map[status]);
+    }
+
+    [Fact]
+    public void WzSkillCatalog_GetMonsterStatuses_Threaten_ThreeStatuses()
+    {
+        var map = WzSkillCatalog.GetMonsterStatuses(4121003, x: 7, y: 9, damage: 100);
+
+        Assert.Equal(new[] { MonsterStatus.Wdef, MonsterStatus.Mdef, MonsterStatus.Showdown }, map.Keys.Order());
+    }
+
+    private static MapleStatEffect StatusEffect(int skillId, MonsterStatus status, int value, int durationMs = 1000, int prop = 100)
+        => new()
+        {
+            SourceId = skillId,
+            Level = 1,
+            DurationMilliseconds = durationMs,
+            Prop = prop,
+            MonsterStatuses = new Dictionary<MonsterStatus, int> { [status] = value },
+        };
+
+    private static (FieldInstance Field, Player Player, Mob Mob) MakeFieldWithMob(int hp)
+    {
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = MakeMob(objectId: 100001, hp: hp);
+        field.Add(player);
+        field.Add(mob);
+        return (field, player, mob);
+    }
+
+    private sealed class FixedRandom(int value) : Random
+    {
+        public override int Next(int maxValue) => value;
     }
 
     private static Player MakePlayer(short hp = 50)

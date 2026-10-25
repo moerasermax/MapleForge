@@ -1,3 +1,4 @@
+using Maple.Core.World;
 using System.Collections.Concurrent;
 using Maple.Core.Data;
 using Maple.Core.Skills;
@@ -133,6 +134,12 @@ public sealed class WzSkillCatalog : ISkillCatalog
         }
 
         AddSkillSpecificStatups(skillId, x, y, prop, statups);
+        var damage = GetInt(source, "damage", 100);
+        var monsterStatuses = GetMonsterStatuses(skillId, x, y, damage);
+        if (IsFreezingSkill(skillId))
+        {
+            duration *= 2; // Java：freezing skills are a little strange
+        }
 
         if (IsMonsterRiding(skillId))
         {
@@ -168,6 +175,9 @@ public sealed class WzSkillCatalog : ISkillCatalog
             IsCombo = skillId is 1111002 or 11111001 or 21000000,
             IsFinalAttack = IsFinalAttackSkill(skillId),
             IsFieldObjectSkill = IsFieldObjectSkill(skillId),
+            Prop = prop,
+            Damage = damage,
+            MonsterStatuses = monsterStatuses,
         };
     }
 
@@ -223,6 +233,63 @@ public sealed class WzSkillCatalog : ISkillCatalog
             or 32101002 or 32110000 or 32101003 or 32120001 or 35101007 or 35121006
             or 35001001 or 35101009 or 35111007 or 35121005 or 35121013 or 35101002
             or 33111003 or 1211009 or 1111007 or 1311007;
+
+    /// <summary>P111：對照 Java <c>MapleStatEffect.loadFromData</c> 的 monsterStatus 分支（逐 skillId）。</summary>
+    public static IReadOnlyDictionary<MonsterStatus, int> GetMonsterStatuses(int skillId, int x, int y, int damage)
+    {
+        var map = new Dictionary<MonsterStatus, int>();
+        switch (skillId)
+        {
+            case 4001002 or 14001002 or 1201006:
+                map[MonsterStatus.Watk] = x;
+                map[MonsterStatus.Wdef] = y;
+                break;
+            case 5221009:
+                map[MonsterStatus.Hypnotize] = 1;
+                break;
+            case 1211002 or 1111008 or 4211002 or 3101005 or 1111005 or 1111006 or 4221007 or 5101002 or 5101003
+                or 5121004 or 5121005 or 5121007 or 5201004 or 4121008 or 4201004 or 5111002 or 15101005
+                or 3211005 or 3111005:
+                map[MonsterStatus.Stun] = 1;
+                break;
+            case 4221003 or 4121003:
+                map[MonsterStatus.Showdown] = x;
+                map[MonsterStatus.Mdef] = x;
+                map[MonsterStatus.Wdef] = x;
+                break;
+            case 2201004 or 2211002 or 3211003 or 2211006 or 2221007 or 5211005 or 2121006 or 21120006
+                or 3221005 or 2121005:
+                map[MonsterStatus.Freeze] = 1;
+                break;
+            case 2101003 or 2201003 or 12101001 or 3121007:
+                map[MonsterStatus.Speed] = x;
+                break;
+            case 2101005 or 2111006 or 2121003 or 2221003 or 3111003 or 5211004:
+                map[MonsterStatus.Poison] = 1;
+                break;
+            case 4121004 or 4221004:
+                map[MonsterStatus.NinjaAmbush] = damage;
+                break;
+            case 2311005:
+                map[MonsterStatus.Doom] = 1;
+                break;
+            case 2211004 or 2111004 or 12111002:
+                map[MonsterStatus.Seal] = 1;
+                break;
+            case 4111003 or 14111001:
+                map[MonsterStatus.ShadowWeb] = 1;
+                break;
+            case 3221006:
+                map[MonsterStatus.Acc] = x;
+                break;
+        }
+
+        return map;
+    }
+
+    /// <summary>Java 在 FREEZE 分支把 duration 乘 2 的技能（召喚獸 3221005/2121005 不在此列）。</summary>
+    private static bool IsFreezingSkill(int skillId)
+        => skillId is 2201004 or 2211002 or 3211003 or 2211006 or 2221007 or 5211005 or 2121006 or 21120006;
 
     private static void AddSkillSpecificStatups(int skillId, int x, int y, int prop, List<BuffStatValue> statups)
     {

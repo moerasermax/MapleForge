@@ -59,6 +59,15 @@ public sealed class MapleStatEffect
 
     public bool IsFieldObjectSkill { get; init; }
 
+    /// <summary>WZ <c>prop</c>（預設 100；Java <c>makeChanceResult</c>：100 或 nextInt(99) &lt; prop）。</summary>
+    public int Prop { get; init; } = 100;
+
+    /// <summary>WZ <c>damage</c>（預設 100）。</summary>
+    public int Damage { get; init; } = 100;
+
+    /// <summary>P111：攻擊命中時附帶的怪物異常狀態與數值（Java <c>MapleStatEffect.monsterStatus</c>）。</summary>
+    public IReadOnlyDictionary<World.MonsterStatus, int> MonsterStatuses { get; init; } = new Dictionary<World.MonsterStatus, int>();
+
     public bool HasBuffStats => Statups.Count > 0;
 
     public DateTimeOffset? GetExpiresAt(DateTimeOffset startedAt)

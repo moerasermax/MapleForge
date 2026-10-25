@@ -216,6 +216,30 @@ public sealed class SkillService
     }
 
     /// <summary>
+    /// P111：攻擊技能效果（對照 Java <c>AttackInfo.getAttackEffect</c>）：武陵/金字塔技能取第 1 級，
+    /// 其他取 <c>getLinkedSkill</c> 對應技能的等級；技能 0、查無技能或等級 0 回 null。
+    /// </summary>
+    public MapleStatEffect? GetAttackEffect(Player player, int skillId)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (skillId == 0)
+        {
+            return null;
+        }
+
+        var linkedSkillId = GetLinkedSkillId(skillId);
+        var skill = _skills.GetSkill(linkedSkillId);
+        if (skill is null)
+        {
+            return null;
+        }
+
+        var level = IsMulungSkill(skillId) || IsPyramidSkill(skillId) ? 1 : player.GetSkillLevel(linkedSkillId);
+        return level <= 0 ? null : skill.GetEffect(level);
+    }
+
+    /// <summary>
     /// P077：攻擊技能是否可用（對照 Java <c>AttackInfo.getAttackEffect</c>：武陵/金字塔技能強制視為等級 1；
     /// 其他技能以 <c>getLinkedSkill</c> 對應後的等級判斷，<c>skillLevel &lt;= 0</c> 回 null → 整次攻擊丟棄）。
     /// 技能 ID 0（普攻）一樣會得到 false，近戰/遠程呼叫端應先略過 0（Java 只在 <c>attack.skill != 0</c> 時檢查），
