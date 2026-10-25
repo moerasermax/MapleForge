@@ -7,7 +7,7 @@ using Maple.Core.World;
 
 namespace Maple.Application.Tests.Drops;
 
-/// <summary>P102：怪物掉落的裝備帶資料檔預設數值（Java 此處另有 randomizeStats，留待 P103）。</summary>
+/// <summary>P102：怪物掉落的裝備帶資料檔預設數值；P103：再套 Java randomizeStats 浮動。</summary>
 public sealed class DropServiceEquipTemplateTests
 {
     private const int Axe = 1312004;
@@ -22,6 +22,17 @@ public sealed class DropServiceEquipTemplateTests
         Assert.Equal(Axe, equip.ItemId);
         Assert.Equal((short)17, equip.Watk);
         Assert.Equal((byte)7, equip.UpgradeSlots);
+    }
+
+    [Fact]
+    public void OnMobKilled_EquipDrop_RandomizesTemplateStats()
+    {
+        var low = Assert.IsType<Equip>(KillAndGetDropItem(MakeService(new FakeTemplates(), new FixedRandom(0.0))));
+        var high = Assert.IsType<Equip>(KillAndGetDropItem(MakeService(new FakeTemplates(), new FixedRandom(0.999))));
+
+        Assert.Equal((short)15, low.Watk);
+        Assert.Equal((short)19, high.Watk);
+        Assert.Equal((byte)7, low.UpgradeSlots);
     }
 
     [Fact]
@@ -52,13 +63,18 @@ public sealed class DropServiceEquipTemplateTests
         return rewards.SpawnedDrops.First(d => !d.IsMeso).Item;
     }
 
-    private static DropService MakeService(IEquipTemplateProvider? templates)
+    private static DropService MakeService(IEquipTemplateProvider? templates, Random? random = null)
     {
         var catalog = new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>
         {
             [100100] = [new MonsterDropEntry(Axe, 999_999, 1, 1)],
         });
-        return new DropService(catalog, equipTemplates: templates);
+        return new DropService(catalog, equipTemplates: templates, random: random ?? new FixedRandom(0.5));
+    }
+
+    private sealed class FixedRandom(double value) : Random
+    {
+        public override double NextDouble() => value;
     }
 
     private sealed class FakeTemplates : IEquipTemplateProvider

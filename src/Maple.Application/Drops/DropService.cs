@@ -66,19 +66,22 @@ public sealed class DropService : IMobKillHandler
     private readonly TimeProvider _timeProvider;
     private readonly IPartyRegistry? _parties;
     private readonly IEquipTemplateProvider? _equipTemplates;
+    private readonly Random _random;
 
     public DropService(
         IMonsterDropCatalog catalog,
         DropServiceOptions? options = null,
         TimeProvider? timeProvider = null,
         IPartyRegistry? parties = null,
-        IEquipTemplateProvider? equipTemplates = null)
+        IEquipTemplateProvider? equipTemplates = null,
+        Random? random = null)
     {
         _catalog = catalog;
         _options = options ?? new DropServiceOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _parties = parties;
         _equipTemplates = equipTemplates;
+        _random = random ?? Random.Shared;
     }
 
     public MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob)
@@ -360,8 +363,9 @@ public sealed class DropService : IMobKillHandler
         var quantity = GetQuantity(entry);
         if (Player.InventoryTypeOf(entry.ItemId) == InventoryType.Equip)
         {
-            // 對照 Java getEquipById：帶 WZ 預設數值（Java 此處另有 randomizeStats ±10%，留待 P103）。
-            return _equipTemplates?.Create(entry.ItemId) ?? new Equip { ItemId = entry.ItemId, Quantity = 1 };
+            // 對照 Java MapleMap.dropFromMonster：randomizeStats(getEquipById)——WZ 預設數值再 ±10% 浮動（P103）。
+            var equip = _equipTemplates?.Create(entry.ItemId) ?? new Equip { ItemId = entry.ItemId, Quantity = 1 };
+            return EquipStatRandomizer.Randomize(equip, _random);
         }
 
         return new Item { ItemId = entry.ItemId, Quantity = quantity };
