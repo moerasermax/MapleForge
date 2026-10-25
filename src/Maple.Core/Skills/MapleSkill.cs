@@ -12,6 +12,9 @@ public sealed class MapleSkill
 
     public bool IsTimeLimited { get; init; }
 
+    /// <summary>P114：WZ <c>elemAttr</c> 首字元（Java <c>Skill.element</c>）。</summary>
+    public World.Element Element { get; init; } = World.Element.Neutral;
+
     public IReadOnlyList<MapleStatEffect> Effects { get; init; } = Array.Empty<MapleStatEffect>();
 
     public int MaxLevel => Effects.Count;

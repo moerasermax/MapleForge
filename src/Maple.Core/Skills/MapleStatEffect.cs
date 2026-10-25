@@ -68,6 +68,9 @@ public sealed class MapleStatEffect
     /// <summary>P111：攻擊命中時附帶的怪物異常狀態與數值（Java <c>MapleStatEffect.monsterStatus</c>）。</summary>
     public IReadOnlyDictionary<World.MonsterStatus, int> MonsterStatuses { get; init; } = new Dictionary<World.MonsterStatus, int>();
 
+    /// <summary>P114：來源技能屬性（Java <c>Skill.element</c>：WZ 技能節點 <c>elemAttr</c> 首字元，無則 Neutral）。</summary>
+    public World.Element SourceElement { get; init; } = World.Element.Neutral;
+
     /// <summary>P113：對照 Java <c>MapleStatEffect.isPoison</c>（列舉技能且為技能效果）——中毒狀態是否計算持續傷害。</summary>
     public bool IsPoison => IsSkill && SourceId is 2111003 or 2101005 or 2111006 or 2121003 or 2221003
         or 3111003 or 5211004 or 12111005 or 22161002;

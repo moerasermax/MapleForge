@@ -130,7 +130,8 @@ public sealed class MapService
             FfaLoot: ffaLoot,
             TagColor: tagColor,
             TagBgColor: tagBgColor,
-            NoDoom: GetInt(info, "noDoom", 0) > 0);
+            NoDoom: GetInt(info, "noDoom", 0) > 0,
+            Resistances: ElementCodec.DecodeResistances(GetString(info, "elemAttr")));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

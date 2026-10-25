@@ -298,7 +298,7 @@ public sealed class CombatService
                 now.AddMilliseconds(duration),
                 poisonDamage,
                 attacker.Character.Id);
-            if (mob.TryApplyStatus(statusEffect) == MonsterStatusApplyResult.Applied)
+            if (mob.TryApplyStatus(statusEffect, sourceElement: effect.SourceElement) == MonsterStatusApplyResult.Applied)
             {
                 applied.Add(statusEffect);
             }

@@ -37,7 +37,9 @@ public sealed class WzSkillCatalog : ISkillCatalog
         }
 
         var isBuff = IsBuffSkill(skillId, skillNode);
-        var effects = LoadEffects(skillId, skillNode["level"], isBuff);
+        var elemAttr = GetString(skillNode, "elemAttr");
+        var element = string.IsNullOrEmpty(elemAttr) ? Element.Neutral : ElementCodec.FromChar(elemAttr[0]) ?? Element.Neutral;
+        var effects = LoadEffects(skillId, skillNode["level"], isBuff, element);
         var masterLevel = GetInt(skillNode, "masterLevel", 0);
 
         return new MapleSkill
@@ -47,11 +49,12 @@ public sealed class WzSkillCatalog : ISkillCatalog
             MasterLevel = masterLevel,
             IsChargeSkill = skillNode["keydown"] is not null,
             IsTimeLimited = GetInt(skillNode, "timeLimited", 0) > 0,
+            Element = element,
             Effects = effects,
         };
     }
 
-    private IReadOnlyList<MapleStatEffect> LoadEffects(int skillId, IDataNode? levelRoot, bool isBuff)
+    private IReadOnlyList<MapleStatEffect> LoadEffects(int skillId, IDataNode? levelRoot, bool isBuff, Element element)
     {
         if (levelRoot is null)
         {
@@ -62,13 +65,13 @@ public sealed class WzSkillCatalog : ISkillCatalog
         foreach (var (name, levelNode) in levelRoot.Children.OrderBy(static p => ParseInt(p.Key, 0)))
         {
             var level = (byte)Math.Clamp(ParseInt(name, effects.Count + 1), byte.MinValue, byte.MaxValue);
-            effects.Add(LoadEffect(skillId, levelNode, isBuff, level));
+            effects.Add(LoadEffect(skillId, levelNode, isBuff, level, element));
         }
 
         return effects;
     }
 
-    private MapleStatEffect LoadEffect(int skillId, IDataNode source, bool isBuff, byte level)
+    private MapleStatEffect LoadEffect(int skillId, IDataNode source, bool isBuff, byte level, Element element)
     {
         var duration = GetInt(source, "time", -1);
         if (duration > -1)
@@ -178,6 +181,7 @@ public sealed class WzSkillCatalog : ISkillCatalog
             Prop = prop,
             Damage = damage,
             MonsterStatuses = monsterStatuses,
+            SourceElement = element,
         };
     }
 

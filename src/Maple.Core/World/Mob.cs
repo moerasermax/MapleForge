@@ -24,7 +24,14 @@ public sealed record MobStats(
     byte TagColor = 0,
     byte TagBgColor = 0,
     // P110：WZ info/noDoom（Java MapleMonsterStats.isNoDoom）。
-    bool NoDoom = false);
+    bool NoDoom = false,
+    // P114：WZ info/elemAttr 解析後的屬性抗性（null = 全 Normal）。
+    IReadOnlyDictionary<Element, ElementalEffectiveness>? Resistances = null)
+{
+    /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
+    public ElementalEffectiveness GetEffectiveness(Element element)
+        => Resistances is not null && Resistances.TryGetValue(element, out var value) ? value : ElementalEffectiveness.Normal;
+}
 
 /// <summary>單次怪物傷害套用結果。</summary>
 public sealed record MobDamageResult(
@@ -128,13 +135,19 @@ public sealed class Mob : IFieldObject
     /// 友方怪擋 Stun/Speed/Poison/VenomousWeapon；毒類需有來源技能效果；同狀態已在 → AlreadyActive。
     /// 屬性抗性（Java <c>getEffectiveness</c>）由呼叫端先判斷。
     /// </summary>
-    public MonsterStatusApplyResult TryApplyStatus(MonsterStatusEffect effect, bool hasSourceEffect = true)
+    /// <param name="sourceElement">P114：來源技能的屬性（Java <c>SkillFactory.getSkill(status.getSkill())</c> 存在時才檢查）；null 不檢查。</param>
+    public MonsterStatusApplyResult TryApplyStatus(MonsterStatusEffect effect, bool hasSourceEffect = true, Element? sourceElement = null)
     {
         ArgumentNullException.ThrowIfNull(effect);
 
         if (!IsAlive)
         {
             return MonsterStatusApplyResult.MobDead;
+        }
+
+        if (sourceElement is { } element && IsElementallyResistant(element, effect.SkillId))
+        {
+            return MonsterStatusApplyResult.Immune;
         }
 
         if (IsImmuneTo(effect.Status, hasSourceEffect))
@@ -211,6 +224,27 @@ public sealed class Mob : IFieldObject
         }
 
         return ticks;
+    }
+
+    /// <summary>
+    /// 對照 Java <c>applyStatus</c> 開頭：技能屬性對此怪 Immune/Strong → 擋；火毒合擊（2111006）另查毒、
+    /// 冰雷合擊（2211006）另查冰（Immune/Strong 擋）；飛毒殺（4120005/4220005/14110004）毒屬性 Weak 反而擋（照 Java）。
+    /// 讀模板抗性（Java 用 <c>stats.getEffectiveness</c>，不經 Doom 例外）。
+    /// </summary>
+    private bool IsElementallyResistant(Element element, int skillId)
+    {
+        if (Stats.GetEffectiveness(element) is ElementalEffectiveness.Immune or ElementalEffectiveness.Strong)
+        {
+            return true;
+        }
+
+        return skillId switch
+        {
+            2111006 => Stats.GetEffectiveness(Element.Poison) is ElementalEffectiveness.Immune or ElementalEffectiveness.Strong,
+            2211006 => Stats.GetEffectiveness(Element.Ice) is ElementalEffectiveness.Immune or ElementalEffectiveness.Strong,
+            4120005 or 4220005 or 14110004 => Stats.GetEffectiveness(Element.Poison) == ElementalEffectiveness.Weak,
+            _ => false,
+        };
     }
 
     private bool IsImmuneTo(MonsterStatus status, bool hasSourceEffect)
