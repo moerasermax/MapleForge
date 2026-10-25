@@ -7,7 +7,7 @@ namespace Maple.Application.Items;
 /// <summary>
 /// Item-use metadata backed by Item.wz.
 /// </summary>
-public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog
+public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog, IScrollCatalog
 {
     private readonly IDataProvider _data;
 
@@ -64,6 +64,45 @@ public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog
             Mp: GetInt(spec, "mp") ?? 0,
             HpRate: GetInt(spec, "hpR") ?? 0,
             MpRate: GetInt(spec, "mpR") ?? 0);
+    }
+
+    /// <summary>
+    /// P121：升級卷軸（204xxxx）數值（對照 Java <c>getEquipStats(scrollId)</c>：info 的 success、cursed、inc*）。
+    /// 特殊卷軸（混沌、恢復、裝備強化、潛能、釘鞋/防寒）的專屬效果尚未移植，目前只取通用數值。
+    /// </summary>
+    public ScrollEffect? GetScroll(int scrollId)
+    {
+        if (scrollId / 10000 != 204)
+        {
+            return null;
+        }
+
+        var info = GetItemNode(scrollId)?["info"];
+        if (info is null)
+        {
+            return null;
+        }
+
+        short Inc(string key) => (short)Math.Clamp(GetInt(info, "inc" + key) ?? 0, short.MinValue, short.MaxValue);
+
+        return new ScrollEffect(
+            scrollId,
+            SuccessRate: GetInt(info, "success") ?? 0,
+            CurseRate: GetInt(info, "cursed") ?? 0,
+            Str: Inc("STR"),
+            Dex: Inc("DEX"),
+            Int: Inc("INT"),
+            Luk: Inc("LUK"),
+            Hp: Inc("MHP"),
+            Mp: Inc("MMP"),
+            Watk: Inc("PAD"),
+            Matk: Inc("MAD"),
+            Wdef: Inc("PDD"),
+            Mdef: Inc("MDD"),
+            Acc: Inc("ACC"),
+            Avoid: Inc("EVA"),
+            Speed: Inc("Speed"),
+            Jump: Inc("Jump"));
     }
 
     private IDataNode? GetItemNode(int itemId)

@@ -28,19 +28,21 @@ public sealed class ScrollService
     public const int WhiteScrollItemId = 2340000;
 
     private readonly IScrollCatalog _scrolls;
+    private readonly Random _random;
 
-    public ScrollService(IScrollCatalog scrolls)
+    /// <param name="random">P121：伺服器端亂數（Java Randomizer）。原本以客戶端送來的 tick 當種子，結果可被客戶端操控。</param>
+    public ScrollService(IScrollCatalog scrolls, Random? random = null)
     {
         ArgumentNullException.ThrowIfNull(scrolls);
         _scrolls = scrolls;
+        _random = random ?? Random.Shared;
     }
 
     public ScrollUseResult UseScroll(
         Player player,
         short scrollSlot,
         short equipSlot,
-        bool whiteScroll,
-        int randomSeed)
+        bool whiteScroll)
     {
         ArgumentNullException.ThrowIfNull(player);
 
@@ -82,7 +84,7 @@ public sealed class ScrollService
         }
 
         var equip = target.Equip;
-        var result = ResolveScrollResult(equip, scroll, randomSeed);
+        var result = ResolveScrollResult(equip, scroll);
         var destroyed = false;
 
         switch (result)
@@ -137,25 +139,23 @@ public sealed class ScrollService
             EquipDestroyed: false,
             InventoryMutations: Array.Empty<InventoryQuantityMutation>());
 
-    private static ScrollResult ResolveScrollResult(Equip equip, ScrollEffect scroll, int randomSeed)
+    /// <summary>
+    /// 對照 Java <c>scrollEquipWithId</c>：成功 <c>nextInt(100) &lt;= success</c>（含等號）；失敗時另擲
+    /// <c>nextInt(99) &lt; cursed</c> 決定是否毀損（升級欄位遞減由呼叫端處理，白卷不扣）。
+    /// </summary>
+    private ScrollResult ResolveScrollResult(Equip equip, ScrollEffect scroll)
     {
         if (equip.UpgradeSlots == 0)
         {
             return ScrollResult.Fail;
         }
 
-        var roll = randomSeed % 100;
-        if (roll < 0)
-        {
-            roll += 100;
-        }
-
-        if (roll < scroll.SuccessRate)
+        if (_random.Next(100) <= scroll.SuccessRate)
         {
             return ScrollResult.Success;
         }
 
-        return scroll.Cursed ? ScrollResult.Curse : ScrollResult.Fail;
+        return scroll.CurseRate > 0 && _random.Next(99) < scroll.CurseRate ? ScrollResult.Curse : ScrollResult.Fail;
     }
 
     private static void ApplySuccess(Equip equip, ScrollEffect scroll)

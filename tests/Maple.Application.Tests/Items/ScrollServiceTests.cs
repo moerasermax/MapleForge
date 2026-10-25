@@ -7,15 +7,18 @@ namespace Maple.Application.Tests.Items;
 
 public sealed class ScrollServiceTests
 {
+    // P121：伺服器端亂數序列（第一個＝成功判定 nextInt(100)，第二個＝詛咒判定 nextInt(99)）。
+    private static readonly int[] Rolls = [99, 0];
+
     [Fact]
     public void UseScroll_HundredPercentScroll_IncreasesStatsAndConsumesSlot()
     {
         var player = CreatePlayer(
             useItems: [UseItem(2040200, slot: 1, quantity: 2)],
             equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
-        var service = new ScrollService(new HardcodedScrollCatalog());
+        var service = new ScrollService(new HardcodedScrollCatalog(), new SequenceRandom(Rolls));
 
-        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false, randomSeed: 99);
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false);
 
         Assert.True(result.Applied);
         Assert.Equal(ScrollResult.Success, result.Result);
@@ -32,9 +35,9 @@ public sealed class ScrollServiceTests
         var player = CreatePlayer(
             useItems: [UseItem(2040201, slot: 1)],
             equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
-        var service = new ScrollService(new HardcodedScrollCatalog());
+        var service = new ScrollService(new HardcodedScrollCatalog(), new SequenceRandom(Rolls));
 
-        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false, randomSeed: 99);
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false);
 
         Assert.Equal(ScrollResult.Fail, result.Result);
         var equip = Assert.IsType<Equip>(player.Inventory.By(InventoryType.Equip).Get(1));
@@ -53,9 +56,9 @@ public sealed class ScrollServiceTests
                 UseItem(ScrollService.WhiteScrollItemId, slot: 2),
             ],
             equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
-        var service = new ScrollService(new HardcodedScrollCatalog());
+        var service = new ScrollService(new HardcodedScrollCatalog(), new SequenceRandom(Rolls));
 
-        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: true, randomSeed: 99);
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: true);
 
         Assert.Equal(ScrollResult.Fail, result.Result);
         Assert.True(result.WhiteScrollUsed);
@@ -71,9 +74,9 @@ public sealed class ScrollServiceTests
         var player = CreatePlayer(
             useItems: [UseItem(2040202, slot: 1)],
             equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
-        var service = new ScrollService(new HardcodedScrollCatalog());
+        var service = new ScrollService(new HardcodedScrollCatalog(), new SequenceRandom(Rolls));
 
-        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false, randomSeed: 99);
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false);
 
         Assert.Equal(ScrollResult.Curse, result.Result);
         Assert.True(result.EquipDestroyed);
@@ -90,9 +93,9 @@ public sealed class ScrollServiceTests
         var player = CreatePlayer(
             useItems: [UseItem(scrollId, slot: 1)],
             equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
-        var service = new ScrollService(new HardcodedScrollCatalog());
+        var service = new ScrollService(new HardcodedScrollCatalog(), new SequenceRandom([seed, 0]));
 
-        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false, randomSeed: seed);
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false);
 
         Assert.Equal(expected, result.Result);
         Assert.Null(player.Inventory.By(InventoryType.Use).Get(1));
@@ -105,9 +108,9 @@ public sealed class ScrollServiceTests
         var player = CreatePlayer(
             useItems: [UseItem(2040200, slot: 1)],
             equipItems: [BagEquip(1102000, slot: 1, slots: 0)]);
-        var service = new ScrollService(new HardcodedScrollCatalog());
+        var service = new ScrollService(new HardcodedScrollCatalog(), new SequenceRandom(Rolls));
 
-        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false, randomSeed: 0);
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false);
 
         Assert.Equal(ScrollResult.Fail, result.Result);
         var equip = Assert.IsType<Equip>(player.Inventory.By(InventoryType.Equip).Get(1));
@@ -124,9 +127,9 @@ public sealed class ScrollServiceTests
             useItems: [UseItem(2044000, slot: 1)],
             equipItems: [],
             equipped: new EquipEntry { Position = -11, ItemId = 1302000, UpgradeSlots = 7 });
-        var service = new ScrollService(new HardcodedScrollCatalog());
+        var service = new ScrollService(new HardcodedScrollCatalog(), new SequenceRandom(Rolls));
 
-        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: -11, whiteScroll: false, randomSeed: 0);
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: -11, whiteScroll: false);
 
         Assert.True(result.EquippedSlot);
         Assert.Equal(ScrollResult.Success, result.Result);
@@ -174,4 +177,46 @@ public sealed class ScrollServiceTests
         Quantity = 1,
         UpgradeSlots = slots,
     };
+    [Theory]
+    [InlineData(60, 60, ScrollResult.Success)]  // Java nextInt(100) <= success（含等號）
+    [InlineData(60, 61, ScrollResult.Fail)]
+    public void UseScroll_SuccessRollIsInclusive(int successRate, int roll, ScrollResult expected)
+    {
+        var player = CreatePlayer(
+            useItems: [UseItem(2040201, slot: 1)],
+            equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
+        var catalog = new FixedScrollCatalog(new Maple.Core.Items.ScrollEffect(2040201, successRate, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+        var service = new ScrollService(catalog, new SequenceRandom([roll]));
+
+        Assert.Equal(expected, service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false).Result);
+    }
+
+    [Theory]
+    [InlineData(50, 49, ScrollResult.Curse)]   // Java nextInt(99) < cursed
+    [InlineData(50, 50, ScrollResult.Fail)]
+    public void UseScroll_CurseIsPercentAfterFailure(int curseRate, int curseRoll, ScrollResult expected)
+    {
+        var player = CreatePlayer(
+            useItems: [UseItem(2040202, slot: 1)],
+            equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
+        var catalog = new FixedScrollCatalog(new Maple.Core.Items.ScrollEffect(2040202, 10, curseRate, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+        var service = new ScrollService(catalog, new SequenceRandom([99, curseRoll]));
+
+        var result = service.UseScroll(player, scrollSlot: 1, equipSlot: 1, whiteScroll: false);
+
+        Assert.Equal(expected, result.Result);
+        Assert.Equal(expected == ScrollResult.Curse, result.EquipDestroyed);
+    }
+
+    private sealed class FixedScrollCatalog(Maple.Core.Items.ScrollEffect effect) : Maple.Core.Items.IScrollCatalog
+    {
+        public Maple.Core.Items.ScrollEffect? GetScroll(int scrollId) => scrollId == effect.ScrollId ? effect : null;
+    }
+
+    private sealed class SequenceRandom(int[] rolls) : Random
+    {
+        private int _index;
+
+        public override int Next(int maxValue) => rolls[Math.Min(_index++, rolls.Length - 1)];
+    }
 }

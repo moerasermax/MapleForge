@@ -163,8 +163,7 @@ public sealed class V113ScrollHandler
             player,
             request.ScrollSlot,
             request.EquipSlot,
-            request.WhiteScroll,
-            request.Tick);
+            request.WhiteScroll);
 
         if (!result.Applied)
         {

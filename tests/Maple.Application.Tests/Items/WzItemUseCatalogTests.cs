@@ -62,6 +62,24 @@ public sealed class WzItemUseCatalogTests
         Assert.Equal(0, effect.Hp + effect.Mp + effect.HpRate + effect.MpRate);
     }
 
+    [Fact]
+    public void GetScroll_ReadsSuccessCurseAndIncStats()
+    {
+        var scroll = new WzItemUseCatalog(new ItemDataProvider()).GetScroll(2044002)!;
+
+        Assert.Equal(10, scroll.SuccessRate);
+        Assert.Equal(100, scroll.CurseRate);
+        Assert.Equal((short)5, scroll.Watk);
+        Assert.Equal((short)3, scroll.Str);
+        Assert.Equal((short)1, scroll.Acc);
+    }
+
+    [Fact]
+    public void GetScroll_NonScrollItem_ReturnsNull()
+    {
+        Assert.Null(new WzItemUseCatalog(new ItemDataProvider()).GetScroll(2000019));
+    }
+
     private sealed class ItemDataProvider : IDataProvider
     {
         private readonly IDataNode _itemRoot;
@@ -109,6 +127,20 @@ public sealed class WzItemUseCatalogTests
                     ["0200.img"] = new Node("0200.img", children: new Dictionary<string, IDataNode>
                     {
                         ["02000019"] = potion,
+                    }),
+                    ["0204.img"] = new Node("0204.img", children: new Dictionary<string, IDataNode>
+                    {
+                        ["02044002"] = new Node("02044002", children: new Dictionary<string, IDataNode>
+                        {
+                            ["info"] = new Node("info", children: new Dictionary<string, IDataNode>
+                            {
+                                ["success"] = new Node("success", 10),
+                                ["cursed"] = new Node("cursed", 100),
+                                ["incPAD"] = new Node("incPAD", 5),
+                                ["incSTR"] = new Node("incSTR", 3),
+                                ["incACC"] = new Node("incACC", 1),
+                            }),
+                        }),
                     }),
                     ["0203.img"] = new Node("0203.img", children: new Dictionary<string, IDataNode>
                     {

@@ -210,7 +210,8 @@ public static class MapleServerHost
         builder.Services.AddSingleton<RandomRewardsCatalog>();
         builder.Services.AddSingleton<IV113ItemUseRandomSource, V113ItemUseRandomSource>();
         builder.Services.AddSingleton<V113ItemUseHandler>();
-        builder.Services.AddSingleton<IScrollCatalog, HardcodedScrollCatalog>();
+        // P121：卷軸改讀 Item.wz info（原 HardcodedScrollCatalog 只列 6 種，其餘 204xxxx 一律 100% 攻擊+1）。
+        builder.Services.AddSingleton<IScrollCatalog>(sp => sp.GetRequiredService<WzItemUseCatalog>());
         builder.Services.AddSingleton<ScrollService>();
         builder.Services.AddSingleton<V113ScrollHandler>();
         builder.Services.AddSingleton<V113UseConsumableHandler>();
