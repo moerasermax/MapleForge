@@ -1,5 +1,7 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Maps;
 using Maple.Application.Parties;
+using Maple.Core.Maps;
 using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Core.Parties;
@@ -97,6 +99,33 @@ public sealed class ChannelPartyMapEntryTests
             sink.Add(packet);
             return Task.CompletedTask;
         };
+
+    [Fact]
+    public async Task NotifyDoorChangedAsync_BroadcastsSilentUpdateWithDoorFields()
+    {
+        // P161：Java silentPartyUpdate → new MaplePartyCharacter(chr) 帶門的村莊／目標／座標；沒門回 999999999 與角色座標。
+        var registry = new InMemoryPartyRegistry(firstPartyId: 1);
+        var service = new PartyService(registry);
+        service.CreateParty(Member(1, "Leader"));
+        service.JoinParty(1, Member(2, "Guest"));
+        var doors = new DoorService(registry);
+        var hook = new FakeSessionHook();
+        var handler = new V113PartyOperationHandler(service, hook, doors);
+        var player = Player(1, "Leader", level: 30, job: 230, mapId: 101010000, hp: 100, maxHp: 100);
+        var town = new MapData { MapId = 101000000, Portals = [new MapPortal { Id = 5, Type = 6, Name = "tp", X = 500, Y = 50 }] };
+        doors.TryOpenDoor(player, new MapData { MapId = 101010000, ReturnMapId = 101000000 }, town, new Position(123, 45, 0, 0));
+
+        await handler.NotifyDoorChangedAsync(player, CancellationToken.None);
+
+        var leader = service.GetPartyForCharacter(1)!.Leader!;
+        Assert.Equal((101000000, 101010000, 123, 45), (leader.DoorTownId, leader.DoorTargetMapId, leader.DoorX, leader.DoorY));
+        Assert.Equal([1, 2], hook.SentPackets.Select(static p => p.CharacterId).Order());
+
+        doors.CloseDoor(1);
+        await handler.NotifyDoorChangedAsync(player, CancellationToken.None);
+        leader = service.GetPartyForCharacter(1)!.Leader!;
+        Assert.Equal((PartyMember.NoDoorMapId, PartyMember.NoDoorMapId, 0, 0), (leader.DoorTownId, leader.DoorTargetMapId, leader.DoorX, leader.DoorY));
+    }
 
     private static PartyMember Member(int id, string name) =>
         new(id, name, Level: 30, JobId: 100, MapId: 100000000, ChannelIndex: 0);

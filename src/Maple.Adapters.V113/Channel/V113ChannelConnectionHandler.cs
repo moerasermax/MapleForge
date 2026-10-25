@@ -3256,6 +3256,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         await _buffEffects.SendDoorOpenedAsync(door, ct);
+
+        // P161：Java applyTo isMagicDoor → applyto.getParty() != null 時 silentPartyUpdate()（更新隊伍狀態的門欄位）。
+        await _partyOperationHandler.NotifyDoorChangedAsync(player, ct);
     }
 
     private Task CloseMagicDoorAsync(int ownerId, CancellationToken ct)

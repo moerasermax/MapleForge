@@ -90,6 +90,15 @@ public sealed class DoorService
 
     private static Position ToPosition(MapPortal portal) => new((short)portal.X, (short)portal.Y, 0, 0);
 
+    /// <summary>P161：主人目前的門（Java <c>getDoors().get(0)</c>）。</summary>
+    public Door? GetDoor(int ownerId)
+    {
+        lock (_gate)
+        {
+            return _doorsByOwner.GetValueOrDefault(ownerId);
+        }
+    }
+
     public Door? GetDoorByOwner(int mapId, int ownerId)
     {
         lock (_gate)

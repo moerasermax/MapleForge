@@ -17,11 +17,18 @@ public sealed class V113BuffCancellationEffects
     private readonly DoorService _doors;
     private readonly IMapSessionRegistry _mapRegistry;
 
-    public V113BuffCancellationEffects(SummonService summons, DoorService doors, IMapSessionRegistry mapRegistry)
+    private readonly V113PartyOperationHandler? _partyHandler;
+
+    public V113BuffCancellationEffects(
+        SummonService summons,
+        DoorService doors,
+        IMapSessionRegistry mapRegistry,
+        V113PartyOperationHandler? partyHandler = null)
     {
         _summons = summons;
         _doors = doors;
         _mapRegistry = mapRegistry;
+        _partyHandler = partyHandler;
     }
 
     public async Task ApplyAsync(
@@ -75,7 +82,15 @@ public sealed class V113BuffCancellationEffects
 
         if (cancellations.Any(static c => DoorService.IsMagicDoorSkill(c.SourceId)))
         {
-            await CloseMagicDoorAsync(player.Character.Id, ct).ConfigureAwait(false);
+            // P161：Java cancelEffect isMagicDoor → 有門才 removeDoor() + silentPartyUpdate()。
+            if (_doors.GetDoor(player.Character.Id) is not null)
+            {
+                await CloseMagicDoorAsync(player.Character.Id, ct).ConfigureAwait(false);
+                if (_partyHandler is not null)
+                {
+                    await _partyHandler.NotifyDoorChangedAsync(player, ct).ConfigureAwait(false);
+                }
+            }
         }
 
         if (field is null)

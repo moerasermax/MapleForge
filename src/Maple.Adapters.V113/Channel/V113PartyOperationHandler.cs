@@ -1,3 +1,4 @@
+using Maple.Application.Maps;
 using Maple.Application.Parties;
 using Maple.Core.Characters;
 using Maple.Core.IO;
@@ -32,10 +33,45 @@ public sealed class V113PartyOperationHandler
     private readonly PartyService _parties;
     private readonly IV113PartySessionHook _sessions;
 
-    public V113PartyOperationHandler(PartyService parties, IV113PartySessionHook sessions)
+    private readonly DoorService? _doors;
+
+    public V113PartyOperationHandler(PartyService parties, IV113PartySessionHook sessions, DoorService? doors = null)
     {
         _parties = parties;
         _sessions = sessions;
+        _doors = doors;
+    }
+
+    /// <summary>P161：Java <c>new MaplePartyCharacter(chr)</c>——角色快照加上門欄位。</summary>
+    private PartyMember Snapshot(Player player, int channelIndex, bool isOnline = true)
+        => PartyMember.FromCharacter(player.Character, channelIndex, isOnline)
+            .WithDoor(_doors?.GetDoor(player.Character.Id), player.Position);
+
+    /// <summary>
+    /// P161：Java <c>silentPartyUpdate()</c>（開門後、取消時空門後）：<c>updateParty(SILENT_UPDATE, new MaplePartyCharacter(this))</c>
+    /// 廣播給全隊（含自己）。頻道沿用隊伍快照裡的頻道。
+    /// </summary>
+    public async Task NotifyDoorChangedAsync(Player player, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        if (_parties.GetPartyForCharacter(player.Character.Id)?.GetMember(player.Character.Id) is not { } existing)
+        {
+            return;
+        }
+
+        var result = _parties.UpdateMember(Snapshot(player, existing.ChannelIndex), PartyUpdateKind.SilentUpdate);
+        if (!result.Succeeded)
+        {
+            return;
+        }
+
+        await BroadcastPartyUpdateAsync(
+            result,
+            player,
+            existing.ChannelIndex,
+            (packet, token) => _sessions.SendToCharacterAsync(player.Character.Id, packet, token),
+            ct);
     }
 
     public async Task HandlePartyOperationAsync(
@@ -105,7 +141,7 @@ public sealed class V113PartyOperationHandler
             return;
         }
 
-        var refreshed = PartyMember.FromCharacter(chr, channelIndex);
+        var refreshed = Snapshot(player, channelIndex);
         var result = _parties.UpdateMember(refreshed, PartyUpdateKind.SilentUpdate);
         if (!result.Succeeded || result.Party is not { } updated)
         {
@@ -133,7 +169,7 @@ public sealed class V113PartyOperationHandler
             return;
         }
 
-        var refreshed = PartyMember.FromCharacter(chr, channelIndex, isOnline: true);
+        var refreshed = Snapshot(player, channelIndex, isOnline: true);
         var result = _parties.UpdateMember(refreshed, PartyUpdateKind.LogOnOff);
         if (!result.Succeeded)
         {
@@ -234,7 +270,7 @@ public sealed class V113PartyOperationHandler
                 return;
             }
 
-            var member = PartyMember.FromCharacter(player.Character, channelIndex);
+            var member = Snapshot(player, channelIndex);
             var result = _parties.JoinParty(partyId, member);
             if (result.Succeeded)
             {
@@ -272,7 +308,7 @@ public sealed class V113PartyOperationHandler
             return;
         }
 
-        var leader = PartyMember.FromCharacter(player.Character, channelIndex);
+        var leader = Snapshot(player, channelIndex);
         var result = _parties.CreateParty(leader);
         if (result.Succeeded && result.Party is not null)
         {
@@ -307,7 +343,7 @@ public sealed class V113PartyOperationHandler
             return;
         }
 
-        var member = PartyMember.FromCharacter(player.Character, channelIndex);
+        var member = Snapshot(player, channelIndex);
         var result = _parties.JoinParty(partyId, member);
         if (result.Succeeded)
         {

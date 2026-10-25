@@ -1,4 +1,5 @@
 using Maple.Core.Characters;
+using Maple.Core.World;
 
 namespace Maple.Core.Parties;
 
@@ -30,4 +31,12 @@ public sealed record PartyMember(
             channelIndex,
             isOnline);
     }
+
+    /// <summary>
+    /// P161：Java <c>new MaplePartyCharacter(chr)</c> 的門欄位：有門 → 村莊、目標地圖、目標座標；沒門 → 999999999 與角色目前座標。
+    /// </summary>
+    public PartyMember WithDoor(Door? door, Position playerPosition)
+        => door is null
+            ? this with { DoorTownId = NoDoorMapId, DoorTargetMapId = NoDoorMapId, DoorX = playerPosition.X, DoorY = playerPosition.Y }
+            : this with { DoorTownId = door.TownMapId, DoorTargetMapId = door.TargetMapId, DoorX = door.TargetPosition.X, DoorY = door.TargetPosition.Y };
 }
