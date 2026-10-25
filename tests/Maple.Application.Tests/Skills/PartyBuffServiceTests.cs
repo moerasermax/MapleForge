@@ -114,6 +114,45 @@ public sealed class PartyBuffServiceTests
         Assert.False(member.SkillIsCooling(1121008, T0));
     }
 
+    [Fact]
+    public void SoulStone_AwardsAlivePartyMembersOnMap_IncludingCaster_IgnoringRange()
+    {
+        // P204：Java applyBuff 靈魂之石分支（不看範圍、含施放者、陌生人與死者除外）。
+        var parties = new InMemoryPartyRegistry();
+        var field = new FieldInstance(100000000);
+        var caster = MakePlayer(1, 0);
+        var far = MakePlayer(2, 900);
+        var dead = MakePlayer(3, 10);
+        var stranger = MakePlayer(4, 10);
+        dead.Character.Stats.Hp = 0;
+        var created = parties.CreateParty(PartyMember.FromCharacter(caster.Character, channelIndex: 1));
+        parties.JoinParty(created.Party!.Id, PartyMember.FromCharacter(far.Character, channelIndex: 1));
+        parties.JoinParty(created.Party!.Id, PartyMember.FromCharacter(dead.Character, channelIndex: 1));
+        foreach (var player in new[] { caster, far, dead, stranger })
+        {
+            field.Add(player);
+        }
+
+        var soulStone = new MapleStatEffect
+        {
+            SourceId = 22181003,
+            Level = 1,
+            IsOverTime = true,
+            Y = 3,
+            DurationMilliseconds = 60_000,
+            Statups = [new BuffStatValue(MapleBuffStat.SOUL_STONE, 1)],
+        };
+
+        var targets = new PartyBuffService(parties, new ZeroRandom()).Apply(field, caster, soulStone, true, T0)
+            .Select(static a => a.Target)
+            .ToArray();
+
+        Assert.Equal([caster, far], targets);
+        Assert.Equal(1, far.GetBuffValue(MapleBuffStat.SOUL_STONE));
+        Assert.Null(stranger.GetBuffValue(MapleBuffStat.SOUL_STONE));
+        Assert.Empty(new PartyBuffService(new InMemoryPartyRegistry(), new ZeroRandom()).Apply(field, caster, soulStone, true, T0));
+    }
+
     [Theory]
     [InlineData(5110001, false)]
     [InlineData(2301002, true)]
@@ -160,5 +199,10 @@ public sealed class PartyBuffServiceTests
         player.Character.Stats.MaxHp = 1000;
         player.Character.Stats.Hp = 500;
         return player;
+    }
+
+    private sealed class ZeroRandom : Random
+    {
+        public override int Next(int maxValue) => 0;
     }
 }

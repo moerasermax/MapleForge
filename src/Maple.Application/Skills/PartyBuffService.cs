@@ -19,7 +19,7 @@ public sealed record PartyBuffApplication(
 /// P145：對照 Java <c>MapleStatEffect.applyBuff</c> 的隊伍分支：<c>isPartyBuff() &amp;&amp; (有隊伍 || isGmBuff())</c> →
 /// 以施放者位置與面向算 <c>calculateBoundingBox</c>，範圍內（<c>Rectangle.contains</c>）的其他玩家若
 /// （GM buff 或同隊）且（復活技能對死者／其他技能對活人）就 <c>applyTo(applyfrom, affected, primary=false)</c>；
-/// 時空置換另外清除其冷卻。靈魂之石（22181003 隨機分配）未移植。呼叫端持有 field 鎖。
+/// 時空置換另外清除其冷卻。P204：靈魂之石（22181003）走隨機分配分支。呼叫端持有 field 鎖。
 /// </summary>
 public sealed class PartyBuffService
 {
@@ -44,6 +44,9 @@ public sealed class PartyBuffService
     public static bool IsGmBuff(int skillId)
         => skillId is 1005 or 10001005 or 20001005 or 9001000 or 9001001 or 9001002 or 9001003 or 9001005 or 9001008;
 
+    /// <summary>Java <c>isSoulStone</c>。</summary>
+    public static bool IsSoulStone(MapleStatEffect effect) => effect.IsSkill && effect.SourceId == 22181003;
+
     /// <summary>Java <c>isResurrection</c>。</summary>
     public static bool IsResurrection(int skillId) => skillId is 9001005 or 2321006;
 
@@ -65,6 +68,11 @@ public sealed class PartyBuffService
 
         var gmBuff = IsGmBuff(effect.SourceId);
         var party = _parties?.GetPartyForCharacter(caster.Character.Id);
+        if (ShouldApplyBuff(effect) && IsSoulStone(effect))
+        {
+            return party is null ? [] : ApplySoulStone(field, caster, effect, party.Id, now);
+        }
+
         if (!ShouldApplyBuff(effect) || !IsPartyBuff(effect) || (party is null && !gmBuff) || effect.Area is not { } area)
         {
             return [];
@@ -102,6 +110,37 @@ public sealed class PartyBuffService
         }
 
         return applied;
+    }
+
+    /// <summary>
+    /// P204：Java applyBuff 的靈魂之石分支——數地圖上同隊的活人 membrs，反覆掃描地圖（含施放者本人）
+    /// 每人 <c>nextInt(y) == 0</c> 中選，直到選滿 <c>min(membrs, y)</c> 人，各自 <c>applyTo(primary=false)</c>
+    /// （呼叫端送 showOwnBuffEffect(sid, 2) 與他人 showBuffeffect）。y ≤ 0 時 Java nextInt 會丟例外，這裡視為不分配。
+    /// </summary>
+    private IReadOnlyList<PartyBuffApplication> ApplySoulStone(FieldInstance field, Player caster, MapleStatEffect effect, int partyId, DateTimeOffset now)
+    {
+        var members = field.Players
+            .Where(p => p.IsAlive && _parties?.GetPartyForCharacter(p.Character.Id)?.Id == partyId)
+            .ToArray();
+        var target = Math.Min(members.Length, effect.Y);
+        if (target <= 0)
+        {
+            return [];
+        }
+
+        var awarded = new List<Player>(target);
+        while (awarded.Count < target)
+        {
+            foreach (var member in members)
+            {
+                if (!awarded.Contains(member) && _random.Next(effect.Y) == 0)
+                {
+                    awarded.Add(member);
+                }
+            }
+        }
+
+        return awarded.Select(member => ApplyTo(caster, member, effect, resurrection: false, [], now)).ToArray();
     }
 
     /// <summary>
