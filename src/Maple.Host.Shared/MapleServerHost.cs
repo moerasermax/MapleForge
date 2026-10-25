@@ -128,6 +128,8 @@ public static class MapleServerHost
         // P122：怪物技能（Skill.wz MobSkill.img）。
         builder.Services.AddSingleton<Maple.Core.World.IMobSkillCatalog>(sp => new WzMobSkillCatalog(sp.GetRequiredService<IDataProvider>()));
         builder.Services.AddSingleton<MobSkillService>();
+        // P132：玩家技能霧（劇毒霧／煙霧彈／恢復光環）。
+        builder.Services.AddSingleton<PlayerMistService>(_ => new PlayerMistService());
         // P119：怪物掉落表（Java drop_data）。資料檔不進版控，路徑由 Content:MonsterDropCatalogPath 指定
         // （tools/drop-data/convert_drop_data.py 從 Java SQL dump 轉出）；未設定或檔案不存在時退回空表並警告。
         builder.Services.AddSingleton<IMonsterDropCatalog>(sp =>

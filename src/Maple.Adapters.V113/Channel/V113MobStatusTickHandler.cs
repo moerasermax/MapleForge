@@ -1,5 +1,7 @@
 using Maple.Application.Combat;
 using Maple.Application.Maps;
+using Maple.Application.Skills;
+using Maple.Core.Characters;
 using Maple.Core.World;
 
 namespace Maple.Adapters.V113.Channel;
@@ -14,11 +16,13 @@ public sealed class V113MobStatusTickHandler
 {
     private readonly IMapSessionRegistry _mapRegistry;
     private readonly CombatService _combat;
+    private readonly PlayerMistService? _playerMists;
 
-    public V113MobStatusTickHandler(IMapSessionRegistry mapRegistry, CombatService combat)
+    public V113MobStatusTickHandler(IMapSessionRegistry mapRegistry, CombatService combat, PlayerMistService? playerMists = null)
     {
         _mapRegistry = mapRegistry;
         _combat = combat;
+        _playerMists = playerMists;
     }
 
     public async Task TickAsync(FieldInstance field, DateTimeOffset now, CancellationToken ct)
@@ -28,8 +32,10 @@ public sealed class V113MobStatusTickHandler
         var cancelled = new List<(int ObjectId, MonsterStatus Status)>();
         IReadOnlyList<CombatMobHit> dotHits;
         Mist[] expiredMists;
+        var mistTick = MistTickResult.Empty;
         lock (field)
         {
+
             // P131：Java spawnMist 的 tMan.schedule(remove, duration)——到期移除並廣播 REMOVE_MIST。
             expiredMists = field.Objects.OfType<Mist>().Where(m => m.ExpiresAt <= now).ToArray();
             foreach (var mist in expiredMists)
@@ -39,6 +45,13 @@ public sealed class V113MobStatusTickHandler
 
             // Java 的毒傷排程與解除排程各自獨立；同一跳先扣毒傷再處理到期，讓到期當秒的最後一跳仍生效。
             dotHits = _combat.TickDamageOverTime(field);
+
+            // P132：玩家霧的週期效果（Java 2000/2500 排程）。排在毒傷之後，剛上的毒下一跳才扣血（同攻擊上毒）；
+            // 已到期的霧前面已移除，Tick 本身也會略過。
+            if (_playerMists is not null)
+            {
+                mistTick = _playerMists.Tick(field, now);
+            }
             foreach (var mob in field.Objects.OfType<Mob>())
             {
                 foreach (var effect in mob.ExpireStatuses(now))
@@ -48,7 +61,7 @@ public sealed class V113MobStatusTickHandler
             }
         }
 
-        if (cancelled.Count == 0 && dotHits.Count == 0 && expiredMists.Length == 0)
+        if (cancelled.Count == 0 && dotHits.Count == 0 && expiredMists.Length == 0 && mistTick.IsEmpty)
         {
             return;
         }
@@ -57,6 +70,20 @@ public sealed class V113MobStatusTickHandler
         foreach (var mist in expiredMists)
         {
             await SendAsync(recipients, V113MistPackets.RemoveMist(mist.ObjectId), ct);
+        }
+
+        // P132：霧上毒 → applyStatus 的 broadcastMessage(applyMonsterStatus)；回 MP → addMP 的 updateSingleStat(MP)。
+        foreach (var (objectId, status) in mistTick.Poisoned)
+        {
+            await SendAsync(recipients, V113MonsterStatusCodec.ApplyMonsterStatus(objectId, [status]), ct);
+        }
+
+        foreach (var player in mistTick.MpRestored)
+        {
+            await SendAsync(
+                recipients.Where(r => r.CharId == player.Character.Id),
+                V113StatsPackets.UpdateStats([new PlayerStatUpdate(PlayerStatKind.Mp, player.Mp)]),
+                ct);
         }
 
         foreach (var hit in dotHits)

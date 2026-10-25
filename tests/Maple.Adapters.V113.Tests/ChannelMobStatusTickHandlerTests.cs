@@ -1,6 +1,8 @@
 using Maple.Adapters.V113.Channel;
 using Maple.Application.Combat;
 using Maple.Application.Maps;
+using Maple.Application.Skills;
+using Maple.Core.Skills;
 using Maple.Core.Data;
 using Maple.Core.Characters;
 using Maple.Core.IO;
@@ -73,6 +75,58 @@ public sealed class ChannelMobStatusTickHandlerTests
         Assert.Equal(20, r.ReadInt());       // y + height
         Assert.Equal(0, r.ReadInt());
         Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
+    public async Task TickAsync_PlayerPoisonMist_BroadcastsApplyMonsterStatus()
+    {
+        var (handler, field, mob, received, player) = SetupWithMists();
+        player.ChangeSkillLevel(2111003, 30, 30);
+        var mists = new PlayerMistService();
+        var effect = new MapleStatEffect { SourceId = 2111003, Level = 30, DurationMilliseconds = 40_000, Area = new MobSkillArea(-200, -150, 200, 150) };
+        var mist = mists.TrySpawn(field, player, effect, new Position(0, 0, 0, 0), true, T0)!;
+
+        await handler.TickAsync(field, T0.AddMilliseconds(2000), CancellationToken.None);
+
+        var status = Assert.Contains(MonsterStatus.Poison, mob.Statuses);
+        Assert.Equal(V113MonsterStatusCodec.ApplyMonsterStatus(mob.ObjectId, [status]), Assert.Single(received));
+        Assert.Equal(100, mob.Hp); // 剛上的毒下一跳才扣血
+        Assert.NotNull(field.Get(mist.ObjectId));
+    }
+
+    [Fact]
+    public async Task TickAsync_RecoveryAura_SendsMpUpdateToRestoredPlayer()
+    {
+        var (handler, field, _, received, player) = SetupWithMists();
+        player.Character.Stats.MaxMp = 1000;
+        player.Character.Stats.Mp = 100;
+        var effect = new MapleStatEffect { SourceId = 22161003, Level = 10, X = 10, DurationMilliseconds = 30_000, Area = new MobSkillArea(-200, -150, 200, 150) };
+        new PlayerMistService().TrySpawn(field, player, effect, new Position(0, 0, 0, 0), true, T0);
+
+        await handler.TickAsync(field, T0.AddMilliseconds(2000), CancellationToken.None);
+
+        Assert.Equal((short)200, player.Mp);
+        Assert.Equal(V113StatsPackets.UpdateStats([new PlayerStatUpdate(PlayerStatKind.Mp, 200)]), Assert.Single(received));
+    }
+
+    private static (V113MobStatusTickHandler Handler, FieldInstance Field, Mob Mob, List<byte[]> Received, Player Player) SetupWithMists()
+    {
+        var registry = new InMemoryMapSessionRegistry();
+        var field = new FieldInstance(100000100);
+        var mob = new Mob(
+            new MapMonster { MonsterId = 100100, X = 0, Y = 0, Fh = 1 },
+            new MobStats(100100, 100, MaxMp: 0, Level: 1, Exp: 1),
+            objectId: 100001);
+        field.Add(mob);
+        var received = new List<byte[]>();
+        var player = new Player(new Character { Id = 1, Name = "FP", Job = 211 }, new Position(0, 0, 0, 0));
+        field.Add(player);
+        registry.Register(field.MapId, 1, player, (pkt, _) => { received.Add(pkt); return Task.CompletedTask; }, new object());
+        var handler = new V113MobStatusTickHandler(
+            registry,
+            new CombatService(new MapService(new EmptyDataProvider())),
+            new PlayerMistService());
+        return (handler, field, mob, received, player);
     }
 
     private static (V113MobStatusTickHandler Handler, FieldInstance Field, Mob Mob, List<byte[]> Received) Setup()

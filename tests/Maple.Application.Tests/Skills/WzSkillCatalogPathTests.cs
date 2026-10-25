@@ -31,13 +31,38 @@ public sealed class WzSkillCatalogPathTests
         Assert.Equal(1, skill.Effects[0].MonsterStatuses[MonsterStatus.Freeze]);
     }
 
-    private static Node SkillNode(string name, string? elemAttr)
+    [Fact]
+    public void GetSkill_LtRb_ParsedIntoEffectArea()
     {
-        var level1 = new Node("1", children: new Dictionary<string, IDataNode>
+        var provider = new FakeProvider(("211.img/skill/2111003", SkillNode("2111003", elemAttr: null, withArea: true)));
+
+        var effect = new WzSkillCatalog(provider).GetSkill(2111003)!.Effects[0];
+
+        Assert.Equal(new MobSkillArea(-200, -150, 200, 150), effect.Area);
+    }
+
+    [Fact]
+    public void GetSkill_NoLt_AreaIsNull()
+    {
+        var provider = new FakeProvider(("220.img/skill/2201004", SkillNode("2201004", elemAttr: null)));
+
+        Assert.Null(new WzSkillCatalog(provider).GetSkill(2201004)!.Effects[0].Area);
+    }
+
+    private static Node SkillNode(string name, string? elemAttr, bool withArea = false)
+    {
+        var levelChildren = new Dictionary<string, IDataNode>
         {
             ["time"] = new Node("time", 10),
             ["x"] = new Node("x", 5),
-        });
+        };
+        if (withArea)
+        {
+            levelChildren["lt"] = new Node("lt", new DataVector(-200, -150));
+            levelChildren["rb"] = new Node("rb", new DataVector(200, 150));
+        }
+
+        var level1 = new Node("1", children: levelChildren);
         var children = new Dictionary<string, IDataNode>
         {
             ["level"] = new Node("level", children: new Dictionary<string, IDataNode> { ["1"] = level1 }),

@@ -183,8 +183,15 @@ public sealed class WzSkillCatalog : ISkillCatalog
             Damage = damage,
             MonsterStatuses = monsterStatuses,
             SourceElement = element,
+            Area = ReadArea(source),
         };
     }
+
+    /// <summary>P132：Java <c>source.getChildByPath("lt")</c> 存在才讀 lt/rb。</summary>
+    private static Maple.Core.World.MobSkillArea? ReadArea(IDataNode source)
+        => source["lt"]?.Value is DataVector lt && source["rb"]?.Value is DataVector rb
+            ? new Maple.Core.World.MobSkillArea((short)lt.X, (short)lt.Y, (short)rb.X, (short)rb.Y)
+            : null;
 
     private string LoadSkillName(int skillId)
     {

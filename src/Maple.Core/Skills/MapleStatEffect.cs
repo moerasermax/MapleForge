@@ -75,6 +75,12 @@ public sealed class MapleStatEffect
     public bool IsPoison => IsSkill && SourceId is 2111003 or 2101005 or 2111006 or 2121003 or 2221003
         or 3111003 or 5211004 or 12111005 or 22161002;
 
+    /// <summary>
+    /// P132：WZ <c>lt</c>/<c>rb</c>（Java <c>MapleStatEffect.lt/rb</c>，<c>calculateBoundingBox</c> 用）；無則 null。
+    /// 與怪物技能共用同一個矩形型別。
+    /// </summary>
+    public World.MobSkillArea? Area { get; init; }
+
     public bool HasBuffStats => Statups.Count > 0;
 
     public DateTimeOffset? GetExpiresAt(DateTimeOffset startedAt)

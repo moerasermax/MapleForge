@@ -64,6 +64,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly MapService _mapService;
     private readonly IEquipTemplateProvider? _equipTemplates;
     private readonly MobSkillService? _mobSkills;
+    private readonly PlayerMistService? _playerMists;
     private readonly INpcScriptFactory _npcScripts;
     private readonly ShopService _shopService;
     private readonly StorageService _storageService;
@@ -174,9 +175,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         V113BuffCancellationEffects buffEffects,
         V113PartyHpSync partyHpSync,
         IEquipTemplateProvider? equipTemplates = null,
-        MobSkillService? mobSkills = null)
+        MobSkillService? mobSkills = null,
+        PlayerMistService? playerMists = null)
     {
         _log = log;
+        _playerMists = playerMists;
         _equipTemplates = equipTemplates;
         _mobSkills = mobSkills;
         _partyHpSync = partyHpSync;
@@ -3157,6 +3160,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
+        // P132：Java applyTo 的 isMist() 分支——pos 為封包座標（無則玩家位置）；面向依 SpecialMove 改寫後的 stance
+        // （Java 變數 faceLeft = byte == 0 → stance &= 0xFE → isFacingLeft() 為 false，故實際面向左 = !FaceLeft）。
+        if (field is not null && handled.Cast is { Status: SkillCastStatus.Success, Effect: { } mistEffect })
+        {
+            var mistPosition = handled.Request is { X: { } mx, Y: { } my }
+                ? new Position(mx, my, player.Position.Stance, player.Position.Foothold)
+                : player.Position;
+            var facingLeft = handled.Request?.FaceLeft is { } faceLeftFlag ? !faceLeftFlag : player.Position.Stance % 2 != 0;
+            await SpawnPlayerMistAsync(player, field, mistEffect, mistPosition, facingLeft, session, ct);
+        }
+
         if (handled.Cast is { Status: SkillCastStatus.Success } && DoorService.IsMagicDoorSkill(handled.SourceId))
         {
             await OpenMagicDoorAsync(player, handled.Request, session, ct);
@@ -3648,6 +3662,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         await SendCombatHitsAsync(result.Combat.Hits, player, session, ct);
         await ApplyReflectedDamageAsync(result.Combat.Hits, player, field, session, ct);
+
+        // P132：Java applyAttack 尾段 effect.applyTo(player, skillposition ?? position)——毒炸彈 14111006 生成毒霧。
+        // MapleForge 解析器只保留 attack.position（skillposition 未解析），先以其為準。
+        if (_skillService.GetAttackEffect(player, attack.SkillId) is { } rangedEffect)
+        {
+            await SpawnPlayerMistAsync(
+                player,
+                field,
+                rangedEffect,
+                new Position(attack.Position.X, attack.Position.Y, player.Position.Stance, player.Position.Foothold),
+                player.Position.Stance % 2 != 0,
+                session,
+                ct);
+        }
     }
 
     private async Task HandleMagicAttackAsync(
@@ -3722,6 +3750,42 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         await SendCombatHitsAsync(result.Hits, player, session, ct);
         await ApplyReflectedDamageAsync(result.Hits, player, field, session, ct);
+
+        // P132：Java applyAttackMagic 尾段 effect.applyTo(player)（pos = null → 玩家位置）——劇毒霧 2111003／火焰齒輪 12111005。
+        if (_skillService.GetAttackEffect(player, attack.SkillId) is { } magicEffect)
+        {
+            await SpawnPlayerMistAsync(player, field, magicEffect, player.Position, player.Position.Stance % 2 != 0, session, ct);
+        }
+    }
+
+    /// <summary>
+    /// P132：Java <c>MapleStatEffect.applyTo</c> 的 <c>isMist()</c> → <c>map.spawnMist</c>（spawnAndAddRangedMapObject：全圖 SPAWN_MIST）。
+    /// 非霧技能直接略過。
+    /// </summary>
+    private async Task SpawnPlayerMistAsync(
+        Player player,
+        FieldInstance field,
+        MapleStatEffect effect,
+        Position position,
+        bool facingLeft,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (_playerMists is null || !PlayerMistService.IsMistSkill(effect.SourceId))
+        {
+            return;
+        }
+
+        Mist? mist;
+        lock (field)
+        {
+            mist = _playerMists.TrySpawn(field, player, effect, position, facingLeft, DateTimeOffset.UtcNow);
+        }
+
+        if (mist is not null)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, V113MistPackets.SpawnMist(mist), ct);
+        }
     }
 
     /// <summary>

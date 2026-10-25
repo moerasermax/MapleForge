@@ -1794,3 +1794,8 @@ REMOVE_MIST: writeShort(0x10D) writeInt(oid)
 ```
 
 怪物霧（MobSkill 131）：ownerId = 怪物模板 id、範圍以「面向左」計算、持續 x×10 毫秒、伺服器端無週期效果。進場補送現有霧；到期由 1 秒怪物狀態 tick 移除。證據層級：Java source + Adapters focused tests；**unverified**。
+
+玩家技能霧（P132，對照 `MapleStatEffect.applyTo` 的 `isMist()`、`MapleMist` 玩家建構子、`MapleMap.spawnMist`）：
+- 技能 2111003／12111005（魔法攻擊尾段 applyTo，位置＝玩家）、14111006（遠程攻擊尾段，位置＝attack.position）、4221006／22161003（SPECIAL_MOVE，位置＝封包座標或玩家）。
+- SPAWN_MIST：type 欄＝`isPoisonMist != 0 ? 1 : 2`（煙霧彈 0 → 2；恢復光環 2 → 1）、ownerId＝角色 id、level＝擁有者技能等級、skillDelay＝8；範圍為技能 lt/rb 的 `calculateBoundingBox`。
+- 伺服器週期（首跳 2 秒、每 2.5 秒）：上毒霧對範圍內未中毒怪物擲 prop → APPLY_MONSTER_STATUS（POISON，持續＝霧總時間）；恢復光環對範圍內玩家擲 prop → 回 `x% × 目前最大 MP`，對該玩家 UPDATE_STATS(MP)。證據層級：Java source + focused tests；**unverified**。

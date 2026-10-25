@@ -17,8 +17,10 @@ public sealed class Mist : IFieldObject
         int poisonMode,
         short skillDelay,
         (int X, int Y, int Width, int Height) box,
-        DateTimeOffset expiresAt)
+        DateTimeOffset expiresAt,
+        Skills.MapleStatEffect? sourceEffect = null)
     {
+        SourceEffect = sourceEffect;
         ObjectId = objectId;
         OwnerId = ownerId;
         SkillId = skillId;
@@ -47,6 +49,15 @@ public sealed class Mist : IFieldObject
     public (int X, int Y, int Width, int Height) Box { get; }
 
     public DateTimeOffset ExpiresAt { get; }
+
+    /// <summary>P132：玩家霧的來源技能效果（Java <c>MapleMist.source</c>；prop/x/duration 給週期效果用）。怪物霧為 null。</summary>
+    public Skills.MapleStatEffect? SourceEffect { get; }
+
+    /// <summary>
+    /// P132：下一次週期效果時間（Java <c>tMan.register(task, 2000, 2500)</c>：首跳 2 秒後、之後每 2.5 秒）。
+    /// PoisonMode 0（煙霧彈／怪物霧）為 null。由持有 field 鎖的 tick 更新。
+    /// </summary>
+    public DateTimeOffset? NextEffectAt { get; set; }
 
     public FieldObjectType Type => FieldObjectType.Mist;
 
