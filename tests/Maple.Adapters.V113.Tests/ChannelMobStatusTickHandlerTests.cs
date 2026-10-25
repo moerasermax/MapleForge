@@ -1,5 +1,7 @@
 using Maple.Adapters.V113.Channel;
+using Maple.Application.Combat;
 using Maple.Application.Maps;
+using Maple.Core.Data;
 using Maple.Core.Characters;
 using Maple.Core.IO;
 using Maple.Core.Maps;
@@ -51,6 +53,38 @@ public sealed class ChannelMobStatusTickHandlerTests
         var received = new List<byte[]>();
         var player = new Player(new Character { Id = 1, Name = "Watcher" }, new Position(0, 0, 0, 0));
         registry.Register(field.MapId, 1, player, (pkt, _) => { received.Add(pkt); return Task.CompletedTask; }, new object());
-        return (new V113MobStatusTickHandler(registry), field, mob, received);
+        return (new V113MobStatusTickHandler(registry, new CombatService(new MapService(new EmptyDataProvider()))), field, mob, received);
+    }
+    [Fact]
+    public async Task TickAsync_Poison_DealsDamageAndShowsHpToRecentAttacker()
+    {
+        var (handler, field, mob, received) = Setup();
+        mob.RecordAttacker(1, DateTimeOffset.UtcNow);
+        mob.TryApplyStatus(new MonsterStatusEffect(MonsterStatus.Poison, 30, 2101005, null, DateTimeOffset.UtcNow.AddMinutes(1), PoisonDamage: 30));
+
+        await handler.TickAsync(field, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.Equal(70, mob.Hp);
+        Assert.Equal(V113CombatPackets.ShowMonsterHp(mob.ObjectId, 70), Assert.Single(received));
+    }
+
+    [Fact]
+    public async Task TickAsync_Poison_NeverKills()
+    {
+        var (handler, field, mob, _) = Setup();
+        mob.TryApplyStatus(new MonsterStatusEffect(MonsterStatus.Poison, 500, 2101005, null, DateTimeOffset.UtcNow.AddMinutes(1), PoisonDamage: 500));
+
+        await handler.TickAsync(field, DateTimeOffset.UtcNow, CancellationToken.None);
+        await handler.TickAsync(field, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.Equal(1, mob.Hp);
+        Assert.Same(mob, field.Get(mob.ObjectId));
+    }
+
+    private sealed class EmptyDataProvider : IDataProvider
+    {
+        public IDataNode GetRoot(string fileName) => throw new NotSupportedException();
+
+        public IDataNode? GetAt(string fileName, string path) => null;
     }
 }

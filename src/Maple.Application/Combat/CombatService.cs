@@ -247,7 +247,7 @@ public sealed class CombatService
     /// <summary>
     /// P111：對照 Java <c>DamageParse.applyAttack</c>／<c>applyAttackMagic</c> 尾段——命中且怪物仍存活時，
     /// 技能有 monsterStatus 且 <c>makeChanceResult</c> 成功（每隻怪各擲一次）就逐一 <c>applyStatus</c>。
-    /// 持續時間＝技能 duration（≥ 2e9 改 5000，同 Java）；毒／影網／忍者伏擊的持續傷害數值留待 P113，暫不套用。
+    /// 持續時間＝技能 duration（≥ 2e9 改 5000，同 Java）；毒／影網數值見 P113，忍者伏擊暫不套用。
     /// </summary>
     private IReadOnlyList<MonsterStatusEffect>? ApplySkillStatuses(Mob mob, MapleStatEffect? effect, Player attacker, DateTimeOffset now)
     {
@@ -260,18 +260,44 @@ public sealed class CombatService
         var applied = new List<MonsterStatusEffect>();
         foreach (var (status, value) in effect.MonsterStatuses.OrderBy(static p => (int)p.Key))
         {
-            if (status is MonsterStatus.Poison or MonsterStatus.NinjaAmbush or MonsterStatus.ShadowWeb)
+            // 忍者伏擊需玩家最大基礎傷害（Java getCurrentMaxBaseDamage），待玩家屬性重算系列。
+            if (status == MonsterStatus.NinjaAmbush)
             {
                 continue;
             }
 
+            var statusValue = value;
+            var poisonDamage = 0;
+            var poison = effect.IsPoison;
+            if (status == MonsterStatus.Poison && poison)
+            {
+                // P113：Java `poison && getHp() > 1` 計算毒傷；hp <= 1 時整個狀態不套用。
+                if (mob.Hp <= 1)
+                {
+                    continue;
+                }
+
+                statusValue = MonsterPoisonCalculator.PoisonDamage(
+                    mob.Stats.MaxHp,
+                    attacker,
+                    attacker.GetSkillLevel(effect.SourceId),
+                    _random);
+                poisonDamage = statusValue;
+            }
+            else if (effect.SourceId is 4111003 or 14111001)
+            {
+                statusValue = MonsterPoisonCalculator.ShadowWebValue(mob.Stats.MaxHp);
+                poisonDamage = statusValue;
+            }
+
             var statusEffect = new MonsterStatusEffect(
                 status,
-                value,
+                statusValue,
                 effect.SourceId,
                 null,
                 now.AddMilliseconds(duration),
-                FromCharacterId: attacker.Character.Id);
+                poisonDamage,
+                attacker.Character.Id);
             if (mob.TryApplyStatus(statusEffect) == MonsterStatusApplyResult.Applied)
             {
                 applied.Add(statusEffect);
@@ -279,6 +305,41 @@ public sealed class CombatService
         }
 
         return applied.Count > 0 ? applied : null;
+    }
+
+    /// <summary>
+    /// P113：持續傷害一跳（世界 tick 每秒呼叫，對照 Java <c>applyEffectTask</c> → <c>damage(from, dam, false)</c>）。
+    /// 不更新攻擊時間。Java 此路徑也會對 HPDisplayType -1/2 累加攻擊者武陵能量，MapleForge 暫不做（武陵怪中毒的邊角情況）。
+    /// </summary>
+    public IReadOnlyList<CombatMobHit> TickDamageOverTime(FieldInstance field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        var now = _timeProvider.GetUtcNow();
+        var hits = new List<CombatMobHit>();
+        foreach (var mob in field.Objects.OfType<Mob>().ToArray())
+        {
+            foreach (var (effect, damage) in mob.TickDamageOverTime())
+            {
+                hits.Add(new CombatMobHit(
+                    mob.ObjectId,
+                    mob.Definition.MonsterId,
+                    damage,
+                    damage,
+                    mob.Hp,
+                    Killed: false,
+                    ControllerId: mob.ControllerId,
+                    HpDisplay: new CombatMobHpDisplay(
+                        mob.Stats.HpDisplayType,
+                        mob.Hp,
+                        mob.Stats.MaxHp,
+                        mob.Stats.TagColor,
+                        mob.Stats.TagBgColor,
+                        mob.GetRecentAttackers(now))));
+            }
+        }
+
+        return hits;
     }
 
     /// <summary>Java <c>MapleStatEffect.makeChanceResult</c>：<c>prop == 100 || nextInt(99) &lt; prop</c>。</summary>

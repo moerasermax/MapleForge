@@ -181,6 +181,38 @@ public sealed class Mob : IFieldObject
         return expired;
     }
 
+    /// <summary>
+    /// P113：持續傷害一跳（對照 Java <c>applyEffectTask</c>：只有 Poison／NinjaAmbush 有排程，每秒一次；
+    /// 傷害夾在 hp - 1，不會打死）。回傳每個造成傷害的狀態與實際扣血（依列舉序）。
+    /// </summary>
+    public IReadOnlyList<(MonsterStatusEffect Effect, long Damage)> TickDamageOverTime()
+    {
+        if (!IsAlive || _statuses.Count == 0)
+        {
+            return Array.Empty<(MonsterStatusEffect, long)>();
+        }
+
+        var ticks = new List<(MonsterStatusEffect, long)>();
+        foreach (var effect in _statuses.Values.OrderBy(static e => (int)e.Status).ToArray())
+        {
+            if (effect.Status is not (MonsterStatus.Poison or MonsterStatus.NinjaAmbush) || effect.PoisonDamage == 0)
+            {
+                continue;
+            }
+
+            var damage = Math.Min(effect.PoisonDamage, Hp - 1);
+            if (damage <= 0)
+            {
+                continue;
+            }
+
+            Hp -= damage;
+            ticks.Add((effect, damage));
+        }
+
+        return ticks;
+    }
+
     private bool IsImmuneTo(MonsterStatus status, bool hasSourceEffect)
     {
         if (Stats.NoDoom && status == MonsterStatus.Doom)

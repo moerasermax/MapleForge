@@ -3839,11 +3839,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
-    /// <summary>
-    /// P107：命中後的血條顯示，對照 Java <c>MapleMonster.damage</c> 的 HPDisplayType 分派——
-    /// 存活時 0 王血條（全圖）、1 友方怪 DAMAGE_MONSTER（全圖）、-1/2 小血條（全圖）、3 小血條只給 4 秒內攻擊者；
-    /// 死亡時只有 -1 再送一次 0%。玩家攻擊不送一般 DAMAGE_MONSTER（Java 只在持續傷害/反彈時送）。
-    /// </summary>
+    /// <summary>P107：命中後的血條顯示（分派規則見 <see cref="V113MobHpDisplayPackets"/>）。</summary>
     private async Task SendMobHpDisplayAsync(
         CombatMobHit hit,
         CombatMobHpDisplay display,
@@ -3851,44 +3847,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MapleSession session,
         CancellationToken ct)
     {
-        if (hit.Killed)
+        foreach (var (packet, onlyTo) in V113MobHpDisplayPackets.Build(hit, display))
         {
-            if (display.DisplayType == -1)
+            if (onlyTo is null)
             {
-                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.ShowMonsterHp(hit.ObjectId, display.HpPercent), ct);
+                await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
             }
-
-            return;
-        }
-
-        switch (display.DisplayType)
-        {
-            case 0:
-                await BroadcastPacketToMapAsync(
-                    player.Character,
-                    session,
-                    V113CombatPackets.ShowBossHp(hit.MonsterId, display.Hp, display.MaxHp, display.TagColor, display.TagBgColor),
-                    ct);
-                break;
-            case 1:
-                await BroadcastPacketToMapAsync(
-                    player.Character,
-                    session,
-                    V113CombatPackets.DamageFriendlyMob(hit.ObjectId, hit.RequestedDamage, display.Hp, display.MaxHp),
-                    ct);
-                break;
-            case -1:
-            case 2:
-                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.ShowMonsterHp(hit.ObjectId, display.HpPercent), ct);
-                break;
-            case 3:
-                await SendToRecentAttackersAsync(
-                    display.RecentAttackerIds,
-                    V113CombatPackets.ShowMonsterHp(hit.ObjectId, display.HpPercent),
-                    player,
-                    session,
-                    ct);
-                break;
+            else
+            {
+                await SendToRecentAttackersAsync(onlyTo, packet, player, session, ct);
+            }
         }
     }
 

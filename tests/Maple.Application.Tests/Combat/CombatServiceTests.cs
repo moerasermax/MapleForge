@@ -441,16 +441,74 @@ public sealed class CombatServiceTests
     }
 
     [Fact]
-    public void ApplyAttack_PoisonStatus_DeferredUntilDamageOverTime()
+    public void ApplyAttack_PoisonSkill_ComputesPoisonDamage()
     {
+        // P113：maxHp 100000、技能等級 0、初心者 INT 4 → 100000 * (0.025 + 4/20000) = 2520。
         var service = new CombatService(new MapService(new EmptyDataProvider()));
-        var (field, player, mob) = MakeFieldWithMob(hp: 100);
+        var (field, player, mob) = MakeFieldWithMob(hp: 100_000);
 
         var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
             [new CombatAttackTarget(mob.ObjectId, [10])],
             StatusEffect(2101005, MonsterStatus.Poison, 1))).Hits);
 
-        Assert.Null(hit.AppliedStatuses);
+        var status = Assert.Single(hit.AppliedStatuses!);
+        Assert.Equal(2520, status.Value);
+        Assert.Equal(2520, status.PoisonDamage);
+    }
+
+    [Fact]
+    public void ApplyAttack_NonPoisonSourceWithPoisonStatus_NoDamageOverTime()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var (field, player, mob) = MakeFieldWithMob(hp: 100_000);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])],
+            StatusEffect(9999999, MonsterStatus.Poison, 1))).Hits);
+
+        var status = Assert.Single(hit.AppliedStatuses!);
+        Assert.Equal(1, status.Value);
+        Assert.Equal(0, status.PoisonDamage);
+    }
+
+    [Fact]
+    public void ApplyAttack_ShadowWeb_ValueIsMaxHpOverFifty()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var (field, player, mob) = MakeFieldWithMob(hp: 1000);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack(
+            [new CombatAttackTarget(mob.ObjectId, [10])],
+            StatusEffect(4111003, MonsterStatus.ShadowWeb, 1))).Hits);
+
+        Assert.Equal(20, Assert.Single(hit.AppliedStatuses!).Value);
+    }
+
+    [Fact]
+    public void PoisonDamage_ThiefUsesLukIncludingEquips()
+    {
+        var player = MakePlayer();
+        player.Character.Job = 400;
+        player.Character.Stats.Luk = 100;
+        player.Character.Equips.Add(new Maple.Core.Characters.EquipEntry { Position = -1, ItemId = 1002000, Luk = 100 });
+
+        // 10000 * (0.025 + 5/1000 + 200/20000) = 400
+        Assert.Equal(400, MonsterPoisonCalculator.PoisonDamage(10_000, player, skillLevel: 5, new Random(1)));
+    }
+
+    [Fact]
+    public void PoisonDamage_TinyResult_AddsRandomRange()
+    {
+        var player = MakePlayer();
+
+        var damage = MonsterPoisonCalculator.PoisonDamage(20, player, skillLevel: 0, new FixedDoubleRandom(0.0));
+
+        Assert.Equal(10, damage); // (int)(20*0.0252)=0 → 0 + (int)(0*11+10)
+    }
+
+    private sealed class FixedDoubleRandom(double value) : Random
+    {
+        public override double NextDouble() => value;
     }
 
     [Theory]
