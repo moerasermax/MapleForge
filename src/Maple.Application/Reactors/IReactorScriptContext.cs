@@ -41,6 +41,12 @@ public interface IReactorScriptContext
     /// <summary>P206：Java <c>gainGP(gp)</c>——沒有公會（guildId ≤ 0）時不動作。</summary>
     void GainGuildPoints(int amount);
 
+    /// <summary>P207：Java <c>givePartyExp(amount)</c>（× 頻道倍率；沒隊伍給自己，否則同圖隊員）。</summary>
+    void GivePartyExp(int amount);
+
+    /// <summary>P207：Java <c>forceCompleteQuest(id)</c> → <c>MapleQuest.forceComplete(player, 0)</c>。</summary>
+    void ForceCompleteQuest(int questId);
+
     /// <summary>P185：<c>rm.getMap(id).setReactorState(state)</c>／<c>resetReactors()</c>（腳本結束後由呼叫端套用）。</summary>
     void SetMapReactorState(int mapId, byte state);
     void RecordUnsupported(string name, params object?[] args);

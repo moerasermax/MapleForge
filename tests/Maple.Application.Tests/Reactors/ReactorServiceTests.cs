@@ -134,6 +134,13 @@ public sealed class ReactorServiceTests
 
         Assert.Equal([(true, "quest/party/clear")], ctx.Effects);
         Assert.Equal(50, ctx.PendingGuildPoints);
+
+        // P207：givePartyExp／forceCompleteQuest 交給呼叫端以 NPC 情境套用。
+        ctx.GivePartyExp(300);
+        ctx.ForceCompleteQuest(2045);
+        Assert.Equal([300], ctx.PendingPartyExp);
+        Assert.Equal([2045], ctx.PendingForceCompletedQuests);
+        Assert.DoesNotContain(ctx.Calls, c => c.Name == "RecordUnsupported");
     }
 
     [Fact]

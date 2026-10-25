@@ -273,6 +273,27 @@ public sealed class ReactorScriptContext : IReactorScriptContext
         _effects.Add((broadcast, effect));
     }
 
+    private readonly List<int> _partyExp = new();
+    private readonly List<int> _forceCompletedQuests = new();
+
+    /// <summary>P207：givePartyExp 的原始數量（呼叫端以 NPC 腳本語意套用倍率、升級與隊員分派）。</summary>
+    public IReadOnlyList<int> PendingPartyExp => _partyExp;
+
+    /// <summary>P207：forceCompleteQuest 的任務 ID（呼叫端交給任務服務並送任務封包）。</summary>
+    public IReadOnlyList<int> PendingForceCompletedQuests => _forceCompletedQuests;
+
+    public void GivePartyExp(int amount)
+    {
+        Record(nameof(GivePartyExp), amount);
+        _partyExp.Add(amount);
+    }
+
+    public void ForceCompleteQuest(int questId)
+    {
+        Record(nameof(ForceCompleteQuest), questId);
+        _forceCompletedQuests.Add(questId);
+    }
+
     public void GainGuildPoints(int amount)
     {
         Record(nameof(GainGuildPoints), amount);

@@ -4061,6 +4061,34 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await ApplyGuildPointsAsync(player.Character.GuildId, ctx.PendingGuildPoints, ct);
         }
+
+        // P207：givePartyExp／forceCompleteQuest 與 NPC 腳本同屬 AbstractPlayerInteraction——借 NPC 情境套用
+        // （倍率、升級封包、同圖隊員分派、任務完成封包）。
+        if (ctx.PendingPartyExp.Count > 0 || ctx.PendingForceCompletedQuests.Count > 0)
+        {
+            var npcCtx = NewNpcContext(0, player);
+            var script = new DelegateNpcScript(() =>
+            {
+                foreach (var amount in ctx.PendingPartyExp)
+                {
+                    npcCtx.GivePartyExp(amount);
+                }
+
+                foreach (var questId in ctx.PendingForceCompletedQuests)
+                {
+                    npcCtx.ForceCompleteQuest(questId);
+                }
+
+                npcCtx.Dispose();
+            });
+            var convo = new NpcConversation(
+                0, script, npcCtx,
+                sendDialog: (_, _) => Task.CompletedTask,
+                warp: (_, _) => Task.CompletedTask,
+                sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, player, session, c),
+                sendPartyAction: SendPartyActionAsync);
+            await convo.StartAsync(ct);
+        }
     }
 
     /// <summary>P196/P206：World.Guild.gainGP——加點後對線上成員送 UPDATE_GP。</summary>
