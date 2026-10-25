@@ -56,7 +56,11 @@ public sealed record QuestAction(
     QuestActionKind Kind,
     int IntValue = 0,
     IReadOnlyList<QuestItemAction>? Items = null,
-    IReadOnlyList<QuestIntPair>? QuestStates = null);
+    IReadOnlyList<QuestIntPair>? QuestStates = null,
+    IReadOnlyList<QuestSkillAction>? Skills = null);
+
+/// <summary>P163：Act.img 的 skill 子節點（id、skillLevel、masterLevel、job 清單 = Java applicableJobs）。</summary>
+public sealed record QuestSkillAction(int SkillId, int SkillLevel, int MasterLevel, IReadOnlyList<int> Jobs);
 
 public sealed record QuestInventoryMutation(
     InventoryType Type,

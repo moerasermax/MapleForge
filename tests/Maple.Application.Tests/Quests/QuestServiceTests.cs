@@ -81,6 +81,64 @@ public sealed class QuestServiceTests
         Assert.Equal((byte)QuestStatus.Started, player.GetQuestStatus(1000));
     }
 
+    [Fact]
+    public void CompleteQuest_GrantsExpFameSkillAndSp()
+    {
+        // P163：Java runEnd exp／pop／skill／sp。
+        var service = new QuestService(new FakeQuestCatalog(Quest(
+            1000,
+            completeActions:
+            [
+                new QuestAction(QuestActionKind.Exp, IntValue: 10),
+                new QuestAction(QuestActionKind.Pop, IntValue: 2),
+                new QuestAction(QuestActionKind.Skill, Skills:
+                [
+                    new QuestSkillAction(1003, 1, 1, []), // 初心者技能：不看職業
+                    new QuestSkillAction(1001004, 5, 10, [200]), // 職業不符
+                ]),
+                new QuestAction(QuestActionKind.Sp, IntValue: 3),
+                new QuestAction(QuestActionKind.BuffItemId, IntValue: 2022109),
+            ])));
+        var player = NewPlayer(meso: 0);
+        player.ForceStartQuest(1000, npc: 1012000, customData: null, relevantMobs: null);
+
+        var result = service.CompleteQuest(player, 1000, npc: 1012000);
+
+        Assert.Equal(QuestTransactionStatus.Success, result.Status);
+        Assert.Equal(10, player.Character.Exp);
+        Assert.Equal(10, result.ExpGained);
+        Assert.Equal(2, player.Character.Fame);
+        Assert.Equal(2, result.FameGained);
+        Assert.Equal(1, player.GetSkillLevel(1003));
+        Assert.Equal(0, player.GetSkillLevel(1001004));
+        Assert.Equal([(1003, (byte)1, (byte)1)], result.SkillChanges);
+        Assert.Equal(3, player.Character.RemainingSp);
+        Assert.Equal(2022109, result.BuffItemId);
+        Assert.Contains(new PlayerStatUpdate(PlayerStatKind.Fame, 2), result.StatUpdates);
+    }
+
+    [Fact]
+    public void StartQuest_Forfeited_SkipsExpMoneyAndFame()
+    {
+        var service = new QuestService(new FakeQuestCatalog(Quest(
+            1000,
+            startActions:
+            [
+                new QuestAction(QuestActionKind.Exp, IntValue: 10),
+                new QuestAction(QuestActionKind.Money, IntValue: 50),
+                new QuestAction(QuestActionKind.Pop, IntValue: 1),
+            ])));
+        var player = NewPlayer(meso: 100);
+        player.GetOrAddQuest(1000).Forfeited = 1;
+
+        var result = service.StartQuest(player, 1000, npc: 1012000);
+
+        Assert.Equal(QuestTransactionStatus.Success, result.Status);
+        Assert.Equal(0, player.Character.Exp);
+        Assert.Equal(100, player.Character.Meso);
+        Assert.Equal(0, player.Character.Fame);
+    }
+
     private static Player NewPlayer(int meso, params ItemRecord[] items)
         => new(
             new Character

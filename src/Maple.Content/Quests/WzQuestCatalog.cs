@@ -137,6 +137,7 @@ public sealed class WzQuestCatalog : IQuestCatalog
             {
                 QuestActionKind.Item => new QuestAction(kind, Items: ReadQuestItems(child)),
                 QuestActionKind.Quest => new QuestAction(kind, QuestStates: ReadIdCountValues(child, "state")),
+                QuestActionKind.Skill => new QuestAction(kind, Skills: ReadQuestSkills(child)),
                 QuestActionKind.Exp or QuestActionKind.Money or QuestActionKind.NextQuest or QuestActionKind.Pop
                     or QuestActionKind.BuffItemId or QuestActionKind.InfoNumber or QuestActionKind.Sp =>
                     new QuestAction(kind, IntValue: GetIntValue(child, 0)),
@@ -147,6 +148,27 @@ public sealed class WzQuestCatalog : IQuestCatalog
         }
 
         return actions;
+    }
+
+    /// <summary>P163：skill/&lt;n&gt;/{id, skillLevel, masterLevel, job/&lt;k&gt;}。</summary>
+    private static IReadOnlyList<QuestSkillAction> ReadQuestSkills(IDataNode node)
+    {
+        var skills = new List<QuestSkillAction>();
+        foreach (var child in OrderedChildren(node))
+        {
+            var skillId = GetInt(child, "id", 0);
+            if (skillId <= 0)
+            {
+                continue;
+            }
+
+            var jobs = child["job"] is { } jobNode
+                ? OrderedChildren(jobNode).Select(static j => GetIntValue(j, 0)).ToArray()
+                : [];
+            skills.Add(new QuestSkillAction(skillId, GetInt(child, "skillLevel", 0), GetInt(child, "masterLevel", 0), jobs));
+        }
+
+        return skills;
     }
 
     private static IReadOnlyList<QuestItemAction> ReadQuestItems(IDataNode node)

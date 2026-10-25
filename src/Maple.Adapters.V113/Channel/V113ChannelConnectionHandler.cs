@@ -3026,6 +3026,28 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(V113QuestPackets.UpdateMeso(result.Meso), ct);
         }
 
+        // P163：exp／pop／sp → updatePlayerStats；gainExp(show, inChat, white) → GainEXP_Others；
+        // addFame → getShowFameGain；changeSkillLevel → updateSkill。
+        if (result.StatUpdates.Count > 0)
+        {
+            await session.SendAsync(V113StatsPackets.UpdateStats(result.StatUpdates), ct);
+        }
+
+        if (result.ExpGained != 0)
+        {
+            await session.SendAsync(V113BuffItemPackets.GainExpOthers(result.ExpGained, inChat: true, white: true), ct);
+        }
+
+        if (result.FameGained != 0)
+        {
+            await session.SendAsync(V113NotePackets.ShowFameGain(result.FameGained), ct);
+        }
+
+        foreach (var (skillId, level, masterLevel) in result.SkillChanges)
+        {
+            await session.SendAsync(V113StatsPackets.UpdateSkill(skillId, level, masterLevel), ct);
+        }
+
         if (result.ShowQuestCompletionId is { } completedQuestId)
         {
             await session.SendAsync(V113QuestPackets.ShowQuestCompletion(completedQuestId), ct);

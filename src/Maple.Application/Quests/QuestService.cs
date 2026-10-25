@@ -71,6 +71,21 @@ public sealed record QuestTransactionResult
     public int? ShowQuestCompletionId { get; init; }
 
     public int? NextQuestId { get; init; }
+
+    /// <summary>P163：exp／pop／sp 造成的屬性更新（升級時含整串升級更新）。</summary>
+    public IReadOnlyList<PlayerStatUpdate> StatUpdates { get; init; } = [];
+
+    /// <summary>P163：Java gainExp(total, show, inChat, white=true) 的 total（呼叫端送 GainEXP_Others）。</summary>
+    public int ExpGained { get; init; }
+
+    /// <summary>P163：Java getShowFameGain(gain)。</summary>
+    public int FameGained { get; init; }
+
+    /// <summary>P163：changeSkillLevel 結果（技能、等級、master）。</summary>
+    public IReadOnlyList<(int SkillId, byte Level, byte MasterLevel)> SkillChanges { get; init; } = [];
+
+    /// <summary>P163：buffItemID → getItemEffect(id).applyTo(c)（呼叫端套用道具效果）。</summary>
+    public int? BuffItemId { get; init; }
 }
 
 /// <summary>Quest use case; protocol encoding stays in the adapter layer.</summary>
@@ -120,7 +135,9 @@ public sealed class QuestService
             return new QuestTransactionResult(precheck);
         }
 
-        var actionResult = ApplyActions(player, quest.StartActions, selection: null);
+        // P163：Java runStart 的 exp／money／pop 在 forfeited > 0 時略過。
+        var forfeited = player.GetQuest(questId).Forfeited > 0;
+        var actionResult = ApplyActions(player, quest.StartActions, selection: null, skipRewards: forfeited);
         if (actionResult.Status != QuestTransactionStatus.Success)
         {
             return actionResult;
@@ -321,8 +338,13 @@ public sealed class QuestService
         return QuestTransactionStatus.Success;
     }
 
-    private static QuestTransactionResult ApplyActions(Player player, IReadOnlyList<QuestAction> actions, int? selection)
+    private static QuestTransactionResult ApplyActions(Player player, IReadOnlyList<QuestAction> actions, int? selection, bool skipRewards = false)
     {
+        var statUpdates = new List<PlayerStatUpdate>();
+        var skillChanges = new List<(int SkillId, byte Level, byte MasterLevel)>();
+        var expGained = 0;
+        var fameGained = 0;
+        int? buffItemId = null;
         var gained = new List<Item>();
         var removed = new List<QuestInventoryMutation>();
         var mesoChanged = false;
@@ -365,8 +387,53 @@ public sealed class QuestService
                     break;
 
                 case QuestActionKind.Money:
+                    if (skipRewards)
+                    {
+                        break;
+                    }
+
                     player.GainMeso(action.IntValue);
                     mesoChanged = true;
+                    break;
+
+                case QuestActionKind.Exp when !skipRewards && action.IntValue != 0:
+                    // P163：Java gainExp(intStore * getExpRate_Quest(level)=1, show, inChat, white)。
+                    statUpdates.AddRange(player.GainExperience(action.IntValue).Updates);
+                    expGained += action.IntValue;
+                    break;
+
+                case QuestActionKind.Pop when !skipRewards:
+                    // P163：Java addFame（無上下限）→ updateSingleStat(FAME) → getShowFameGain。
+                    player.Character.Fame = (short)(player.Character.Fame + action.IntValue);
+                    statUpdates.Add(new PlayerStatUpdate(PlayerStatKind.Fame, player.Character.Fame));
+                    fameGained += action.IntValue;
+                    break;
+
+                case QuestActionKind.Skill:
+                    // P163：初心者技能（id/10000 ∈ {0,1000,2000,2001,3000}）或職業在 job 清單 → 等級／master 取較大值。
+                    foreach (var skill in action.Skills ?? [])
+                    {
+                        if (!IsBeginnerSkill(skill.SkillId) && !skill.Jobs.Contains(player.Character.Job))
+                        {
+                            continue;
+                        }
+
+                        var level = (byte)Math.Max(skill.SkillLevel, player.GetSkillLevel(skill.SkillId));
+                        var master = (byte)Math.Max(skill.MasterLevel, player.GetMasterLevel(skill.SkillId));
+                        player.ChangeSkillLevel(skill.SkillId, level, master);
+                        skillChanges.Add((skill.SkillId, level, master));
+                    }
+
+                    break;
+
+                case QuestActionKind.Sp when action.IntValue != 0:
+                    // P163：Java gainSP(sp_val)（v113 非龍魔，skillbook 恆 0）。
+                    player.Character.RemainingSp = (short)(player.Character.RemainingSp + action.IntValue);
+                    statUpdates.Add(new PlayerStatUpdate(PlayerStatKind.AvailableSp, player.Character.RemainingSp));
+                    break;
+
+                case QuestActionKind.BuffItemId when action.IntValue != -1 && action.IntValue != 0:
+                    buffItemId = action.IntValue;
                     break;
 
                 case QuestActionKind.Quest:
@@ -396,8 +463,18 @@ public sealed class QuestService
             inventoryMutations: removed,
             mesoChanged: mesoChanged,
             meso: player.Character.Meso,
-            nextQuestId: nextQuestId);
+            nextQuestId: nextQuestId)
+        {
+            StatUpdates = statUpdates,
+            ExpGained = expGained,
+            FameGained = fameGained,
+            SkillChanges = skillChanges,
+            BuffItemId = buffItemId,
+        };
     }
+
+    /// <summary>Java <c>Skill.isBeginnerSkill</c>。</summary>
+    private static bool IsBeginnerSkill(int skillId) => skillId / 10000 is 0 or 1000 or 2000 or 2001 or 3000;
 
     private static IReadOnlyList<QuestItemAction> ResolveItems(QuestAction action, Player player, int? selection)
     {
