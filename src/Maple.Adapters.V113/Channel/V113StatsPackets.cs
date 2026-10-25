@@ -78,6 +78,41 @@ internal static class V113StatsPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// P171：Java <c>sendHint(hint, width, height)</c>：<c>[PLAYER_HINT 0xD1][string][short 寬][short 高][byte 1]</c>；
+    /// 寬 &lt; 1 → 字數 × 10（至少 40），高 &lt; 5 → 5。
+    /// </summary>
+    public static byte[] SendHint(string hint, int width, int height)
+    {
+        if (width < 1)
+        {
+            width = Math.Max(hint.Length * 10, 40);
+        }
+
+        if (height < 5)
+        {
+            height = 5;
+        }
+
+        var w = new PacketWriter(hint.Length + 10);
+        w.WriteShort(unchecked((short)0xD1));
+        w.WriteMapleString(hint);
+        w.WriteShort((short)width);
+        w.WriteShort((short)height);
+        w.WriteByte(1);
+        return w.ToArray();
+    }
+
+    /// <summary>P171：Java <c>UIPacket.ShowWZEffect(data)</c>：<c>[SHOW_ITEM_GAIN_INCHAT 0xC7][byte 0x12][string]</c>。</summary>
+    public static byte[] ShowWzEffect(string path)
+    {
+        var w = new PacketWriter(path.Length + 5);
+        w.WriteShort(V113ChannelSendOp.ShowItemGainInChat);
+        w.WriteByte(0x12);
+        w.WriteMapleString(path);
+        return w.ToArray();
+    }
+
     /// <summary>P165：Java <c>showForeignEffect(cid, effect)</c>：<c>[0xBF][int cid][byte effect]</c>（0 = 升級、8 = 轉職）。</summary>
     public static byte[] ShowForeignEffect(int characterId, byte effect)
     {

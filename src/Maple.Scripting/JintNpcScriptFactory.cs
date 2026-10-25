@@ -109,11 +109,32 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         engine.SetValue("importPackage", new Action<object?>(_ => { }));
         engine.SetValue("Packages", new { });
 
+        // P171：Rhino 腳本常用的 java.* 與 Java String 方法 shim（Math、Point、Integer.MAX_VALUE、String.equals）。
+        engine.Execute(JavaShim);
+
         // cm facade：lowercase 名＝腳本 API。送對話類只記 pending、領域類即時委派。
         engine.SetValue("cm", new CmFacade(cm, openShop));
 
         return engine;
     }
+
+    private const string JavaShim = """
+        var java = {
+            lang: {
+                Math: { random: Math.random, floor: Math.floor, ceil: Math.ceil, min: Math.min, max: Math.max, abs: Math.abs, round: Math.round, pow: Math.pow, sqrt: Math.sqrt },
+                Integer: { MAX_VALUE: 2147483647, MIN_VALUE: -2147483648, parseInt: function (s) { return parseInt(s, 10); } },
+                Double: { POSITIVE_INFINITY: Infinity, NEGATIVE_INFINITY: -Infinity },
+                System: { currentTimeMillis: function () { return Date.now(); } }
+            },
+            awt: {
+                Point: function (x, y) { this.x = x; this.y = y; this.getX = function () { return this.x; }; this.getY = function () { return this.y; }; },
+                Rectangle: function (x, y, w, h) { this.x = x; this.y = y; this.width = w; this.height = h; }
+            },
+            util: {}
+        };
+        if (!String.prototype.equals) { String.prototype.equals = function (o) { return this == String(o); }; }
+        if (!String.prototype.equalsIgnoreCase) { String.prototype.equalsIgnoreCase = function (o) { return this.toLowerCase() == String(o).toLowerCase(); }; }
+        """;
 
     private sealed class CmFacade
     {
@@ -228,6 +249,17 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void openNpc(int npcId) => _cm.OpenNpc(npcId);
         public PortalRef getPortal() => new(_cm.GetPortalId(), _cm.GetPortalName());
         public void inFreeMarket() => _cm.InFreeMarket();
+
+        // ── P171 ─────────────────────────────────────────────────────────────────────
+        public void warpS(int mapId, int portal) => _cm.Warp(mapId, portal);
+        public void warpS(int mapId, string portalName) => _cm.Warp(mapId, portalName);
+        public void showInstruction(string message, int width, int height) => _cm.ShowInstruction(message, width, height);
+        public void showWZEffect(string path) => _cm.ShowWzEffect(path);
+        public void ShowWZEffect(string path) => _cm.ShowWzEffect(path);
+        public void mapMessage(string message) => _cm.MapMessage(5, message);
+        public void mapMessage(int type, string message) => _cm.MapMessage(type, message);
+        public bool getEvanIntroState(string data) => _cm.GetEvanIntroState(data);
+        public void updateEvanIntroState(string data) => _cm.UpdateEvanIntroState(data);
 
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);

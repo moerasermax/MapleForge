@@ -31,6 +31,14 @@ public sealed class ChannelSkillPacketTests
             V113SkillPackets.CancelSkillEffect(7, 3121020));
 
     [Fact]
+    public void SendHintAndWzEffect_MatchJava()
+    {
+        // P171：sendHint：寬 <1 → max(字數×10, 40)、高 <5 → 5；ShowWZEffect：[0xC7][0x12][string]。
+        Assert.Equal(new byte[] { 0xD1, 0x00, 0x01, 0x00, (byte)'a', 0x28, 0x00, 0x05, 0x00, 0x01 }, V113StatsPackets.SendHint("a", 0, 0));
+        Assert.Equal(new byte[] { 0xC7, 0x00, 0x12, 0x01, 0x00, (byte)'e' }, V113StatsPackets.ShowWzEffect("e"));
+    }
+
+    [Fact]
     public void EnvironmentChange_MatchesJava()
         // P169：environmentChange(env, mode)：[0x87][byte mode][string]。
         => Assert.Equal(new byte[] { 0x87, 0x00, 0x04, 0x01, 0x00, (byte)'a' }, V113CombatPackets.EnvironmentChange("a", 4));

@@ -201,6 +201,36 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Null(factory.TryCreatePortal("../npc/x", ctx));
     }
 
+    [Fact]
+    public async Task JavaShim_MathPointStringEquals_AndUiEffects()
+    {
+        // P171：Rhino 腳本的 java.lang.Math／java.awt.Point／String.equals 與 showInstruction／mapMessage。
+        File.WriteAllText(Path.Combine(_root, "portal", "shim.js"), """
+            function enter(pi) {
+                var p = new java.awt.Point(3, 4);
+                var n = java.lang.Math.floor(java.lang.Math.min(7.9, 9));
+                if ("abc".equals("abc") && p.x == 3 && n == 7 && java.lang.Integer.MAX_VALUE == 2147483647) {
+                    pi.showInstruction("提示", 0, 0);
+                    pi.mapMessage(6, "地圖訊息");
+                    pi.warpS(100000000, 2);
+                }
+            }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js" }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(0, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var effects = new List<NpcUiEffect>();
+        (int, int)? warped = null;
+        var convo = new NpcConversation(0, factory.TryCreatePortal("shim", ctx)!, ctx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask,
+            warpToPortal: (m, p, _) => { warped = (m, p); return Task.CompletedTask; },
+            sendUiEffect: (e, _) => { effects.Add(e); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal([new NpcUiEffect(NpcUiEffectKind.Hint, "提示"), new NpcUiEffect(NpcUiEffectKind.MapMessage, "地圖訊息", 6)], effects);
+        Assert.Equal((100000000, 2), warped);
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

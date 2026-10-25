@@ -31,6 +31,7 @@ public sealed class NpcConversation
     private readonly Func<bool, int, string, CancellationToken, Task>? _sendEnvironment;
     private readonly Func<int, string, CancellationToken, Task>? _sendWorldMessage;
     private readonly Func<CancellationToken, Task>? _playPortalSe;
+    private readonly Func<NpcUiEffect, CancellationToken, Task>? _sendUiEffect;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -55,8 +56,10 @@ public sealed class NpcConversation
         Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? sendJobChange = null,
         Func<bool, int, string, CancellationToken, Task>? sendEnvironment = null,
         Func<int, string, CancellationToken, Task>? sendWorldMessage = null,
-        Func<CancellationToken, Task>? playPortalSe = null)
+        Func<CancellationToken, Task>? playPortalSe = null,
+        Func<NpcUiEffect, CancellationToken, Task>? sendUiEffect = null)
     {
+        _sendUiEffect = sendUiEffect;
         _playPortalSe = playPortalSe;
         _sendEnvironment = sendEnvironment;
         _sendWorldMessage = sendWorldMessage;
@@ -165,6 +168,14 @@ public sealed class NpcConversation
             foreach (var (type, message) in _ctx.PendingWorldMessages)
             {
                 await _sendWorldMessage(type, message, ct);
+            }
+        }
+
+        if (_sendUiEffect is not null)
+        {
+            foreach (var effect in _ctx.PendingUiEffects)
+            {
+                await _sendUiEffect(effect, ct);
             }
         }
 

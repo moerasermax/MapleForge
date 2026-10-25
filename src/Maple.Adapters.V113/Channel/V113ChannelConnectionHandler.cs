@@ -2132,7 +2132,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 ? BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.EnvironmentChange(name, mode), c)
                 : session.SendAsync(V113CombatPackets.EnvironmentChange(name, mode), c),
             sendWorldMessage: (type, msg, c) => BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
-            playPortalSe: c => session.SendAsync(V113SkillPackets.ShowOwnBuffEffect(0, 7), c));
+            playPortalSe: c => session.SendAsync(V113SkillPackets.ShowOwnBuffEffect(0, 7), c),
+            sendUiEffect: (effect, c) => effect.Kind switch
+            {
+                NpcUiEffectKind.Hint => session.SendAsync(V113StatsPackets.SendHint(effect.Text, effect.A, effect.B), c),
+                NpcUiEffectKind.WzEffect => session.SendAsync(V113StatsPackets.ShowWzEffect(effect.Text), c),
+                _ => BroadcastPacketToMapAsync(player.Character, session, V113BroadcastPackets.ServerNotice(effect.A, effect.Text), c),
+            });
 
     /// <summary>
     /// P170：Java <c>MapleGenericPortal.enterPortal</c> 的腳本分支 → <c>PortalScriptManager.executePortalScript</c>：

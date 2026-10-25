@@ -43,3 +43,18 @@ public sealed record NpcDialog(
     int NumberMin = 0,
     int NumberMax = 0,
     IReadOnlyList<int>? Styles = null);
+
+/// <summary>P171：腳本觸發的 UI 效果（版本無關；Adapters 編成封包）。</summary>
+public enum NpcUiEffectKind
+{
+    /// <summary>Java <c>showInstruction(msg, width, height)</c> → sendHint。</summary>
+    Hint,
+
+    /// <summary>Java <c>showWZEffect(path)</c> → UIPacket.ShowWZEffect。</summary>
+    WzEffect,
+
+    /// <summary>Java <c>mapMessage(type, msg)</c>：全地圖 broadcastMessage。</summary>
+    MapMessage,
+}
+
+public sealed record NpcUiEffect(NpcUiEffectKind Kind, string Text, int A = 0, int B = 0);

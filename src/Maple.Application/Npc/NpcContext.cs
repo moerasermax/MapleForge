@@ -39,6 +39,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 
     internal IReadOnlyList<(bool Broadcast, int Mode, string Name)> PendingEnvironment => _pendingEnvironment;
     internal IReadOnlyList<(int Type, string Message)> PendingWorldMessages => _pendingWorldMessages;
+    private readonly List<NpcUiEffect> _pendingUiEffects = new();
+    internal IReadOnlyList<NpcUiEffect> PendingUiEffects => _pendingUiEffects;
     private readonly Random _random;
 
     public NpcContext(
@@ -108,6 +110,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingPortalSe = false;
         PendingOpenNpcId = null;
         _pendingWorldMessages.Clear();
+        _pendingUiEffects.Clear();
     }
 
     // ── cm surface（暴露給腳本）────────────────────────────────────────────────
@@ -286,6 +289,20 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
             PlayerMessage(5, "你需要10級才可以進入自由市場");
         }
     }
+
+    // ── P171 ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Java <c>showInstruction</c> → sendHint：寬 &lt; 1 用字數×10（至少 40），高 &lt; 5 用 5（由編碼端套用）。</summary>
+    public void ShowInstruction(string message, int width, int height) => _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.Hint, message, width, height));
+
+    public void ShowWzEffect(string path) => _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.WzEffect, path));
+
+    public void MapMessage(int type, string message) => _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.MapMessage, message, type));
+
+    /// <summary>Java <c>getEvanIntroState(data)</c> = getInfoQuest(22013).equals(data)。</summary>
+    public bool GetEvanIntroState(string data) => GetInfoQuest(22013) == data;
+
+    public void UpdateEvanIntroState(string data) => UpdateInfoQuest(22013, data);
 
     /// <summary>MapleMap.getPortal(name).getId()（找不到回 -1）。</summary>
     public int GetMapPortalId(int mapId, string portalName) => _portalIdOf(mapId, portalName);

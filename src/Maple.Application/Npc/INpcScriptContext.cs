@@ -164,4 +164,11 @@ public interface INpcScriptContext
     int GetPortalId();
     void InFreeMarket();
     int GetMapPortalId(int mapId, string portalName);
+
+    // ── P171 ─────────────────────────────────────────────────────────────────────────────
+    void ShowInstruction(string message, int width, int height);
+    void ShowWzEffect(string path);
+    void MapMessage(int type, string message);
+    bool GetEvanIntroState(string data);
+    void UpdateEvanIntroState(string data);
 }
