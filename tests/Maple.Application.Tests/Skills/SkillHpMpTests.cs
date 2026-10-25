@@ -5,8 +5,8 @@ using Maple.Core.World;
 
 namespace Maple.Application.Tests.Skills;
 
-/// <summary>P133：攻擊尾段 applyTo 的 HP/MP 結算（對照 Java MapleStatEffect.applyTo、calcHPChange、calcMPChange）。</summary>
-public sealed class AttackSkillCostTests
+/// <summary>P133/P134：applyTo 的 HP/MP 結算（攻擊尾段與 SPECIAL_MOVE 共用）（對照 Java MapleStatEffect.applyTo、calcHPChange、calcMPChange）。</summary>
+public sealed class SkillHpMpTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 25, 0, 0, 0, TimeSpan.Zero);
 
@@ -156,6 +156,74 @@ public sealed class AttackSkillCostTests
         var (service, player) = Setup(Skill(2101004, mpCon: 30));
 
         Assert.Null(service.ApplyAttackSkillCost(player, 2111002, 1, isMagic: true));
+        Assert.Equal((short)100, player.Mp);
+    }
+
+    [Fact]
+    public void Cast_UsesSameMpFormula_ElementalAmplification()
+    {
+        var amp = new MapleSkill { Id = 2110001, Effects = [new MapleStatEffect { SourceId = 2110001, Level = 1, X = 150 }] };
+        var (service, player) = Setup(Skill(2111005, mpCon: 20), amp);
+        player.Character.Job = 211;
+        player.ChangeSkillLevel(2110001, 1, 1);
+
+        var result = service.Cast(player, 2111005, 1, T0);
+
+        Assert.Equal(SkillCastStatus.Success, result.Status);
+        Assert.Equal((short)70, player.Mp); // 20 * 1.5
+    }
+
+    [Fact]
+    public void Cast_NotEnoughMp_DoesNotApplyBuff()
+    {
+        var buff = new MapleSkill
+        {
+            Id = 2001002,
+            Effects =
+            [
+                new MapleStatEffect
+                {
+                    SourceId = 2001002,
+                    Level = 1,
+                    MpCon = 200,
+                    IsOverTime = true,
+                    DurationMilliseconds = 60_000,
+                    Statups = [new BuffStatValue(MapleBuffStat.MAGIC_GUARD, 10)],
+                },
+            ],
+        };
+        var (service, player) = Setup(buff);
+
+        var result = service.Cast(player, 2001002, 1, T0);
+
+        Assert.Equal(SkillCastStatus.NotEnoughMp, result.Status);
+        Assert.Null(result.AppliedBuff);
+        Assert.Null(player.GetBuffValue(MapleBuffStat.MAGIC_GUARD));
+    }
+
+    [Fact]
+    public void Cast_MpRecovery_TradesTenPercentBaseMaxHpForMp()
+    {
+        var skill = new MapleSkill { Id = 5101005, Effects = [new MapleStatEffect { SourceId = 5101005, Level = 1, Y = 300 }] };
+        var (service, player) = Setup(skill);
+
+        Assert.Equal(SkillCastStatus.Success, service.Cast(player, 5101005, 1, T0).Status);
+
+        Assert.Equal((short)400, player.Hp);  // 1000/100*10 = 100
+        Assert.Equal((short)400, player.Mp);  // 100 + (100/100)*300
+    }
+
+    [Fact]
+    public void Cast_MpRecovery_LowHp_CopiesJavaQuirk()
+    {
+        var skill = new MapleSkill { Id = 5101005, Effects = [new MapleStatEffect { SourceId = 5101005, Level = 1, Y = 300 }] };
+        var (service, player) = Setup(skill);
+        player.Character.Stats.Hp = 50;
+
+        service.Cast(player, 5101005, 1, T0);
+
+        // Java：hpchange = hp - 1（正值）→ HP 反而 +49；MP 不變。
+        Assert.Equal((short)99, player.Hp);
         Assert.Equal((short)100, player.Mp);
     }
 

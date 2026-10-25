@@ -166,10 +166,20 @@ public sealed partial class Player
 
         UseMp(effect.MpCon);
         ApplyImmediateHpMp(effect);
+        return new PlayerSkillApplication(PlayerSkillApplicationStatus.Applied, ApplyBuffStats(effect, now));
+    }
+
+    /// <summary>
+    /// P134：只套用 buff 部分（Java <c>applyBuffEffect</c> 的 statups 登記）；HP/MP 結算由呼叫端負責
+    /// （技能走 <c>SkillService</c> 的 Java calcHPChange/calcMPChange）。非 overTime 或無 statups 回 null。
+    /// </summary>
+    public PlayerBuffChange? ApplyBuffStats(MapleStatEffect effect, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
 
         if (!effect.IsOverTime || effect.Statups.Count == 0)
         {
-            return new PlayerSkillApplication(PlayerSkillApplicationStatus.Applied, null);
+            return null;
         }
 
         var stats = effect.Statups.ToArray();
@@ -187,9 +197,7 @@ public sealed partial class Player
             }
         }
 
-        return new PlayerSkillApplication(
-            PlayerSkillApplicationStatus.Applied,
-            new PlayerBuffChange(effect.SourceId, effect.DurationMilliseconds, now, stats));
+        return new PlayerBuffChange(effect.SourceId, effect.DurationMilliseconds, now, stats);
     }
 
     public int AddAranCombo(int amount, DateTimeOffset now)

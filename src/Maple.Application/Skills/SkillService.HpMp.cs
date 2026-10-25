@@ -4,20 +4,26 @@ using Maple.Core.World;
 namespace Maple.Application.Skills;
 
 /// <summary>
-/// P133：攻擊技能尾段 <c>effect.applyTo(player)</c> 的 HP/MP 結算。<paramref name="Applied"/> = false 代表 Java applyTo
-/// 提前 return false（HP 或 MP 不足；不送封包、後續霧等副作用也不發生）。成功時 <paramref name="Updates"/> 依 Java
-/// <c>hpmpupdate</c>：MP 有變才帶、HP 一律帶，呼叫端以 <c>updatePlayerStats(..., true)</c> 送出。
+/// P133/P134：技能 <c>effect.applyTo</c> 開頭的 HP/MP 結算（攻擊尾段與 SPECIAL_MOVE 共用）。
+/// <paramref name="Status"/> 非 Success 代表 Java applyTo 提前 return false（HP 或 MP 不足；不送封包、後續副作用不發生）。
+/// 成功時 <paramref name="Updates"/> 依 Java <c>hpmpupdate</c>：MP 有變才帶、HP 一律帶，呼叫端以
+/// <c>updatePlayerStats(..., true)</c> 送出。
 /// </summary>
-public sealed record AttackSkillCostResult(bool Applied, IReadOnlyList<PlayerStatUpdate> Updates);
+public sealed record SkillHpMpResult(SkillCastStatus Status, IReadOnlyList<PlayerStatUpdate> Updates)
+{
+    public bool Applied => Status == SkillCastStatus.Success;
+}
 
 public sealed partial class SkillService
 {
+    public const int MpRecoverySkillId = 5101005;
+
     /// <summary>
     /// 對照 Java <c>DamageParse.applyAttack:533</c>（近戰／遠程）：<c>attack.skill != 0 &amp;&amp; (targets &gt; 0 || skill 不是
     /// 4331003/4341002) &amp;&amp; skill 不在 {21101003, 5110001, 15100004, 11101002, 13101002}</c> 才 applyTo；
     /// <c>applyAttackMagic:768</c>（魔法）：skill 不是群體治癒 2301002。不呼叫 applyTo 時回 null。
     /// </summary>
-    public AttackSkillCostResult? ApplyAttackSkillCost(Player player, int skillId, int targetCount, bool isMagic)
+    public SkillHpMpResult? ApplyAttackSkillCost(Player player, int skillId, int targetCount, bool isMagic)
     {
         ArgumentNullException.ThrowIfNull(player);
 
@@ -26,7 +32,7 @@ public sealed partial class SkillService
             return null;
         }
 
-        return ApplyHpMpChange(player, effect);
+        return ApplySkillHpMp(player, effect);
     }
 
     public static bool AppliesAttackEffect(int skillId, int targetCount, bool isMagic)
@@ -37,22 +43,43 @@ public sealed partial class SkillService
               && skillId is not (21101003 or 5110001 or 15100004 or 11101002 or 13101002);
 
     /// <summary>
-    /// Java <c>applyTo</c> 開頭（primary）：<c>calcHPChange</c>／<c>calcMPChange</c> → HP 不足（<c>-hpchange &gt; hp</c> 且非殭屍）
-    /// return false → 設 HP → MP 不足（<c>mp + mpchange &lt; 0</c>）return false → 設 MP。Java 在 MP 檢查失敗前已改 HP（照抄）。
+    /// Java <c>applyTo</c> 開頭（primary）：<c>calcHPChange</c>／<c>calcMPChange</c> →（P134）能量恢復 5101005 →
+    /// HP 不足（<c>-hpchange &gt; hp</c> 且非殭屍）return false → 設 HP → MP 不足（<c>mp + mpchange &lt; 0</c>）return false
+    /// → 設 MP。Java 在 MP 檢查失敗前已改 HP（照抄）。
     /// 偏差：Java 允許 <c>-hpchange == hp</c> 把 HP 扣到 0（伺服器不走死亡流程），MapleForge 視為不足；殭屍狀態下最低留 1。
     /// </summary>
-    private AttackSkillCostResult ApplyHpMpChange(Player player, MapleStatEffect effect)
+    public SkillHpMpResult ApplySkillHpMp(Player player, MapleStatEffect effect)
     {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(effect);
+
         var hpChange = CalcHpChange(player, effect);
         var mpChange = CalcMpChange(player, effect);
         var stats = player.Character.Stats;
         var zombify = player.HasDisease(PlayerDisease.Zombify);
 
+        // Java else-if 鏈的 isMPRecovery()（驅散／英雄意志／cureDebuffs 分支都不是 5101005）：
+        // toDecreaseHP = (getMaxHp() / 100) * 10（基礎最大 HP）；HP 足夠 → 扣 HP、回 (toDecreaseHP / 100) * y MP；
+        // 否則 Java 寫成 hpchange = hp == 1 ? 0 : hp - 1（正值，等於回血；原碼疏失，照抄）。
+        if (effect.IsSkill && effect.SourceId == MpRecoverySkillId)
+        {
+            var toDecreaseHp = stats.MaxHp / 100 * 10;
+            if (stats.Hp > toDecreaseHp)
+            {
+                hpChange += -toDecreaseHp;
+                mpChange += toDecreaseHp / 100 * effect.Y;
+            }
+            else
+            {
+                hpChange = stats.Hp == 1 ? 0 : stats.Hp - 1;
+            }
+        }
+
         if (hpChange != 0)
         {
             if (hpChange < 0 && -hpChange >= stats.Hp && !zombify)
             {
-                return new AttackSkillCostResult(false, []);
+                return new SkillHpMpResult(SkillCastStatus.NotEnoughHp, []);
             }
 
             stats.Hp = (short)Math.Clamp(stats.Hp + hpChange, 1, player.MaxHp);
@@ -63,7 +90,7 @@ public sealed partial class SkillService
         {
             if (stats.Mp + mpChange < 0)
             {
-                return new AttackSkillCostResult(false, []);
+                return new SkillHpMpResult(SkillCastStatus.NotEnoughMp, []);
             }
 
             stats.Mp = (short)Math.Min(player.MaxMp, stats.Mp + mpChange);
@@ -71,13 +98,14 @@ public sealed partial class SkillService
         }
 
         updates.Add(new PlayerStatUpdate(PlayerStatKind.Hp, stats.Hp));
-        return new AttackSkillCostResult(true, updates);
+        return new SkillHpMpResult(SkillCastStatus.Success, updates);
     }
 
     /// <summary>
     /// Java <c>calcHPChange(applyfrom, primary=true)</c> 的攻擊技能部分：GM 技能 9001000/9101000 +500000、
     /// <c>hpR</c>（<c>(int)(currentMaxHp * hpR) / (殭屍 ? 2 : 1)</c>）、<c>-hpCon</c>。技能 <c>hp</c>（治癒公式
-    /// makeHealHP 需總魔攻）與 4211001 氣絕（SPECIAL_MOVE）不在攻擊路徑，未納入。
+    /// makeHealHP 需總魔攻）未納入：WZ 中帶 hp 的技能只有被動、召喚獸治療與群體治癒（魔法攻擊尾段排除 applyTo）。
+    /// 4211001 氣絕（Java 以 LUK/DEX 公式覆寫 hpchange）待總屬性系列。
     /// </summary>
     private static int CalcHpChange(Player player, MapleStatEffect effect)
     {

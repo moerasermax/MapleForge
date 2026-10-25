@@ -161,14 +161,9 @@ public sealed partial class SkillService
             return new SkillCastResult(SkillCastStatus.OnCooldown, skillId, skill, effect, null, MulungEnergyReset: mulungEnergyReset);
         }
 
-        var applied = player.ApplySkillEffect(effect, now);
-        var status = applied.Status switch
-        {
-            PlayerSkillApplicationStatus.Applied => SkillCastStatus.Success,
-            PlayerSkillApplicationStatus.NotEnoughHp => SkillCastStatus.NotEnoughHp,
-            PlayerSkillApplicationStatus.NotEnoughMp => SkillCastStatus.NotEnoughMp,
-            _ => SkillCastStatus.NoEffect,
-        };
+        // P134：HP/MP 走 Java calcHPChange/calcMPChange（元素增幅、集中術、魔力無限、能量恢復），再登記 buff。
+        var status = ApplySkillHpMp(player, effect).Status;
+        var appliedBuff = status == SkillCastStatus.Success ? player.ApplyBuffStats(effect, now) : null;
 
         // 對照 Java PlayerHandler.SpecialMove：有冷卻的技能施放時登記冷卻（呼叫端據此送 COOLDOWN
         // 封包）；海盜船例外——Java 施放時不登記，船被打爆時才由 MapleCharacter 登記冷卻。
@@ -198,7 +193,7 @@ public sealed partial class SkillService
             }
         }
 
-        return new SkillCastResult(status, skillId, skill, effect, applied.Buff, cooldownStarted, reset, mulungEnergyReset,
+        return new SkillCastResult(status, skillId, skill, effect, appliedBuff, cooldownStarted, reset, mulungEnergyReset,
             cured is { Count: > 0 } ? cured : null);
     }
 
