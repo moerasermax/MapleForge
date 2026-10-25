@@ -339,6 +339,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, sessionToken, token);
         }
 
+        // P166：cm.warp(map, portal)——Java changeMap(mapz, mapz.getPortal(portal))。
+        async Task WarpFromNpcToPortalAsync(int mapId, int portal, CancellationToken token)
+        {
+            if (player is null) return;
+            currentField = await WarpAsync(player, currentField, npcOidToId, session, mapId, sessionToken, token, portal);
+        }
+
         // 腳走地圖傳送點（CHANGE_MAP 0x1E）。對照 Java PlayerHandler.ChangeMap 正常 portal 分支。
         async Task HandleChangeMapAsync(PacketReader r, CancellationToken token)
         {
@@ -1022,7 +1029,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                                 OpenShopFromNpcAsync,
                                 OpenStorageFromNpcAsync,
                                 WarpFromNpcAsync,
-                                token);
+                                token,
+                                WarpFromNpcToPortalAsync);
                             if (conversation is null)
                             {
                                 await s.SendAsync(V113StatsPackets.EnableActions(), token);
@@ -1169,7 +1177,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             OpenShopFromNpcAsync,
                             OpenStorageFromNpcAsync,
                             WarpFromNpcAsync,
-                            token);
+                            token,
+                            WarpFromNpcToPortalAsync);
                         break;
 
                     case V113ChannelRecvOp.NpcTalkMore:
@@ -2007,7 +2016,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         Func<int, CancellationToken, Task> openShop,
         Func<int, CancellationToken, Task> openStorage,
         Func<int, CancellationToken, Task> warp,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<int, int, CancellationToken, Task>? warpToPortal = null)
     {
         var oid = reader.ReadInt();
         if (!oidToNpcId.TryGetValue(oid, out var npcId))
@@ -2036,7 +2046,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
             sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
             disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
-            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c));
+            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
+            warpToPortal: warpToPortal,
+            sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -2050,7 +2062,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         Func<int, CancellationToken, Task> openShop,
         Func<int, CancellationToken, Task> openStorage,
         Func<int, CancellationToken, Task> warp,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<int, int, CancellationToken, Task>? warpToPortal = null)
     {
         var ctx = new NpcContext(npcId, player, _questService);
         var script = _npcScripts.TryCreate(npcId, ctx);
@@ -2072,7 +2085,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
             sendPopupMessage: (msg, c) => session.SendAsync(V113BroadcastPackets.PopupMessage(msg), c),
             disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
-            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c));
+            sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
+            warpToPortal: warpToPortal,
+            sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -3036,6 +3051,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (result.MesoChanged)
         {
             await session.SendAsync(V113QuestPackets.UpdateMeso(result.Meso), ct);
+        }
+
+        // P166：cm.gainMeso／gainItem 的聊天欄提示（showMesoGain／getShowItemGain inChat）。
+        if (result.MesoGained is { } mesoGained)
+        {
+            await session.SendAsync(V113DropPackets.ShowMesoGain(mesoGained, inChat: true), ct);
+        }
+
+        foreach (var (itemId, quantity) in result.ItemGainNotices)
+        {
+            await session.SendAsync(V113DropPackets.ShowItemGain(itemId, (short)quantity, inChat: true), ct);
         }
 
         // P163：exp／pop／sp → updatePlayerStats；gainExp(show, inChat, white) → GainEXP_Others；

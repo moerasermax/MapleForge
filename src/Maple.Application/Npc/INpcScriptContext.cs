@@ -85,4 +85,36 @@ public interface INpcScriptContext
     /// 呼叫 cm.dispose() 結束對話（不像 cm.openStorage 那樣自動結束）。
     /// </summary>
     void SendRepairWindow();
+
+    // ── P166：常用 cm API（對照 AbstractPlayerInteraction／NPCConversationManager）────────────
+    void SafeDispose();
+    void Warp(int mapId, int portal);
+    bool HaveItem(int itemId, int quantity);
+    bool CanHold();
+    bool CanHold(int itemId);
+    bool CanHold(int itemId, int quantity);
+    void RemoveAll(int itemId);
+    int ItemQuantity(int itemId);
+    void PlayerMessage(string message);
+    void PlayerMessage(int type, string message);
+    void GainExp(int gain);
+    int GetLevel();
+    int GetMapId();
+    bool IsQuestActive(int questId);
+    bool IsQuestFinished(int questId);
+
+    // ── P166：cm.getPlayer()／cm.getChar() 的角色查詢 ───────────────────────────────────────
+    int GetCharacterId();
+    string GetName();
+    int GetGender();
+    int GetFace();
+    int GetHair();
+    int GetFame();
+    bool IsGm();
+    int GetRemainingSp();
+    int GetRemainingAp();
+    int GetSkillLevel(int skillId);
+    int GetMasterLevel(int skillId);
+    bool HasEquipped(int itemId);
+    void GainAp(int amount);
 }

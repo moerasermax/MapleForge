@@ -129,5 +129,55 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public void increaseGuildCapacity() => _cm.IncreaseGuildCapacity();
         public void disbandGuild() => _cm.DisbandGuild();
         public void sendRepairWindow() => _cm.SendRepairWindow();
+
+        // ── P166：常用 cm API ──────────────────────────────────────────────────────
+        public void safeDispose() => _cm.SafeDispose();
+        public void warp(int mapId, int portal) => _cm.Warp(mapId, portal);
+        public bool haveItem(int itemId, int quantity) => _cm.HaveItem(itemId, quantity);
+        public bool canHold() => _cm.CanHold();
+        public bool canHold(int itemId) => _cm.CanHold(itemId);
+        public bool canHold(int itemId, int quantity) => _cm.CanHold(itemId, quantity);
+        public void removeAll(int itemId) => _cm.RemoveAll(itemId);
+        public int itemQuantity(int itemId) => _cm.ItemQuantity(itemId);
+        public void playerMessage(string message) => _cm.PlayerMessage(message);
+        public void playerMessage(int type, string message) => _cm.PlayerMessage(type, message);
+        public void gainExp(int gain) => _cm.GainExp(gain);
+        public int getLevel() => _cm.GetLevel();
+        public int getMapId() => _cm.GetMapId();
+        public bool isQuestActive(int questId) => _cm.IsQuestActive(questId);
+        public bool isQuestFinished(int questId) => _cm.IsQuestFinished(questId);
+        public PlayerFacade getPlayer() => new(_cm);
+        public PlayerFacade getChar() => new(_cm);
+    }
+
+    /// <summary>P166：<c>cm.getPlayer()</c>／<c>cm.getChar()</c> 的 MapleCharacter 子集（只讀查詢＋gainAp）。</summary>
+    private sealed class PlayerFacade
+    {
+        private readonly INpcScriptContext _cm;
+
+        public PlayerFacade(INpcScriptContext cm) => _cm = cm;
+
+        public int getId() => _cm.GetCharacterId();
+        public string getName() => _cm.GetName();
+        public int getLevel() => _cm.GetLevel();
+        public int getJob() => _cm.GetJob();
+        public int getMapId() => _cm.GetMapId();
+        public int getMeso() => _cm.GetMeso();
+        public int getGender() => _cm.GetGender();
+        public int getFace() => _cm.GetFace();
+        public int getHair() => _cm.GetHair();
+        public int getFame() => _cm.GetFame();
+        public bool isGM() => _cm.IsGm();
+        public int getRemainingSp() => _cm.GetRemainingSp();
+        public int getRemainingAp() => _cm.GetRemainingAp();
+        public int getSkillLevel(int skillId) => _cm.GetSkillLevel(skillId);
+        public int getMasterLevel(int skillId) => _cm.GetMasterLevel(skillId);
+        public int itemQuantity(int itemId) => _cm.ItemQuantity(itemId);
+        public bool haveItem(int itemId) => _cm.HaveItem(itemId);
+        public bool haveItem(int itemId, int quantity) => _cm.HaveItem(itemId, quantity);
+        public bool hasEquipped(int itemId) => _cm.HasEquipped(itemId);
+        public void gainAp(int amount) => _cm.GainAp(amount);
+        public void dropMessage(string message) => _cm.PlayerMessage(5, message);
+        public void dropMessage(int type, string message) => _cm.PlayerMessage(type, message);
     }
 }

@@ -336,6 +336,114 @@ public sealed class NpcContextTests
         Assert.True(convo.Active);
     }
 
+    [Fact]
+    public async Task GainItemAndMeso_FlushAsQuestResultsWithNotices()
+    {
+        // P166：Java gainItem → getShowItemGain(id, qty, true)；gainMeso → showMesoGain(gain, true)；背包／楓幣封包隨結果送出。
+        var player = NewPlayer();
+        var ctx = new NpcContext(9000000, player, NewQuestService());
+        var results = new List<QuestTransactionResult>();
+        var convo = new NpcConversation(
+            9000000,
+            new ActionScript(() =>
+            {
+                ctx.GainItem(2000000, 3);
+                ctx.GainMeso(500);
+                ctx.GainItem(2000000, -3);
+                ctx.GainItem(2000001, -1); // 沒有 → 不扣、不提示
+            }),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            sendQuestResult: (r, _) =>
+            {
+                results.Add(r);
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal([(2000000, 3)], results[0].ItemGainNotices);
+        Assert.Single(results[0].GainedItems);
+        Assert.Equal(500, results[1].MesoGained);
+        Assert.Equal(500, player.Character.Meso);
+        Assert.Equal([(2000000, -3)], results[2].ItemGainNotices);
+        Assert.Equal(0, ctx.ItemQuantity(2000000));
+    }
+
+    [Fact]
+    public void HaveItemQuantity_CanHold_RemoveAll()
+    {
+        var player = NewPlayer();
+        var ctx = new NpcContext(9000000, player, NewQuestService());
+        ctx.GainItem(4000000, 5);
+        ctx.GainItem(4000000, 2);
+
+        Assert.True(ctx.HaveItem(4000000, 7));
+        Assert.False(ctx.HaveItem(4000000, 8));
+        Assert.True(ctx.CanHold(4000000));
+        Assert.True(ctx.CanHold());
+
+        ctx.RemoveAll(4000000);
+        Assert.Equal(0, ctx.ItemQuantity(4000000));
+    }
+
+    [Fact]
+    public async Task SafeDispose_EndsOnNextResponseWithoutCallingScript()
+    {
+        var player = NewPlayer();
+        var ctx = new NpcContext(9000000, player, NewQuestService());
+        var resumed = 0;
+        var script = new CountingScript(() => { ctx.SendOk("bye"); ctx.SafeDispose(); }, () => resumed++);
+        var convo = new NpcConversation(9000000, script, ctx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask);
+
+        await convo.StartAsync(CancellationToken.None);
+        Assert.True(convo.Active);
+        await convo.ContinueAsync(1, 0, -1, CancellationToken.None);
+
+        Assert.False(convo.Active);
+        Assert.Equal(0, resumed);
+    }
+
+    [Fact]
+    public async Task GainExp_WarpPortal_PlayerMessage_Flush()
+    {
+        var player = NewPlayer();
+        var ctx = new NpcContext(9000000, player, NewQuestService());
+        var results = new List<QuestTransactionResult>();
+        (int Map, int Portal)? warped = null;
+        var messages = new List<(int, string)>();
+        var convo = new NpcConversation(
+            9000000,
+            new ActionScript(() =>
+            {
+                ctx.GainExp(10);
+                ctx.PlayerMessage("hello");
+                ctx.Warp(100000000, 2);
+            }),
+            ctx,
+            sendDialog: (_, _) => Task.CompletedTask,
+            warp: (_, _) => Task.CompletedTask,
+            sendQuestResult: (r, _) => { results.Add(r); return Task.CompletedTask; },
+            warpToPortal: (map, portal, _) => { warped = (map, portal); return Task.CompletedTask; },
+            sendMessage: (type, msg, _) => { messages.Add((type, msg)); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal(10, Assert.Single(results).ExpGained);
+        Assert.Equal(10, player.Character.Exp);
+        Assert.Equal((100000000, 2), warped);
+        Assert.Equal([(5, "hello")], messages);
+    }
+
+    private sealed class CountingScript(Action start, Action resume) : INpcScript
+    {
+        public void Start() => start();
+
+        public void Resume(int mode, int type, int selection) => resume();
+    }
+
     private static Player NewPlayer()
         => new(
             new Character { Id = 1, Name = "NpcApp", Level = 30 },

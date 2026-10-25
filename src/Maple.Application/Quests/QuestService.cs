@@ -86,6 +86,12 @@ public sealed record QuestTransactionResult
 
     /// <summary>P163：buffItemID → getItemEffect(id).applyTo(c)（呼叫端套用道具效果）。</summary>
     public int? BuffItemId { get; init; }
+
+    /// <summary>P166：cm.gainMeso → gainMeso(gain, show, inChat) 的 showMesoGain(gain, true)。</summary>
+    public int? MesoGained { get; init; }
+
+    /// <summary>P166：cm.gainItem／removeAll → getShowItemGain(id, quantity, true)（負數為扣除）。</summary>
+    public IReadOnlyList<(int ItemId, int Quantity)> ItemGainNotices { get; init; } = [];
 }
 
 /// <summary>Quest use case; protocol encoding stays in the adapter layer.</summary>
@@ -99,6 +105,23 @@ public sealed class QuestService
     {
         _localStats = localStats;
         _catalog = catalog;
+    }
+
+    /// <summary>
+    /// P166：NPC 腳本 <c>cm.gainExp(gain)</c> → <c>gainExp(gain, show, inChat, white)</c>（升級加成同任務經驗）；
+    /// 以 <see cref="QuestTransactionResult"/> 承載屬性更新與經驗提示（呼叫端共用同一套送包）。
+    /// </summary>
+    public QuestTransactionResult GrantExp(Player player, int amount)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        var bonus = _localStats is not null && player.WouldLevelUp(amount) ? _localStats.ComputeLevelUpBonus(player) : default;
+        var mutation = player.GainExperience(amount, bonus: bonus);
+        return new QuestTransactionResult(QuestTransactionStatus.Success)
+        {
+            StatUpdates = mutation.Updates,
+            ExpGained = mutation.Updates.Count > 0 ? amount : 0,
+        };
     }
 
     public QuestTransactionResult HandleClientAction(Player player, QuestClientAction action)

@@ -25,6 +25,8 @@ public sealed class NpcConversation
     private readonly Func<string, CancellationToken, Task>? _sendPopupMessage;
     private readonly Func<CancellationToken, Task>? _disbandGuild;
     private readonly Func<int, CancellationToken, Task>? _sendRepairWindow;
+    private readonly Func<int, int, CancellationToken, Task>? _warpToPortal;
+    private readonly Func<int, string, CancellationToken, Task>? _sendMessage;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -43,8 +45,12 @@ public sealed class NpcConversation
         Func<CancellationToken, Task>? increaseGuildCapacity = null,
         Func<string, CancellationToken, Task>? sendPopupMessage = null,
         Func<CancellationToken, Task>? disbandGuild = null,
-        Func<int, CancellationToken, Task>? sendRepairWindow = null)
+        Func<int, CancellationToken, Task>? sendRepairWindow = null,
+        Func<int, int, CancellationToken, Task>? warpToPortal = null,
+        Func<int, string, CancellationToken, Task>? sendMessage = null)
     {
+        _warpToPortal = warpToPortal;
+        _sendMessage = sendMessage;
         NpcId = npcId;
         _script = script;
         _ctx = ctx;
@@ -73,6 +79,14 @@ public sealed class NpcConversation
     public async Task ContinueAsync(int mode, int type, int selection, CancellationToken ct)
     {
         if (!Active) return;
+
+        // P166：Java safeDispose 的 pendingDisposal：下一次回應直接結束對話，不再呼叫腳本。
+        if (_ctx.PendingDisposal)
+        {
+            Active = false;
+            return;
+        }
+
         _ctx.ClearPending();
         _script.Resume(mode, type, selection);
         await FlushAsync(ct);
@@ -96,6 +110,14 @@ public sealed class NpcConversation
             }
         }
 
+        if (_sendMessage is not null)
+        {
+            foreach (var (type, message) in _ctx.PendingMessages)
+            {
+                await _sendMessage(type, message, ct);
+            }
+        }
+
         if (_ctx.PendingDialog is { } dialog)
             await _sendDialog(dialog, ct);
 
@@ -103,7 +125,12 @@ public sealed class NpcConversation
             await _openShop(shopOrNpcId, ct);
 
         if (_ctx.PendingWarp is { } mapId)
-            await _warp(mapId, ct);
+        {
+            if (_ctx.PendingWarpPortal != 0 && _warpToPortal is not null)
+                await _warpToPortal(mapId, _ctx.PendingWarpPortal, ct);
+            else
+                await _warp(mapId, ct);
+        }
 
         if (_ctx.PendingStorageNpcId is { } npcId && _openStorage is not null)
             await _openStorage(npcId, ct);

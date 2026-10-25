@@ -20,6 +20,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly QuestService _quests;
     private readonly List<QuestTransactionResult> _pendingQuestResults = new();
     private readonly List<(int QuestId, string Data)> _pendingInfoQuestUpdates = new();
+    private readonly List<(int Type, string Message)> _pendingMessages = new();
 
     public NpcContext(int npcId, Player player, QuestService quests)
     {
@@ -31,6 +32,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     // ── coordinator-facing（internal：不外洩給 JS）──────────────────────────────
     internal NpcDialog? PendingDialog { get; private set; }
     internal int? PendingWarp { get; private set; }
+    internal int PendingWarpPortal { get; private set; }
+    internal bool PendingDisposal { get; private set; }
     internal int? PendingShop { get; private set; }
     internal int? PendingStorageNpcId { get; private set; }
     internal int? PendingBuddyCapacityUpdate { get; private set; }
@@ -40,12 +43,14 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     internal string? PendingPopupMessage { get; private set; }
     internal IReadOnlyList<QuestTransactionResult> PendingQuestResults => _pendingQuestResults;
     internal IReadOnlyList<(int QuestId, string Data)> PendingInfoQuestUpdates => _pendingInfoQuestUpdates;
+    internal IReadOnlyList<(int Type, string Message)> PendingMessages => _pendingMessages;
     internal bool Ended { get; private set; }
 
     internal void ClearPending()
     {
         PendingDialog = null;
         PendingWarp = null;
+        PendingWarpPortal = 0;
         PendingShop = null;
         PendingStorageNpcId = null;
         PendingBuddyCapacityUpdate = null;
@@ -55,6 +60,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         PendingPopupMessage = null;
         _pendingQuestResults.Clear();
         _pendingInfoQuestUpdates.Clear();
+        _pendingMessages.Clear();
     }
 
     // ── cm surface（暴露給腳本）────────────────────────────────────────────────
@@ -83,11 +89,130 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Ended = true;
     }
 
-    public void GainMeso(int amount) => _player.GainMeso(amount);
+    /// <summary>P166：Java gainMeso(gain, show=true, enableActions=false, inChat=true)：更新楓幣並在聊天欄提示。</summary>
+    public void GainMeso(int amount)
+    {
+        _player.GainMeso(amount);
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success, mesoChanged: true, meso: _player.Character.Meso)
+        {
+            MesoGained = amount,
+        });
+    }
 
-    public void GainItem(int itemId, int quantity) => _player.GainItem(InventoryTypeOf(itemId), itemId, (short)quantity);
+    /// <summary>
+    /// P166：Java <c>gainItem(id, quantity)</c>：quantity ≥ 0 → 背包放不下（checkSpace）則不給；否則加入。
+    /// quantity &lt; 0 → 數量不足則不扣；否則 removeById。兩者成功後都送 <c>getShowItemGain(id, quantity, true)</c>。
+    /// 背包封包隨 <see cref="QuestTransactionResult"/> 送出。
+    /// </summary>
+    public void GainItem(int itemId, int quantity)
+    {
+        var type = InventoryTypeOf(itemId);
+        if (quantity >= 0)
+        {
+            if (quantity > 0 && !CanHold(itemId, quantity))
+            {
+                return;
+            }
 
-    public bool HaveItem(int itemId) => _player.HasItem(InventoryTypeOf(itemId), itemId);
+            var added = _player.GainItem(type, itemId, (short)Math.Clamp(quantity, 1, short.MaxValue));
+            if (added is null)
+            {
+                return;
+            }
+
+            _player.FlushInventory();
+            EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success, gainedItems: [added])
+            {
+                ItemGainNotices = [(itemId, quantity)],
+            });
+            return;
+        }
+
+        if (!_player.TryTakeItemById(type, itemId, (short)Math.Clamp(-quantity, 1, short.MaxValue), out var mutations))
+        {
+            return;
+        }
+
+        _player.FlushInventory();
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success, inventoryMutations: mutations)
+        {
+            ItemGainNotices = [(itemId, quantity)],
+        });
+    }
+
+    public bool HaveItem(int itemId) => HaveItem(itemId, 1);
+
+    /// <summary>Java <c>haveItem(id, quantity, checkEquipped=false, greaterOrEquals=true)</c>。</summary>
+    public bool HaveItem(int itemId, int quantity) => ItemQuantity(itemId) >= quantity;
+
+    public int ItemQuantity(int itemId) => _player.Inventory.By(InventoryTypeOf(itemId)).CountById(itemId);
+
+    /// <summary>Java <c>canHold()</c>：五個背包都有空格。</summary>
+    public bool CanHold()
+        => new[] { InventoryType.Equip, InventoryType.Use, InventoryType.Setup, InventoryType.Etc, InventoryType.Cash }
+            .All(t => _player.Inventory.By(t).FirstFreeSlot() is not null);
+
+    /// <summary>Java <c>canHold(itemId)</c>：該類背包有空格（MapleForge 背包不疊加，故等同 checkSpace）。</summary>
+    public bool CanHold(int itemId) => _player.Inventory.By(InventoryTypeOf(itemId)).FirstFreeSlot() is not null;
+
+    public bool CanHold(int itemId, int quantity) => CanHold(itemId);
+
+    /// <summary>Java <c>removeAll(id, show=true)</c>：清掉背包裡該道具全部數量並提示。</summary>
+    public void RemoveAll(int itemId)
+    {
+        var count = ItemQuantity(itemId);
+        if (count > 0)
+        {
+            GainItem(itemId, -count);
+        }
+    }
+
+    /// <summary>Java <c>playerMessage(msg)</c> = <c>broadcastMessage(5, msg)</c>。</summary>
+    public void PlayerMessage(string message) => PlayerMessage(5, message);
+
+    public void PlayerMessage(int type, string message) => _pendingMessages.Add((type, message));
+
+    public void GainExp(int gain) => EnqueueQuestResult(_quests.GrantExp(_player, gain));
+
+    public int GetLevel() => _player.Character.Level;
+
+    public int GetMapId() => _player.Character.MapId;
+
+    public bool IsQuestActive(int questId) => _player.GetQuestStatus(questId) == (byte)QuestStatus.Started;
+
+    public bool IsQuestFinished(int questId) => _player.GetQuestStatus(questId) == (byte)QuestStatus.Completed;
+
+    /// <summary>Java <c>safeDispose()</c>：pendingDisposal——本輪對話照送，下一次回應時直接結束。</summary>
+    public void SafeDispose() => PendingDisposal = true;
+
+    public void Warp(int mapId, int portal)
+    {
+        Warp(mapId);
+        PendingWarpPortal = portal;
+    }
+
+    public int GetCharacterId() => _player.Character.Id;
+    public string GetName() => _player.Character.Name;
+    public int GetGender() => _player.Character.Gender;
+    public int GetFace() => _player.Character.Face;
+    public int GetHair() => _player.Character.Hair;
+    public int GetFame() => _player.Character.Fame;
+    public bool IsGm() => false; // MapleForge 尚無 GM 系統（同 getPlayerStat("GM")）
+    public int GetRemainingSp() => _player.Character.RemainingSp;
+    public int GetRemainingAp() => _player.Character.RemainingAp;
+    public int GetSkillLevel(int skillId) => _player.GetSkillLevel(skillId);
+    public int GetMasterLevel(int skillId) => _player.GetMasterLevel(skillId);
+    public bool HasEquipped(int itemId) => _player.Character.Equips.Any(e => e.ItemId == itemId);
+
+    /// <summary>Java <c>gainAp(ap)</c>：remainingAp += ap → updateSingleStat(AVAILABLEAP)。</summary>
+    public void GainAp(int amount)
+    {
+        _player.Character.RemainingAp = (short)(_player.Character.RemainingAp + amount);
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success)
+        {
+            StatUpdates = [new PlayerStatUpdate(PlayerStatKind.AvailableAp, _player.Character.RemainingAp)],
+        });
+    }
 
     public void OpenStorage()
     {

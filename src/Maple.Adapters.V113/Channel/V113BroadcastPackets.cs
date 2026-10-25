@@ -17,6 +17,10 @@ internal static class V113BroadcastPackets
     public static byte[] ChatNotice(string message)
         => BroadcastMessage(type: 5, channel: 0, [message], ear: false, item: null);
 
+    /// <summary>P166：Java <c>broadcastMessage(type, msg)</c>（cm.playerMessage／dropMessage）。</summary>
+    public static byte[] ServerNotice(int type, string message)
+        => BroadcastMessage(type: (byte)type, channel: 0, [message], ear: false, item: null);
+
     public static byte[] Megaphone(string message)
         => BroadcastMessage(type: 2, channel: 0, [message], ear: false, item: null);
 
