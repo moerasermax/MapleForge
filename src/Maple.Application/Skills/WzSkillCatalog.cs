@@ -24,7 +24,8 @@ public sealed class WzSkillCatalog : ISkillCatalog
         IDataNode? skillNode;
         try
         {
-            skillNode = _data.GetAt("Skill", $"{GetSkillImage(skillId)}/skill/{skillId}");
+            // P118：WZ 技能節點名稱是 7 位數補零（初心者/武陵/金字塔等 0001004、0001009）。
+            skillNode = _data.GetAt("Skill", $"{GetSkillImage(skillId)}/skill/{skillId:D7}");
         }
         catch (InvalidDataException)
         {

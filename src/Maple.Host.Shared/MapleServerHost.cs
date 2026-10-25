@@ -116,7 +116,9 @@ public static class MapleServerHost
         builder.Services.AddSingleton<StorageService>();
         builder.Services.AddSingleton<ICashItemCatalog>(_ => new JsonCashItemCatalog(ResolveCashItemCatalogPath(builder)));
         builder.Services.AddSingleton<CashShopService>();
-        builder.Services.AddSingleton<ISkillCatalog>(_ => new InMemorySkillCatalog(Array.Empty<MapleSkill>()));
+        // P118：改用 WZ 技能資料（原本註冊空的 InMemorySkillCatalog，正式環境所有 SPECIAL_MOVE 技能都回 UnknownSkill、
+        // 攻擊技能效果/冷卻/怪物狀態全部失效）。對照 Java SkillFactory 啟動時載入 Skill.wz。
+        builder.Services.AddSingleton<ISkillCatalog>(sp => new WzSkillCatalog(sp.GetRequiredService<IDataProvider>()));
         builder.Services.AddSingleton<ISkillBookCatalog>(_ => new JsonSkillBookCatalog(ResolveSkillBookCatalogPath(builder)));
         builder.Services.AddSingleton<SkillService>();
         builder.Services.AddSingleton<IMonsterDropCatalog>(_ =>
