@@ -1,5 +1,6 @@
 using Maple.Application.Items;
 using Maple.Core.Inventory;
+using Maple.Core.Items;
 using Maple.Core.IO;
 using Maple.Core.World;
 
@@ -27,7 +28,6 @@ internal sealed record V113RewardItemResult(
 
 internal static class V113RewardItemHandler
 {
-    private const int DeterministicRewardItemId = 2000000;
     private const short DefaultRewardQuantity = 1;
 
     public static V113ShowExpChairRequest ParseShowExpChair(PacketReader reader)
@@ -42,7 +42,20 @@ internal static class V113RewardItemHandler
     public static V113ThrowGrenadeRequest ParseThrowGrenade(PacketReader reader)
         => new(reader.ReadBytes(reader.Remaining));
 
-    public static V113RewardItemResult HandleRewardItem(PacketReader reader, Player player)
+    internal const string RewardInventoryFullMessage = "你有一個欄位滿了 請空出來再打開";
+    internal const string RewardUnknownErrorMessage = "未知的錯誤.";
+
+    /// <summary>
+    /// P180：對照 Java <c>InventoryHandler.UseRewardItem</c>：先送 enableActions；來源道具相符時，裝備／消耗／裝飾／其他欄
+    /// 都要有空位（否則黃字提示）；有獎勵表（totalprob &gt; 0）則抽獎——裝備帶 period（Java <c>period * 60 * 60 * 10</c> 毫秒）、
+    /// 其餘給 count 個——移除 1 個來源、自己與地圖他人看獎勵動畫；無獎勵表提示「未知的錯誤.」。
+    /// </summary>
+    public static V113RewardItemResult HandleRewardItem(
+        PacketReader reader,
+        Player player,
+        IItemUseCatalog? catalog,
+        Random random,
+        DateTimeOffset now)
     {
         V113RewardItemRequest request;
         try
@@ -54,16 +67,58 @@ internal static class V113RewardItemHandler
             return EnableActionsOnly(default);
         }
 
-        // Java delegates reward data to Etc.wz reward entries via MapleItemInformationProvider.getRewardItem.
-        // TODO(P003-D4 data): replace this deterministic fallback with WZ-backed StructRewardItem catalog.
-        return ConsumeContainerAndGrantReward(
-            player,
+        var sourceType = Player.InventoryTypeOf(request.ItemId);
+        if (!HasMatchingSource(player, sourceType, request))
+        {
+            return EnableActionsOnly(request);
+        }
+
+        if (!player.CanGainItem(InventoryType.Equip) || !player.CanGainItem(InventoryType.Use)
+            || !player.CanGainItem(InventoryType.Setup) || !player.CanGainItem(InventoryType.Etc))
+        {
+            return Notice(request, RewardInventoryFullMessage);
+        }
+
+        if (catalog?.GetRewardItems(request.ItemId) is not { TotalProb: > 0 } table || table.Roll(random) is not { } reward)
+        {
+            return Notice(request, RewardUnknownErrorMessage);
+        }
+
+        if (!player.TryConsumeInventoryItem(sourceType, request.Slot, request.ItemId, 1, out var sourceMutation) || sourceMutation is null)
+        {
+            return EnableActionsOnly(request);
+        }
+
+        var rewardType = Player.InventoryTypeOf(reward.ItemId);
+        var rewardItem = player.GainItem(rewardType, reward.ItemId, Math.Max((short)1, reward.Quantity));
+        if (rewardItem is null)
+        {
+            player.FlushInventory();
+            return new V113RewardItemResult(true, true, request, [V113StatsPackets.EnableActions(), V113ItemUsePackets.ModifyInventoryQuantity(sourceMutation)], []);
+        }
+
+        if (rewardType == InventoryType.Equip && reward.Period > 0)
+        {
+            rewardItem.Expiration = now.ToUnixTimeMilliseconds() + (reward.Period * 60L * 60 * 10);
+        }
+
+        player.FlushInventory();
+        return new V113RewardItemResult(
+            Handled: true,
+            CharacterMutated: true,
             request,
-            Player.InventoryTypeOf(request.ItemId),
-            DeterministicRewardItemId,
-            DefaultRewardQuantity,
-            effect: string.Empty);
+            SelfPackets:
+            [
+                V113StatsPackets.EnableActions(),
+                V113ItemUsePackets.ModifyInventoryQuantity(sourceMutation),
+                V113ItemUsePackets.ModifyInventoryAdd(rewardType, rewardItem),
+                ShowRewardItemAnimation(reward.ItemId, reward.Effect),
+            ],
+            BroadcastPackets: [ShowRewardItemAnimation(reward.ItemId, reward.Effect, player.Character.Id)]);
     }
+
+    private static V113RewardItemResult Notice(V113RewardItemRequest request, string message)
+        => new(true, false, request, [V113StatsPackets.EnableActions(), V113BroadcastPackets.ServerNotice(6, message)], []);
 
     private const int SpecialPotionItemId = 2000004;
     private const int SuperPotionItemId = 2000005;

@@ -76,6 +76,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly IPartyRegistry? _partyRegistry;
     private readonly Maple.Application.Events.PortalScriptOverrideRegistry _portalOverrides;
     private readonly Maple.Application.Events.IEventScriptHost? _eventScripts;
+    private readonly IItemUseCatalog? _itemUseCatalog;
     private readonly DropServiceOptions? _dropOptions;
 
     /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
@@ -205,11 +206,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         IPartyRegistry? partyRegistry = null,
         DropServiceOptions? dropOptions = null,
         Maple.Application.Events.PortalScriptOverrideRegistry? portalOverrides = null,
-        Maple.Application.Events.IEventScriptHost? eventScripts = null)
+        Maple.Application.Events.IEventScriptHost? eventScripts = null,
+        IItemUseCatalog? itemUseCatalog = null)
     {
         _partyRegistry = partyRegistry;
         _portalOverrides = portalOverrides ?? new Maple.Application.Events.PortalScriptOverrideRegistry();
         _eventScripts = eventScripts;
+        _itemUseCatalog = itemUseCatalog;
         _dropOptions = dropOptions;
         _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
@@ -1042,7 +1045,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     case V113ChannelRecvOp.RewardItem:
                         if (player is null) break;
                         await HandleRewardItemResultAsync(
-                            V113RewardItemHandler.HandleRewardItem(reader, player),
+                            V113RewardItemHandler.HandleRewardItem(reader, player, _itemUseCatalog, Random.Shared, DateTimeOffset.UtcNow),
                             player,
                             s,
                             token);

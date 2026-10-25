@@ -2,6 +2,7 @@ using Maple.Adapters.V113.Channel;
 using Maple.Application.Items;
 using Maple.Core.Characters;
 using Maple.Core.Inventory;
+using Maple.Core.Items;
 using Maple.Core.IO;
 using Maple.Core.World;
 
@@ -40,32 +41,72 @@ public sealed class ChannelRewardItemHandlerTests
     }
 
     [Fact]
-    public void RewardItem_ConsumesContainerAndGrantsDeterministicReward_UnverifiedAnimationFixture()
+    public void RewardItem_RollsWzTable_ConsumesContainer_AndShowsAnimation()
     {
         var player = PlayerWithItems(new ItemRecord
         {
-            Type = (byte)InventoryType.Cash,
-            ItemId = 5530000,
+            Type = (byte)InventoryType.Use,
+            ItemId = 2022336,
             Slot = 3,
-            Quantity = 1,
+            Quantity = 2,
         });
+        var catalog = new RewardCatalog(new RewardItemTable(10,
+        [
+            new RewardItemEntry(4001126, 0, 500, 0, string.Empty, null),
+            new RewardItemEntry(2000000, 10, 5, 0, "Eff", null),
+        ]));
 
         var result = V113RewardItemHandler.HandleRewardItem(
-            Reader(w => w.WriteShort(3).WriteInt(5530000)),
-            player);
+            Reader(w => w.WriteShort(3).WriteInt(2022336)),
+            player,
+            catalog,
+            new FixedIndexRandom(0),
+            DateTimeOffset.UnixEpoch);
 
         Assert.True(result.CharacterMutated);
-        Assert.Equal(4, result.SelfPackets.Count);
-        Assert.Equal(new byte[] { 0x1B, 0x00, 0, 1, 3, 5, 3, 0 }, result.SelfPackets[0]);
+        Assert.Equal(V113StatsPackets.EnableActions(), result.SelfPackets[0]); // Java 先送 enableActions
         Assert.Equal(V113ChannelSendOp.ModifyInventoryItem, BitConverter.ToInt16(result.SelfPackets[1], 0));
-        Assert.Equal(new byte[] { 0xC7, 0x00, 0x0B, 0x80, 0x84, 0x1E, 0x00, 0 }, result.SelfPackets[2]);
-        Assert.Equal(V113StatsPackets.EnableActions(), result.SelfPackets[3]);
-
-        // server-to-client reward animation is Java-source candidate/unverified until live client smoke.
+        Assert.Equal(V113ChannelSendOp.ModifyInventoryItem, BitConverter.ToInt16(result.SelfPackets[2], 0));
+        Assert.Equal(new byte[] { 0xC7, 0x00, 0x0B, 0x80, 0x84, 0x1E, 0x00, 1, 3, 0, (byte)'E', (byte)'f', (byte)'f' }, result.SelfPackets[3]);
         Assert.Single(result.BroadcastPackets);
-        Assert.Equal(new byte[] { 0xBF, 0x00, 0x2A, 0, 0, 0, 0x0B, 0x80, 0x84, 0x1E, 0x00, 0 }, result.BroadcastPackets[0]);
-        Assert.Equal(1, player.Inventory.By(InventoryType.Use).CountById(2000000));
-        Assert.Contains(player.Character.Items, item => item is { Type: (byte)InventoryType.Use, ItemId: 2000000, Quantity: 1 });
+        Assert.Equal(5, player.Inventory.By(InventoryType.Use).CountById(2000000));
+        Assert.Equal(1, player.Inventory.By(InventoryType.Use).CountById(2022336));
+    }
+
+    [Fact]
+    public void RewardItem_EquipReward_GetsJavaPeriodExpiration()
+    {
+        var player = PlayerWithItems(new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2022336, Slot = 1, Quantity = 1 });
+        var catalog = new RewardCatalog(new RewardItemTable(1, [new RewardItemEntry(1122017, 1, 1, 7200, string.Empty, null)]));
+
+        var result = V113RewardItemHandler.HandleRewardItem(
+            Reader(w => w.WriteShort(1).WriteInt(2022336)), player, catalog, new FixedIndexRandom(0), DateTimeOffset.FromUnixTimeMilliseconds(1000));
+
+        Assert.True(result.CharacterMutated);
+        var equip = Assert.Single(player.Inventory.By(InventoryType.Equip).Items);
+        Assert.Equal(1000 + (7200L * 60 * 60 * 10), equip.Expiration);
+    }
+
+    [Fact]
+    public void RewardItem_NoRewardTable_SendsUnknownErrorNotice()
+    {
+        var player = PlayerWithItems(new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2022336, Slot = 1, Quantity = 1 });
+
+        var result = V113RewardItemHandler.HandleRewardItem(
+            Reader(w => w.WriteShort(1).WriteInt(2022336)), player, new RewardCatalog(null), new FixedIndexRandom(0), DateTimeOffset.UnixEpoch);
+
+        Assert.False(result.CharacterMutated);
+        Assert.Equal([V113StatsPackets.EnableActions(), V113BroadcastPackets.ServerNotice(6, V113RewardItemHandler.RewardUnknownErrorMessage)], result.SelfPackets);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Use).CountById(2022336));
+    }
+
+    [Fact]
+    public void RewardTable_Roll_ScansUntilAHit()
+    {
+        var table = new RewardItemTable(100, [new RewardItemEntry(1, 1, 1, 0, "", null), new RewardItemEntry(2, 50, 1, 0, "", null)]);
+
+        Assert.Equal(2, table.Roll(new FixedIndexRandom(10))!.ItemId); // 10 >= 1 不中、10 < 50 中
+        Assert.Null(new RewardItemTable(0, []).Roll(new FixedIndexRandom(0)));
     }
 
     [Fact]
@@ -73,12 +114,24 @@ public sealed class ChannelRewardItemHandlerTests
     {
         var result = V113RewardItemHandler.HandleRewardItem(
             Reader(w => w.WriteShort(3).WriteInt(5530000)),
-            PlayerWithItems());
+            PlayerWithItems(),
+            new RewardCatalog(null),
+            new FixedIndexRandom(0),
+            DateTimeOffset.UnixEpoch);
 
         Assert.False(result.CharacterMutated);
         Assert.Single(result.SelfPackets);
         Assert.Equal(V113StatsPackets.EnableActions(), result.SelfPackets[0]);
         Assert.Empty(result.BroadcastPackets);
+    }
+
+    private sealed class RewardCatalog(RewardItemTable? table) : IItemUseCatalog
+    {
+        public int? GetReturnScrollDestinationMapId(int itemId) => null;
+
+        public IReadOnlyList<SummonBagMobEntry>? GetSummonBagMobs(int itemId) => null;
+
+        public RewardItemTable? GetRewardItems(int itemId) => table;
     }
 
     [Fact]

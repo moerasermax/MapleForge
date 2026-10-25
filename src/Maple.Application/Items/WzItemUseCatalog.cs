@@ -47,6 +47,44 @@ public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog, IScr
     }
 
     /// <summary>
+    /// P180：對照 Java DumpItems 的 reward 節點（item／prob／count／period／worldMsg／Effect，totalprob＝prob 總和）
+    /// 與 MapleItemInformationProvider 載入時 1122017 的 period 至少 7200。
+    /// </summary>
+    public RewardItemTable? GetRewardItems(int itemId)
+    {
+        var rewardNode = GetItemNode(itemId)?["reward"];
+        if (rewardNode is null)
+        {
+            return null;
+        }
+
+        var entries = new List<RewardItemEntry>();
+        var total = 0;
+        foreach (var (_, entry) in rewardNode.Children.OrderBy(static pair => SortKey(pair.Key)))
+        {
+            var rewardId = GetInt(entry, "item") ?? 0;
+            var prob = GetInt(entry, "prob") ?? 0;
+            var period = GetInt(entry, "period") ?? 0;
+            if (rewardId == 1122017)
+            {
+                period = Math.Max(period, 7200);
+            }
+
+            var worldMessage = entry["worldMsg"]?.Value as string;
+            entries.Add(new RewardItemEntry(
+                rewardId,
+                prob,
+                (short)(GetInt(entry, "count") ?? 0),
+                period,
+                entry["Effect"]?.Value as string ?? string.Empty,
+                string.IsNullOrEmpty(worldMessage) ? null : worldMessage));
+            total += prob;
+        }
+
+        return new RewardItemTable(total, entries);
+    }
+
+    /// <summary>
     /// P120：消耗品回復數值（對照 Java <c>MapleItemInformationProvider.getItemEffect</c> →
     /// <c>MapleStatEffect.loadItemEffectFromData(item/spec)</c> 的 hp/mp/hpR/mpR）。查無道具回 null；有道具但無 spec 回全 0。
     /// </summary>

@@ -102,6 +102,21 @@ public sealed class WzItemUseCatalogTests
         Assert.Null(new WzItemUseCatalog(new ItemDataProvider()).GetScroll(2000019));
     }
 
+    [Fact]
+    public void GetRewardItems_ReadsRewardEntries_TotalProb_AndPeriodFloor()
+    {
+        var table = new WzItemUseCatalog(new ItemDataProvider()).GetRewardItems(2022336)!;
+
+        Assert.Equal(11, table.TotalProb);
+        Assert.Equal(
+            [
+                new Maple.Core.Items.RewardItemEntry(4001126, 1, 500, 0, "Effect/BasicEff/FindPrize/Success", null),
+                new Maple.Core.Items.RewardItemEntry(1122017, 10, 1, 7200, string.Empty, "lucky"),
+            ],
+            table.Entries);
+        Assert.Null(new WzItemUseCatalog(new ItemDataProvider()).GetRewardItems(2000019));
+    }
+
     private sealed class ItemDataProvider : IDataProvider
     {
         private readonly IDataNode _itemRoot;
@@ -155,6 +170,28 @@ public sealed class WzItemUseCatalogTests
                 }),
             });
 
+            var rewardBox = new Node("02022336", children: new Dictionary<string, IDataNode>
+            {
+                ["reward"] = new Node("reward", children: new Dictionary<string, IDataNode>
+                {
+                    ["0"] = new Node("0", children: new Dictionary<string, IDataNode>
+                    {
+                        ["item"] = new Node("item", 4001126),
+                        ["prob"] = new Node("prob", 1),
+                        ["count"] = new Node("count", 500),
+                        ["Effect"] = new Node("Effect", "Effect/BasicEff/FindPrize/Success"),
+                    }),
+                    ["1"] = new Node("1", children: new Dictionary<string, IDataNode>
+                    {
+                        ["item"] = new Node("item", 1122017),
+                        ["prob"] = new Node("prob", 10),
+                        ["count"] = new Node("count", 1),
+                        ["period"] = new Node("period", 60),
+                        ["worldMsg"] = new Node("worldMsg", "lucky"),
+                    }),
+                }),
+            });
+
             _itemRoot = new Node("Item", children: new Dictionary<string, IDataNode>
             {
                 ["Consume"] = new Node("Consume", children: new Dictionary<string, IDataNode>
@@ -166,6 +203,7 @@ public sealed class WzItemUseCatalogTests
                     ["0202.img"] = new Node("0202.img", children: new Dictionary<string, IDataNode>
                     {
                         ["02022109"] = attackPotion,
+                        ["02022336"] = rewardBox,
                     }),
                     ["0204.img"] = new Node("0204.img", children: new Dictionary<string, IDataNode>
                     {
