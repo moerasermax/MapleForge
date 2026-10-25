@@ -4277,6 +4277,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
+        // P123：Java applyEffect（在送回應之前）→ applyMonsterBuff——同狀態先 cancelStatus（CANCEL），再對全圖送整組 applyMonsterStatus。
+        if (skillUse?.Buffs is { } buffs)
+        {
+            foreach (var buff in buffs)
+            {
+                foreach (var cancelled in buff.Cancelled)
+                {
+                    await BroadcastPacketToMapAsync(player.Character, session, V113MonsterStatusCodec.CancelMonsterStatus(buff.ObjectId, [cancelled]), ct);
+                }
+
+                await BroadcastPacketToMapAsync(player.Character, session, V113MonsterStatusCodec.ApplyMonsterStatus(buff.ObjectId, buff.Applied), ct);
+            }
+        }
+
         // Response 給控制者
         await session.SendAsync(
             V113MobMovementPackets.MoveMonsterResponse(

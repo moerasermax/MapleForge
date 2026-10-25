@@ -2,13 +2,16 @@ using Maple.Core.World;
 
 namespace Maple.Application.Mobs;
 
-/// <summary>怪物這次移動實際施放的技能（null＝沒有施放）。</summary>
-public sealed record MobSkillUse(MobSkillDefinition Skill);
+/// <summary>怪物這次移動實際施放的技能（null＝沒有施放）與已套用的效果。</summary>
+public sealed record MobSkillUse(MobSkillDefinition Skill, IReadOnlyList<MobBuffApplication>? Buffs = null);
+
+/// <summary>P123：單隻怪物身上的自身 buff 變化（先解除的狀態、新套用的狀態）。</summary>
+public sealed record MobBuffApplication(int ObjectId, IReadOnlyList<MonsterStatus> Cancelled, IReadOnlyList<MonsterStatusEffect> Applied);
 
 /// <summary>
 /// P122：怪物技能挑選（對照 Java <c>MobHandler.MoveMonster</c> 的 useSkill 區塊）：從怪物技能清單隨機抽一個 →
 /// <c>checkCurrentBuff</c> 未生效 → 冷卻（<c>ls == 0 || (now - ls &gt; cool &amp;&amp; !summonOnce)</c>，先登記冷卻）→
-/// HP 百分比 ≤ 技能 hp 門檻才施放。效果（<c>applyEffect</c>）於後續 P 逐類補上；MP 消耗照 Java 在施放時扣。
+/// HP 百分比 ≤ 技能 hp 門檻才施放 → <c>applyEffect</c>（P123：自身 buff／免疫／反射；其餘類別待後續 P）→ 扣 MP。
 /// </summary>
 public sealed class MobSkillService
 {
@@ -53,9 +56,103 @@ public sealed class MobSkillService
             return null;
         }
 
+        var buffs = ApplyEffect(field, mob, skill, now);
         mob.ConsumeMp(skill.MpCon);
-        return new MobSkillUse(skill);
+        return new MobSkillUse(skill, buffs);
     }
+
+    /// <summary>
+    /// P123：對照 Java <c>MobSkill.applyEffect</c> 的 stats 分支（攻防命迴速封印提升、物/魔免疫、反射）：有 lt/rb 時
+    /// 套用到範圍內所有怪物（含自己若在範圍內），否則只套自己；持續時間＝技能 time。
+    /// </summary>
+    private static IReadOnlyList<MobBuffApplication>? ApplyEffect(FieldInstance field, Mob mob, MobSkillDefinition skill, DateTimeOffset now)
+    {
+        var stats = GetBuffStats(skill.SkillId, skill.X);
+        if (stats.Count == 0)
+        {
+            return null;
+        }
+
+        var targets = skill.Area is { } area
+            ? field.Objects.OfType<Mob>().Where(m => m.IsAlive && Contains(BoundingBox(area, mob), m.Position)).ToArray()
+            : [mob];
+        var source = new MobSkillSource(skill.SkillId, skill.Level);
+        var expiresAt = now.AddMilliseconds(skill.DurationMilliseconds);
+        return targets
+            .Select(target =>
+            {
+                var (cancelled, applied) = target.ApplyMonsterBuff(stats, source, expiresAt);
+                return new MobBuffApplication(target.ObjectId, cancelled, applied);
+            })
+            .ToArray();
+    }
+
+    /// <summary>Java <c>applyEffect</c> switch 的 stats 對應（數值皆為 x）。</summary>
+    public static IReadOnlyDictionary<MonsterStatus, int> GetBuffStats(int skillId, int x)
+    {
+        var stats = new Dictionary<MonsterStatus, int>();
+        switch (skillId)
+        {
+            case 100 or 110 or 150: stats[MonsterStatus.WeaponAttackUp] = x; break;
+            case 101 or 111 or 151: stats[MonsterStatus.MagicAttackUp] = x; break;
+            case 102 or 112 or 152: stats[MonsterStatus.WeaponDefenseUp] = x; break;
+            case 103 or 113 or 153: stats[MonsterStatus.MagicDefenseUp] = x; break;
+            case 154: stats[MonsterStatus.Acc] = x; break;
+            case 155: stats[MonsterStatus.Avoid] = x; break;
+            case 156: stats[MonsterStatus.Speed] = x; break;
+            case 157: stats[MonsterStatus.Seal] = x; break;
+            case 140: stats[MonsterStatus.WeaponImmunity] = x; break;
+            case 141: stats[MonsterStatus.MagicImmunity] = x; break;
+            case 142: stats[MonsterStatus.DamageImmunity] = x; break;
+            case 143:
+                stats[MonsterStatus.WeaponDamageReflect] = x;
+                stats[MonsterStatus.WeaponImmunity] = x;
+                break;
+            case 144:
+                stats[MonsterStatus.MagicDamageReflect] = x;
+                stats[MonsterStatus.MagicImmunity] = x;
+                break;
+            case 145:
+                stats[MonsterStatus.WeaponDamageReflect] = x;
+                stats[MonsterStatus.WeaponImmunity] = x;
+                stats[MonsterStatus.MagicDamageReflect] = x;
+                stats[MonsterStatus.MagicImmunity] = x;
+                break;
+        }
+
+        return stats;
+    }
+
+    /// <summary>
+    /// Java <c>MobSkill.calculateBoundingBox</c>：面向左時 lt/rb 直接加在怪物座標；面向右時左右翻轉。
+    /// 回傳 (左, 上, 寬, 高)，對應 <c>java.awt.Rectangle</c>。
+    /// </summary>
+    public static (int X, int Y, int Width, int Height) BoundingBox(MobSkillArea area, Mob mob)
+    {
+        int ltX, ltY, rbX, rbY;
+        if (mob.IsFacingLeft)
+        {
+            ltX = area.LtX + mob.Position.X;
+            ltY = area.LtY + mob.Position.Y;
+            rbX = area.RbX + mob.Position.X;
+            rbY = area.RbY + mob.Position.Y;
+        }
+        else
+        {
+            rbX = -area.LtX + mob.Position.X;
+            rbY = area.RbY + mob.Position.Y;
+            ltX = -area.RbX + mob.Position.X;
+            ltY = area.LtY + mob.Position.Y;
+        }
+
+        return (ltX, ltY, rbX - ltX, rbY - ltY);
+    }
+
+    /// <summary>Java <c>Rectangle.contains(Point)</c>：x ∈ [左, 左+寬)、y ∈ [上, 上+高)，寬高需 &gt; 0。</summary>
+    public static bool Contains((int X, int Y, int Width, int Height) box, Position position)
+        => box.Width > 0 && box.Height > 0
+            && position.X >= box.X && position.X < box.X + box.Width
+            && position.Y >= box.Y && position.Y < box.Y + box.Height;
 
     /// <summary>
     /// 逐字對照 Java <c>MobSkill.checkCurrentBuff</c>（含原碼 101/111/151 查 WEAPON_DEFENSE_UP、102/112/152 查

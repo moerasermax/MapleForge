@@ -275,6 +275,39 @@ public sealed class Mob : IFieldObject
         return status is MonsterStatus.Poison or MonsterStatus.VenomousWeapon && !hasSourceEffect;
     }
 
+    /// <summary>
+    /// P123：怪物技能自身 buff（對照 Java <c>MapleMonster.applyMonsterBuff</c>）：不做免疫判斷；同狀態已存在先解除
+    /// （呼叫端送 CANCEL），再寫入帶怪物技能來源的新狀態（skillId 0、到期 <paramref name="expiresAt"/>）。
+    /// 回傳被先行解除的狀態與新套用的狀態（依列舉序）。
+    /// </summary>
+    public (IReadOnlyList<MonsterStatus> Cancelled, IReadOnlyList<MonsterStatusEffect> Applied) ApplyMonsterBuff(
+        IReadOnlyDictionary<MonsterStatus, int> stats,
+        MobSkillSource source,
+        DateTimeOffset expiresAt)
+    {
+        ArgumentNullException.ThrowIfNull(stats);
+        ArgumentNullException.ThrowIfNull(source);
+
+        var cancelled = new List<MonsterStatus>();
+        var applied = new List<MonsterStatusEffect>();
+        foreach (var (status, value) in stats.OrderBy(static p => (int)p.Key))
+        {
+            if (_statuses.ContainsKey(status) && CancelStatus(status))
+            {
+                cancelled.Add(status);
+            }
+
+            var effect = new MonsterStatusEffect(status, value, 0, source, expiresAt);
+            _statuses[status] = effect;
+            applied.Add(effect);
+        }
+
+        return (cancelled, applied);
+    }
+
+    /// <summary>Java <c>isFacingLeft</c>：<c>stance % 2 != 0</c>。</summary>
+    public bool IsFacingLeft => Position.Stance % 2 != 0;
+
     /// <summary>P122：Java <c>getLastSkillUsed</c>（存的是 Java <c>setLastSkillUsed</c> 寫入的時間，見該方法）。</summary>
     public DateTimeOffset? GetLastSkillUsed(int skillId)
         => _skillUsedAt.TryGetValue(skillId, out var at) ? at : null;

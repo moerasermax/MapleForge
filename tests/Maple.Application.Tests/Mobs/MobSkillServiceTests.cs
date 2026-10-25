@@ -32,8 +32,9 @@ public sealed class MobSkillServiceTests
     [Fact]
     public void TryUseSkill_Cooldown_IsEffectivelyDoubledAsInJava()
     {
-        var (field, mob) = Setup([new MobSkillRef(100, 1)]);
-        var service = Service(Skill(100, coolMs: 10_000));
+        // 用無自身 buff 的技能（120 封印類），避免 P123 套上 buff 後被 checkCurrentBuff 擋下。
+        var (field, mob) = Setup([new MobSkillRef(120, 1)]);
+        var service = Service(Skill(120, coolMs: 10_000));
 
         Assert.NotNull(service.TryUseSkill(field, mob, T0));
         Assert.Null(service.TryUseSkill(field, mob, T0.AddSeconds(15)));   // now - (T0+10s) = 5s ≤ 10s
@@ -113,6 +114,87 @@ public sealed class MobSkillServiceTests
         Assert.Equal(new[] { 7130200, 210100 }, skill.Summons);
         Assert.Equal(new MobSkillArea(-100, -50, 100, 10), skill.Area);
         Assert.Null(catalog.Get(200, 2));
+    }
+
+    // ── P123：自身 buff（Java applyEffect stats 分支 + applyMonsterBuff）──
+
+    [Fact]
+    public void TryUseSkill_WeaponAttackUp_AppliesToSelfWithMobSkillSource()
+    {
+        var (field, mob) = Setup([new MobSkillRef(100, 1)]);
+
+        var use = Service(Skill(100)).TryUseSkill(field, mob, T0)!;
+
+        var buff = Assert.Single(use.Buffs!);
+        Assert.Equal(mob.ObjectId, buff.ObjectId);
+        var effect = Assert.Single(buff.Applied);
+        Assert.Equal(MonsterStatus.WeaponAttackUp, effect.Status);
+        Assert.Equal(10, effect.Value);
+        Assert.Equal(new MobSkillSource(100, 1), effect.MobSkill);
+        Assert.Equal(T0.AddSeconds(30), effect.ExpiresAt);
+    }
+
+    [Fact]
+    public void TryUseSkill_ReflectSkill145_AppliesFourStatuses()
+    {
+        var (field, mob) = Setup([new MobSkillRef(145, 1)]);
+
+        var use = Service(Skill(145)).TryUseSkill(field, mob, T0)!;
+
+        Assert.Equal(4, Assert.Single(use.Buffs!).Applied.Count);
+        Assert.True(mob.Statuses.ContainsKey(MonsterStatus.MagicDamageReflect));
+    }
+
+    [Fact]
+    public void ApplyMonsterBuff_ExistingStatus_IsCancelledFirst()
+    {
+        var (_, mob) = Setup(null);
+        mob.TryApplyStatus(new MonsterStatusEffect(MonsterStatus.Speed, -30, 2101003, null, null));
+
+        var (cancelled, applied) = mob.ApplyMonsterBuff(
+            new Dictionary<MonsterStatus, int> { [MonsterStatus.Speed] = 20 },
+            new MobSkillSource(156, 1),
+            T0);
+
+        Assert.Equal(new[] { MonsterStatus.Speed }, cancelled);
+        Assert.Equal(20, mob.Statuses[MonsterStatus.Speed].Value);
+        Assert.Single(applied);
+    }
+
+    [Fact]
+    public void TryUseSkill_AreaSkill_BuffsMobsInsideBoundingBoxOnly()
+    {
+        var (field, caster) = Setup([new MobSkillRef(150, 1)]);
+        var near = AddMob(field, 100002, x: 50, y: 0);
+        var far = AddMob(field, 100003, x: 500, y: 0);
+        var area = new MobSkillArea(-100, -50, 100, 50);
+        var skill = Skill(150) with { Area = area };
+
+        var use = Service(skill).TryUseSkill(field, caster, T0)!;
+
+        Assert.Equal(new[] { caster.ObjectId, near.ObjectId }, use.Buffs!.Select(static b => b.ObjectId).Order());
+        Assert.False(far.Statuses.ContainsKey(MonsterStatus.WeaponAttackUp));
+    }
+
+    [Fact]
+    public void BoundingBox_FacingRight_MirrorsHorizontally()
+    {
+        var (_, mob) = Setup(null); // stance 5 → 面向左
+        mob.MoveTo(new Position(0, 0, 4, 1)); // 面向右
+
+        var box = MobSkillService.BoundingBox(new MobSkillArea(-200, -50, 20, 10), mob);
+
+        Assert.Equal((-20, -50, 220, 60), box);
+    }
+
+    private static Mob AddMob(FieldInstance field, int objectId, short x, short y)
+    {
+        var mob = new Mob(
+            new MapMonster { MonsterId = 100100, X = x, Y = y, Fh = 1 },
+            new MobStats(100100, 100, MaxMp: 100, Level: 1, Exp: 1),
+            objectId);
+        field.Add(mob);
+        return mob;
     }
 
     private static MobSkillService Service(MobSkillDefinition skill)
