@@ -4311,7 +4311,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         if (rewards.ExpGained > 0)
         {
-            await session.SendAsync(V113DropPackets.ShowExpGainMonster(rewards.ExpGained, white: rewards.KillerHighestDamage), ct);
+            await session.SendAsync(ExpGainPacket(rewards.KillerAward, rewards.ExpGained, rewards.KillerHighestDamage), ct);
         }
 
         // P150：其他攻擊者／隊友依 Java killBy 分得的經驗（各自的 session）。
@@ -4336,7 +4336,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 await SendBestEffortAsync(entry, V113DropPackets.UpdateExp(award.Receiver.Character.Exp), ct);
             }
 
-            await SendBestEffortAsync(entry, V113DropPackets.ShowExpGainMonster(award.Exp, white: award.HighestDamage), ct);
+            await SendBestEffortAsync(entry, ExpGainPacket(award, award.Exp, award.HighestDamage), ct);
         }
 
         foreach (var drop in rewards.SpawnedDrops)
@@ -4348,6 +4348,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 ct);
         }
     }
+
+    /// <summary>P151：Java GainEXP_Monster(gain + Additional, white, …, Party_EXP, Party_Bonus_EXP, …)。</summary>
+    private static byte[] ExpGainPacket(MobExpAward? award, int exp, bool white)
+        => award is null
+            ? V113DropPackets.ShowExpGainMonster(exp, white)
+            : V113DropPackets.ShowExpGainMonster(award.ShownExp, white, award.PartyExp, award.PartyBonusExp);
 
     private static byte GetSkillLevelByte(Player player, int skillId)
         => skillId > 0 ? (byte)Math.Clamp(player.GetSkillLevel(skillId), byte.MinValue, byte.MaxValue) : (byte)0;

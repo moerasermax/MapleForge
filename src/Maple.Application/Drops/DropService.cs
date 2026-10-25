@@ -1,6 +1,7 @@
 using Maple.Application.Maps;
 using Maple.Core.Drops;
 using Maple.Core.Maps;
+using Maple.Core.Skills;
 using Maple.Application.Parties;
 using Maple.Core.Inventory;
 using Maple.Core.Items;
@@ -14,8 +15,18 @@ public sealed record DropServiceOptions(
     int MesoRate = 1,
     int DropObjectIdBase = 1_000_000);
 
-/// <summary>P150：擊殺者以外的經驗領取者（呼叫端送到對方 session）。</summary>
-public sealed record MobExpAward(Player Receiver, int Exp, bool HighestDamage, PlayerStatsMutation? StatsMutation);
+/// <summary>
+/// P150：擊殺者以外的經驗領取者（呼叫端送到對方 session）。P151：<paramref name="Exp"/> 為實際獲得總經驗；
+/// 經驗訊息的顯示值 <paramref name="ShownExp"/>（Java gain + Additional_Bonus_EXP）與隊伍加成欄位。
+/// </summary>
+public sealed record MobExpAward(
+    Player Receiver,
+    int Exp,
+    bool HighestDamage,
+    PlayerStatsMutation? StatsMutation,
+    int ShownExp = 0,
+    int PartyExp = 0,
+    int PartyBonusExp = 0);
 
 /// <param name="ExpGained">擊殺者本人獲得的經驗（P150 起依傷害分配，可能為 0）。</param>
 /// <param name="KillerHighestDamage">P150：擊殺者是否為最高傷害者（經驗訊息 white 旗標）。</param>
@@ -25,7 +36,8 @@ public sealed record MobKillRewards(
     IReadOnlyList<MapDrop> SpawnedDrops,
     PlayerStatsMutation? StatsMutation = null,
     bool KillerHighestDamage = true,
-    IReadOnlyList<MobExpAward>? OtherAwards = null)
+    IReadOnlyList<MobExpAward>? OtherAwards = null,
+    MobExpAward? KillerAward = null)
 {
     public static MobKillRewards Empty => new(0, Array.Empty<MapDrop>());
 }
@@ -120,7 +132,8 @@ public sealed class DropService : IMobKillHandler
                 drops,
                 killerAward?.StatsMutation,
                 killerAward?.HighestDamage ?? false,
-                others.Length > 0 ? others : null);
+                others.Length > 0 ? others : null,
+                killerAward);
     }
 
     /// <summary>
@@ -170,7 +183,7 @@ public sealed class DropService : IMobKillHandler
             }
         }
 
-        var raw = new List<(Player Receiver, int Exp, bool Highest)>();
+        var raw = new List<(Player Receiver, int Exp, bool Highest, int PartySize)>();
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
@@ -179,7 +192,7 @@ public sealed class DropService : IMobKillHandler
             {
                 if (FindPlayer(field, entry.Members[0].CharacterId) is { IsAlive: true } single)
                 {
-                    raw.Add((single, baseExp, i == highestIndex));
+                    raw.Add((single, baseExp, i == highestIndex, 0));
                 }
 
                 continue;
@@ -189,20 +202,79 @@ public sealed class DropService : IMobKillHandler
         }
 
         var awards = new List<MobExpAward>(raw.Count);
-        foreach (var (receiver, exp, highest) in raw)
+        foreach (var (receiver, exp, highest, partySize) in raw)
         {
-            var gain = receiver.HasDisease(PlayerDisease.Curse) ? exp / 2 : exp;
-            gain = ScalePositive(gain, _options.ExpRate);
-            if (gain > 0)
+            if (exp <= 0)
             {
-                awards.Add(new MobExpAward(receiver, gain, highest, receiver.GainExperience(gain)));
+                continue;
+            }
+
+            var gain = ComputeMonsterExpGain(receiver, exp, partySize, mob);
+            if (gain.Total > 0)
+            {
+                awards.Add(new MobExpAward(
+                    receiver,
+                    gain.Total,
+                    highest,
+                    receiver.GainExperience(gain.Total),
+                    gain.Shown,
+                    gain.PartyExp,
+                    gain.PartyBonusExp));
             }
         }
 
         return awards;
     }
 
-    private IEnumerable<(Player Receiver, int Exp, bool Highest)> DistributePartyExp(
+    /// <summary>
+    /// P151：對照 Java <c>MapleCharacter.gainExpMonster</c> 的經驗組成：詛咒減半 → 10 級以下職業倍率（狂狼／皇家騎士團 5，
+    /// 其他 1）否則伺服器倍率 → <c>Additional</c>：挑釁 SHOWDOWN ×(1 + x/100)、神聖祈禱 ×(1 + 值/(祭司 2311003 且組隊人數 &lt; 2 ? 500 : 100))、
+    /// 經驗 buff ×<c>(int)((realExpBuff - 100 ≤ 0 ? 100 : realExpBuff - 100) / 100)</c>（int 複合指定截斷），再扣掉 gain、最低 0 →
+    /// 組隊經驗（人數 &gt; 1）<c>gain * (5 * (n * (3 + (1 + n) / 2)) - 20) / 100.0</c>（n ≤ 6）→ 組隊額外（白金戒指 80%）。
+    /// VIP、職業加成、道具／精靈墜飾、活動、結婚經驗未移植（0）。顯示值 = gain + Additional。
+    /// </summary>
+    private (int Total, int Shown, int PartyExp, int PartyBonusExp) ComputeMonsterExpGain(Player receiver, int exp, int partySize, Mob mob)
+    {
+        long gain = receiver.HasDisease(PlayerDisease.Curse) ? exp / 2 : exp;
+        var job = receiver.Character.Job;
+        gain *= receiver.Character.Level < 10
+            ? (job is >= 2000 and <= 2112 and not 2001 || job is >= 1000 and < 2000 ? 5 : 1)
+            : Math.Max(0, _options.ExpRate);
+        gain = Math.Min(int.MaxValue, gain);
+
+        var additional = (int)gain;
+        if (mob.Statuses.TryGetValue(MonsterStatus.Showdown, out var showdown))
+        {
+            additional = (int)(additional * (1 + showdown.Value / 100.0));
+        }
+
+        if (receiver.ActiveBuffs.FirstOrDefault(static b => b.Stat == MapleBuffStat.HOLY_SYMBOL) is { } holySymbol)
+        {
+            var divisor = holySymbol.SourceId == HolySymbolPriestSkillId && partySize < 2 ? 500.0 : 100.0;
+            additional = (int)(additional * (1 + holySymbol.Value / divisor));
+        }
+
+        var realExpBuff = 100.0 + (receiver.GetBuffValue(MapleBuffStat.EXPRATE) ?? 0);
+        var lastExp = realExpBuff - 100.0 <= 0 ? 100 : realExpBuff - 100;
+        additional = (int)(additional * (double)(int)(lastExp / 100.0));
+        additional = Math.Max(0, additional - (int)gain);
+
+        var partyExp = 0;
+        if (partySize > 1)
+        {
+            var n = Math.Min(partySize, 6);
+            partyExp = (int)(gain * ((5 * (n * (3 + (1 + n) / 2)) - 20) / 100.0));
+        }
+
+        var premiumPercent = receiver.Character.Equips.Any(static e => e.ItemId is 1112127 or 1112918) ? 80 : 0;
+        var partyBonus = (int)(gain / 100.0 * premiumPercent);
+        var total = Math.Min(int.MaxValue, gain + additional + partyExp + partyBonus);
+        return ((int)total, (int)Math.Min(int.MaxValue, gain + additional), partyExp, partyBonus);
+    }
+
+    public const int HolySymbolPriestSkillId = 2311003;
+
+    private IEnumerable<(Player Receiver, int Exp, bool Highest, int PartySize)> DistributePartyExp(
         FieldInstance field,
         Mob mob,
         int partyId,
@@ -214,6 +286,7 @@ public sealed class DropService : IMobKillHandler
         var party = _parties?.GetParty(partyId);
         var attackerIds = members.Select(static m => m.CharacterId).ToHashSet();
         var expMap = new Dictionary<Player, int>();
+        var partySizes = new Dictionary<Player, int>();
         Player? highest = null;
         long highestDamage = 0;
         foreach (var (attackerId, damage) in members)
@@ -253,10 +326,12 @@ public sealed class DropService : IMobKillHandler
                 }
 
                 expMap[receiver] = expMap.GetValueOrDefault(receiver) + (int)JavaRound(expFraction * weight * levelMod);
+                // Java ExpMap.ptysize = expApplicable.size() + added_partyinc（隊伍加成道具未移植 → 0）。
+                partySizes[receiver] = applicable.Length;
             }
         }
 
-        return expMap.Select(p => (p.Key, p.Value, mostDamage && ReferenceEquals(p.Key, highest)));
+        return expMap.Select(p => (p.Key, p.Value, mostDamage && ReferenceEquals(p.Key, highest), partySizes.GetValueOrDefault(p.Key)));
     }
 
     private static Player? FindPlayer(FieldInstance field, int characterId)

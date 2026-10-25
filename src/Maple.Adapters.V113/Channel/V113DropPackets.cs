@@ -84,7 +84,12 @@ internal static class V113DropPackets
         return w.ToArray();
     }
 
-    public static byte[] ShowExpGainMonster(int gain, bool white = true)
+    /// <summary>
+    /// 對照 Java <c>GainEXP_Monster(gain, white, Event, Wedding, Party_EXP, Party_Bonus_EXP, Equipment, Premium)</c>：
+    /// <c>[3][white][int gain][0][int 活動][0][0][int 結婚][int 組隊][0][int 組隊額外][int 裝備][int 網咖]</c>。
+    /// P151 起帶組隊經驗與組隊額外（其餘加成未移植為 0）。
+    /// </summary>
+    public static byte[] ShowExpGainMonster(int gain, bool white = true, int partyExp = 0, int partyBonusExp = 0)
     {
         var w = new PacketWriter(36);
         w.WriteShort(SendShowStatusInfo);
@@ -96,9 +101,9 @@ internal static class V113DropPackets
         w.WriteByte(0);
         w.WriteByte(0);
         w.WriteInt(0);
-        w.WriteInt(0);
+        w.WriteInt(partyExp);
         w.WriteByte(0);
-        w.WriteInt(0);
+        w.WriteInt(partyBonusExp);
         w.WriteInt(0);
         w.WriteInt(0);
         return w.ToArray();

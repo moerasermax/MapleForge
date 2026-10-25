@@ -58,8 +58,11 @@ public sealed class ExpDistributionTests
         var rewards = drops.OnMobKilled(field, attacker, mob);
 
         // expFraction = 100 / (2 + 1) = 33.33；攻擊者 round(66.67) = 67、隊友 round(10.0) = 10
-        Assert.Equal(67, rewards.ExpGained);
-        Assert.Equal(10, Assert.Single(rewards.OtherAwards!).Exp);
+        // P151：2 人組隊經驗 (5 * (2 * (3 + 3 / 2)) - 20) / 100 = 20% → 67 + 13、10 + 2
+        Assert.Equal(67 + 13, rewards.ExpGained);
+        Assert.Equal(67, rewards.KillerAward!.ShownExp);
+        Assert.Equal(13, rewards.KillerAward.PartyExp);
+        Assert.Equal(10 + 2, Assert.Single(rewards.OtherAwards!).Exp);
     }
 
     [Fact]
@@ -89,8 +92,9 @@ public sealed class ExpDistributionTests
 
         var rewards = drops.OnMobKilled(field, attacker, mob);
 
-        // 平均等級 28；隊友 levelMod = 26/28；round(33.33 * 0.3 * 0.9286) = round(9.29) = 9
-        Assert.Equal(9, Assert.Single(rewards.OtherAwards!).Exp);
+        // 平均等級 28；隊友 levelMod = 26/28；round(33.33 * 0.3 * 0.9286) = round(9.29) = 9；組隊 20% → 9 + 1
+        Assert.Equal(9, Assert.Single(rewards.OtherAwards!).ShownExp);
+        Assert.Equal(10, rewards.OtherAwards![0].Exp);
     }
 
     [Fact]
@@ -109,6 +113,64 @@ public sealed class ExpDistributionTests
         Assert.Equal(25, rewards.ExpGained);
         Assert.Null(rewards.OtherAwards);
     }
+
+    [Theory]
+    [InlineData((short)2100, 5 * 100)] // 狂狼 10 級以下 5 倍（不看伺服器倍率）
+    [InlineData((short)1000, 5 * 100)] // 皇家騎士團
+    [InlineData((short)0, 100)]
+    public void BelowLevelTen_UsesJobRateNotServerRate(short job, int expected)
+    {
+        var (drops, field, mob, _) = Setup(expRate: 3);
+        var killer = AddPlayer(field, 1, level: 9);
+        killer.Character.Job = job;
+        mob.AddAttackerDamage(1, 100);
+
+        Assert.Equal(expected, drops.OnMobKilled(field, killer, mob).ExpGained);
+    }
+
+    [Fact]
+    public void HolySymbolSoloPriest_ShowdownAndExpBuff_AddAdditionalExp()
+    {
+        var (drops, field, mob, _) = Setup();
+        var killer = AddPlayer(field, 1, level: 30);
+        killer.ApplyBuffStats(Buff(DropService.HolySymbolPriestSkillId, Maple.Core.Skills.MapleBuffStat.HOLY_SYMBOL, 50), T0);
+        mob.TryApplyStatus(new MonsterStatusEffect(MonsterStatus.Showdown, 10, 4121003, null, null));
+        mob.AddAttackerDamage(1, 100);
+
+        var rewards = drops.OnMobKilled(field, killer, mob);
+
+        // additional = (int)((int)(100 * 1.1) * (1 + 50 / 500.0)) = (int)(110 * 1.1) = 121 → 121 - 100 = 21
+        Assert.Equal(121, rewards.ExpGained);
+        Assert.Equal(121, rewards.KillerAward!.ShownExp);
+    }
+
+    [Fact]
+    public void ExpRateBuff_DoublesViaIntTruncatedMultiplier()
+    {
+        var (drops, field, mob, _) = Setup();
+        var killer = AddPlayer(field, 1, level: 30);
+        killer.ApplyBuffStats(Buff(2450000, Maple.Core.Skills.MapleBuffStat.EXPRATE, 200), T0);
+        mob.AddAttackerDamage(1, 100);
+
+        Assert.Equal(200, drops.OnMobKilled(field, killer, mob).ExpGained);
+
+        var (drops2, field2, mob2, _) = Setup();
+        var killer2 = AddPlayer(field2, 1, level: 30);
+        killer2.ApplyBuffStats(Buff(2450000, Maple.Core.Skills.MapleBuffStat.EXPRATE, 150), T0);
+        mob2.AddAttackerDamage(1, 100);
+
+        Assert.Equal(100, drops2.OnMobKilled(field2, killer2, mob2).ExpGained); // (int)(150/100) = 1
+    }
+
+    private static Maple.Core.Skills.MapleStatEffect Buff(int sourceId, Maple.Core.Skills.MapleBuffStat stat, int value)
+        => new()
+        {
+            SourceId = sourceId,
+            Level = 1,
+            IsOverTime = true,
+            DurationMilliseconds = 60_000,
+            Statups = [new Maple.Core.Skills.BuffStatValue(stat, value)],
+        };
 
     [Fact]
     public void AttackerDamage_CappedAtRemainingHp()
