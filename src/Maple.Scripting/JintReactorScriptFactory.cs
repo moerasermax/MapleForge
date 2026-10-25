@@ -20,8 +20,11 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
     private static readonly Regex LoadCall = new(@"load\s*\([^)]*\)\s*;?", RegexOptions.Compiled);
     private static readonly Regex ImportPackageCall = new(@"importPackage\s*\([^)]*\)\s*;?", RegexOptions.Compiled);
 
-    public JintReactorScriptFactory(ReactorScriptOptions options, ILogger<JintReactorScriptFactory> log)
+    private readonly Maple.Application.Events.IEventScriptHost? _events;
+
+    public JintReactorScriptFactory(ReactorScriptOptions options, ILogger<JintReactorScriptFactory> log, Maple.Application.Events.IEventScriptHost? events = null)
     {
+        _events = events;
         _reactorDir = Path.Combine(options.ScriptsDirectory, "reactor");
         _log = log;
     }
@@ -65,7 +68,7 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
         return raw;
     }
 
-    private static Engine BuildEngine(IReactorScriptContext rm)
+    private Engine BuildEngine(IReactorScriptContext rm)
     {
         var engine = new Engine(o => o
             .LimitRecursion(64)
@@ -76,7 +79,7 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
         engine.SetValue("importPackage", new Action<object?>(_ => { }));
         engine.SetValue("Packages", new { });
         engine.SetValue("java", new { awt = new { Point = typeof(PointShim) } });
-        engine.SetValue("rm", new RmFacade(rm));
+        engine.SetValue("rm", new RmFacade(rm, _events));
         return engine;
     }
 
@@ -84,7 +87,9 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
     {
         private readonly IReactorScriptContext _rm;
 
-        public RmFacade(IReactorScriptContext rm) => _rm = rm;
+        private readonly Maple.Application.Events.IEventScriptHost? _events;
+
+        public RmFacade(IReactorScriptContext rm, Maple.Application.Events.IEventScriptHost? events) => (_rm, _events) = (rm, events);
 
         public void dropItems() => _rm.DropItems();
         public void dropItems(bool meso, int mesoChance, int minMeso, int maxMeso) =>
@@ -120,8 +125,9 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
         public void killAll() => _rm.KillAll();
         public void killAllMob() => _rm.KillAll();
         public void changeMusic(string song) => _rm.ChangeMusic(song);
-        public object? getEventManager(string name) { _rm.RecordUnsupported("getEventManager", name); return null; }
-        public object? getEventInstance() { _rm.RecordUnsupported("getEventInstance"); return null; }
+        /// <summary>P183：事件腳本主機的 em／玩家所屬 eim。</summary>
+        public object? getEventManager(string name) => _events?.GetEventManager(name);
+        public object? getEventInstance() => _events?.GetEventInstance(_rm.Player.Character.Id);
         public object? getClient() { _rm.RecordUnsupported("getClient"); return null; }
         public void scheduleWarp(int delay, int mapId) => _rm.RecordUnsupported("scheduleWarp", delay, mapId);
         public void givePartyNX(int amount) => _rm.RecordUnsupported("givePartyNX", amount);

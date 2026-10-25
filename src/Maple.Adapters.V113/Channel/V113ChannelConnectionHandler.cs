@@ -805,6 +805,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             (packet, tkn) => BroadcastPacketToMapAsync(player.Character, s, packet, tkn),
                             token);
                         await SendReactorScriptEffectsAsync(damageResult?.ScriptContext, player, s, token);
+                        if (damageResult?.ScriptContext is { PendingWarpMapId: { } damageWarp } damageCtx)
+                        {
+                            currentField = await WarpAsync(player, currentField, npcOidToId, s, damageWarp, sessionToken, token, damageCtx.PendingWarpPortal);
+                        }
+
                         break;
 
                     case V113ChannelRecvOp.TouchReactor:
@@ -819,6 +824,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                         }
 
                         await SendReactorScriptEffectsAsync(touchResult?.ScriptContext, player, s, token);
+                        if (touchResult?.ScriptContext is { PendingWarpMapId: { } touchWarp } touchCtx)
+                        {
+                            currentField = await WarpAsync(player, currentField, npcOidToId, s, touchWarp, sessionToken, token, touchCtx.PendingWarpPortal);
+                        }
+
                         break;
                     }
 
@@ -3927,6 +3937,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var drop in ctx.SpawnedDrops)
         {
             await BroadcastPacketToMapAsync(player.Character, session, V113DropPackets.DropItemFromMapObject(drop), ct);
+        }
+
+        foreach (var mob in ctx.SpawnedMobs)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.SpawnMonster(mob), ct); // P183
+        }
+
+        foreach (var (objectId, animation) in ctx.KilledMobs)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(objectId, animation), ct);
+        }
+
+        foreach (var song in ctx.Music)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.EnvironmentChange(song, 6), ct);
         }
 
         foreach (var (mapWide, type, message) in ctx.Notices)

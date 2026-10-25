@@ -34,13 +34,16 @@ public sealed class ReactorService
 
     private readonly Maple.Application.Drops.DropService? _drops;
     private readonly Maple.Core.Drops.IReactorDropCatalog? _reactorDrops;
+    private readonly Maple.Application.Combat.CombatService? _combat;
 
     public ReactorService(
         IDataProvider data,
         IReactorScriptFactory? scripts = null,
         Maple.Application.Drops.DropService? drops = null,
-        Maple.Core.Drops.IReactorDropCatalog? reactorDrops = null)
+        Maple.Core.Drops.IReactorDropCatalog? reactorDrops = null,
+        Maple.Application.Combat.CombatService? combat = null)
     {
+        _combat = combat;
         _data = data;
         _scripts = scripts;
         _drops = drops;
@@ -261,7 +264,7 @@ public sealed class ReactorService
             return (false, null);
         }
 
-        var ctx = new ReactorScriptContext(player, reactor, field, _drops, _reactorDrops);
+        var ctx = new ReactorScriptContext(player, reactor, field, _drops, _reactorDrops, _combat);
         var script = _scripts.TryCreate(reactor.ReactorId, ctx);
         if (script is null)
         {

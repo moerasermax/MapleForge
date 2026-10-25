@@ -25,6 +25,10 @@ public sealed class ReactorScriptContext : IReactorScriptContext
     private readonly DropService? _drops;
     private readonly IReactorDropCatalog? _reactorDrops;
     private readonly List<MapDrop> _spawnedDrops = new();
+    private readonly Maple.Application.Combat.CombatService? _combat;
+    private readonly List<Mob> _spawnedMobs = new();
+    private readonly List<(int ObjectId, byte Animation)> _killedMobs = new();
+    private readonly List<string> _music = new();
     private readonly List<(bool MapWide, int Type, string Message)> _notices = new();
     private readonly List<InventoryStackGain> _inventoryGains = new();
     private readonly List<InventoryQuantityMutation> _inventoryRemovals = new();
@@ -35,8 +39,10 @@ public sealed class ReactorScriptContext : IReactorScriptContext
         Reactor reactor,
         FieldInstance? field = null,
         DropService? drops = null,
-        IReactorDropCatalog? reactorDrops = null)
+        IReactorDropCatalog? reactorDrops = null,
+        Maple.Application.Combat.CombatService? combat = null)
     {
+        _combat = combat;
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(reactor);
         Player = player;
@@ -48,6 +54,15 @@ public sealed class ReactorScriptContext : IReactorScriptContext
 
     /// <summary>P182：dropItems 生成的掉落物（已加入 field；呼叫端廣播）。</summary>
     public IReadOnlyList<MapDrop> SpawnedDrops => _spawnedDrops;
+
+    /// <summary>P183：spawnMonster 生成的怪（呼叫端廣播 SPAWN_MONSTER）。</summary>
+    public IReadOnlyList<Mob> SpawnedMobs => _spawnedMobs;
+
+    /// <summary>P183：killMonster／killAll 移除的怪（呼叫端廣播 KILL_MONSTER）。</summary>
+    public IReadOnlyList<(int ObjectId, byte Animation)> KilledMobs => _killedMobs;
+
+    /// <summary>P183：changeMusic（全圖 musicChange）。</summary>
+    public IReadOnlyList<string> Music => _music;
 
     /// <summary>P182：mapMessage（全圖）／playerMessage（本人）的黃字公告。</summary>
     public IReadOnlyList<(bool MapWide, int Type, string Message)> Notices => _notices;
@@ -79,8 +94,26 @@ public sealed class ReactorScriptContext : IReactorScriptContext
 
     public void DoHarvest() => Record(nameof(DoHarvest));
 
+    /// <summary>
+    /// P183：Java <c>ReactorActionManager.spawnMonster(id, qty)</c>：在 <c>getPosition()</c>（反應堆位置 y − 10）
+    /// 下方地面生 qty 隻（spawnMonsterOnGroundBelow）。
+    /// </summary>
     public void SpawnMonster(int monsterId, int quantity = 1)
-        => Record(nameof(SpawnMonster), monsterId, quantity);
+    {
+        Record(nameof(SpawnMonster), monsterId, quantity);
+        if (_field is null || _combat is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < quantity; i++)
+        {
+            if (_combat.SpawnMonsterOnGroundBelow(_field, monsterId, Reactor.Position.X, Reactor.Position.Y - 10) is { } mob)
+            {
+                _spawnedMobs.Add(mob);
+            }
+        }
+    }
 
     public void SpawnNpc(int npcId) => Record(nameof(SpawnNpc), npcId);
 
@@ -172,11 +205,40 @@ public sealed class ReactorScriptContext : IReactorScriptContext
         return result;
     }
 
-    public void KillMonster(int monsterId) => Record(nameof(KillMonster), monsterId);
+    /// <summary>P183：Java <c>MapleMap.killMonster(id)</c>：第一隻該 ID 的怪直接移除（無獎勵、動畫 1）。</summary>
+    public void KillMonster(int monsterId)
+    {
+        Record(nameof(KillMonster), monsterId);
+        if (_field?.Objects.OfType<Mob>().FirstOrDefault(m => m.IsAlive && m.Definition.MonsterId == monsterId) is { } mob)
+        {
+            Kill(mob, 1);
+        }
+    }
 
-    public void KillAll() => Record(nameof(KillAll));
+    /// <summary>P183：Java <c>killAll()</c> = <c>killAllMonsters(true)</c>：全部移除、動畫 1。</summary>
+    public void KillAll()
+    {
+        Record(nameof(KillAll));
+        foreach (var mob in _field?.Objects.OfType<Mob>().ToArray() ?? [])
+        {
+            Kill(mob, 1);
+        }
+    }
 
-    public void ChangeMusic(string song) => Record(nameof(ChangeMusic), song);
+    /// <summary>P183：Java <c>changeMusic</c> → 全圖 musicChange。</summary>
+    public void ChangeMusic(string song)
+    {
+        Record(nameof(ChangeMusic), song);
+        _music.Add(song);
+    }
+
+    private void Kill(Mob mob, byte animation)
+    {
+        if (_field is not null && _combat is not null && _combat.KillMobWithoutRewards(_field, mob.ObjectId, animation).Killed)
+        {
+            _killedMobs.Add((mob.ObjectId, animation));
+        }
+    }
 
     public void RecordUnsupported(string name, params object?[] args) => Record(name, args);
 

@@ -117,6 +117,35 @@ public sealed class ReactorServiceTests
         Assert.Equal([(4031000, 2), (4031000, -1)], ctx.ItemGainNotices);
     }
 
+    [Fact]
+    public void ScriptContext_SpawnKillMusic()
+    {
+        // P183：spawnMonster 在反應堆 y−10 下方生、killMonster 只殺第一隻、killAll 全殺（動畫 1）、changeMusic。
+        var provider = CreateProvider(reactorId: 1002008);
+        var combat = new Maple.Application.Combat.CombatService(new Maple.Application.Maps.MapService(provider));
+        var scripts = new FakeReactorScriptFactory(rm =>
+        {
+            rm.SpawnMonster(9300001, 3);
+            rm.KillMonster(9300001);
+            rm.ChangeMusic("Bgm00/Silence");
+        });
+        var service = new ReactorService(provider, scripts, combat: combat);
+        var field = new FieldInstance(100000000);
+        var reactor = Assert.Single(service.SpawnMapReactors(field, 100000000));
+
+        var ctx = service.HitReactor(field, CreatePlayer(), reactor.ObjectId, charPosition: 1, stance: 7).ScriptContext!;
+
+        Assert.Equal(3, ctx.SpawnedMobs.Count);
+        Assert.All(ctx.SpawnedMobs, m => Assert.Equal((100, 190), (m.Position.X, m.Position.Y)));
+        Assert.Equal([(ctx.SpawnedMobs[0].ObjectId, (byte)1)], ctx.KilledMobs);
+        Assert.Equal(2, field.Objects.OfType<Mob>().Count());
+        Assert.Equal(["Bgm00/Silence"], ctx.Music);
+
+        ctx.KillAll();
+        Assert.Empty(field.Objects.OfType<Mob>());
+        Assert.Equal(3, ctx.KilledMobs.Count);
+    }
+
     private static Player CreatePlayer(int mapId = 100000000) => new(
         new Character { Id = 1, Name = "ReactorUser", MapId = mapId },
         new Position(0, 0, 0, 0));
@@ -163,6 +192,7 @@ public sealed class ReactorServiceTests
         {
             [("Map", mapPath)] = map,
             [("Reactor", $"{reactorId:D11}.img")] = reactor,
+            [("Mob", "9300001.img")] = Node("9300001.img", children: new[] { Node("info", children: new[] { Leaf("maxHP", 100), Leaf("level", 10) }) }),
         });
     }
 
