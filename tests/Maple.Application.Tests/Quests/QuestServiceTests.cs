@@ -31,6 +31,42 @@ public sealed class QuestServiceTests
     }
 
     [Fact]
+    public void StartQuest_UniqueRewardAlreadyOwned_FailsWithoutChanges()
+    {
+        // P216：Java checkEnd——獎勵是唯一道具且已持有剛好 1 個 → 失敗（呼叫端跳「你已經有了這個道具」）。
+        var service = new QuestService(
+            new FakeQuestCatalog(Quest(1000, startActions:
+            [
+                new QuestAction(QuestActionKind.Money, IntValue: 50),
+                new QuestAction(QuestActionKind.Item, Items: [new QuestItemAction(4030003, 1, 0, 2, 0, 0, -2)]),
+            ])),
+            items: new UniqueItemCatalog(4030003));
+        var player = NewPlayer(meso: 100, Item(4030003, 1, 1));
+
+        var result = service.StartQuest(player, 1000, npc: 1012000);
+
+        Assert.Equal(QuestTransactionStatus.AlreadyHaveUniqueItem, result.Status);
+        Assert.Equal(4030003, result.UniqueItemId);
+        Assert.Equal(100, player.Character.Meso);
+        Assert.NotEqual((byte)QuestStatus.Started, player.GetQuestStatus(1000));
+    }
+
+    private sealed class UniqueItemCatalog(int uniqueId) : Maple.Core.Items.IItemMakeCatalog
+    {
+        public Maple.Core.Items.ItemMakeGemRecipe? GetGemRecipe(int itemId) => null;
+        public Maple.Core.Items.ItemMakeCreateRecipe? GetCreateRecipe(int itemId) => null;
+        public int GetItemMakeLevel(int itemId) => 0;
+        public int GetRequiredLevel(int itemId) => 0;
+        public bool IsDropRestricted(int itemId) => false;
+        public bool IsAccountShared(int itemId) => false;
+        public bool IsPickupRestricted(int itemId) => itemId == uniqueId;
+        public Equip? CreateEquip(int itemId) => null;
+        public Maple.Core.Items.ItemMakeEnhanceStats? GetEnhanceStats(int itemId) => null;
+        public int GemRecipeCount => 0;
+        public int CreateRecipeCount => 0;
+    }
+
+    [Fact]
     public void CompleteQuest_RemovesRequiredItemsAndGrantsRewards()
     {
         var service = new QuestService(new FakeQuestCatalog(Quest(

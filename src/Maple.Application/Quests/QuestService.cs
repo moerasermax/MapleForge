@@ -25,6 +25,8 @@ public enum QuestTransactionStatus
     InventoryFull,
     ScriptRequired,
     UnsupportedAction,
+    /// <summary>P216：獎勵是唯一道具且已持有（Java dropMessage(1, "你已經有了這個道具: " + name)）。</summary>
+    AlreadyHaveUniqueItem,
 }
 
 public sealed record QuestClientAction(
@@ -95,6 +97,9 @@ public sealed record QuestTransactionResult
 
     /// <summary>P168：外觀改變（Java equipChanged → 他人 updateCharLook）。</summary>
     public bool LookChanged { get; init; }
+
+    /// <summary>P216：<see cref="QuestTransactionStatus.AlreadyHaveUniqueItem"/> 時已持有的唯一道具 ID。</summary>
+    public int? UniqueItemId { get; init; }
 }
 
 /// <summary>Quest use case; protocol encoding stays in the adapter layer.</summary>
@@ -108,8 +113,14 @@ public sealed class QuestService
 
     private readonly Maple.Application.Combat.PlayerLocalStatsCalculator? _localStats;
 
-    public QuestService(IQuestCatalog catalog, Maple.Application.Combat.PlayerLocalStatsCalculator? localStats = null)
+    private readonly Maple.Core.Items.IItemMakeCatalog? _items;
+
+    public QuestService(
+        IQuestCatalog catalog,
+        Maple.Application.Combat.PlayerLocalStatsCalculator? localStats = null,
+        Maple.Core.Items.IItemMakeCatalog? items = null)
     {
+        _items = items;
         _localStats = localStats;
         _catalog = catalog;
     }
@@ -168,10 +179,10 @@ public sealed class QuestService
             return new QuestTransactionResult(QuestTransactionStatus.CannotStart);
         }
 
-        var precheck = CheckActions(player, quest.StartActions, selection: null);
+        var precheck = CheckActions(player, quest.StartActions, selection: null, out var uniqueItemId);
         if (precheck != QuestTransactionStatus.Success)
         {
-            return new QuestTransactionResult(precheck);
+            return new QuestTransactionResult(precheck) { UniqueItemId = uniqueItemId };
         }
 
         // P163：Java runStart 的 exp／money／pop 在 forfeited > 0 時略過。
@@ -194,10 +205,10 @@ public sealed class QuestService
             return new QuestTransactionResult(QuestTransactionStatus.CannotComplete);
         }
 
-        var precheck = CheckActions(player, quest.CompleteActions, selection);
+        var precheck = CheckActions(player, quest.CompleteActions, selection, out var uniqueItemId);
         if (precheck != QuestTransactionStatus.Success)
         {
-            return new QuestTransactionResult(precheck);
+            return new QuestTransactionResult(precheck) { UniqueItemId = uniqueItemId };
         }
 
         var record = player.ForceCompleteQuest(questId, npc);
@@ -331,8 +342,9 @@ public sealed class QuestService
         };
     }
 
-    private static QuestTransactionStatus CheckActions(Player player, IReadOnlyList<QuestAction> actions, int? selection)
+    private QuestTransactionStatus CheckActions(Player player, IReadOnlyList<QuestAction> actions, int? selection, out int? uniqueItemId)
     {
+        uniqueItemId = null;
         var requiredFreeSlots = new Dictionary<InventoryType, int>();
         foreach (var action in actions)
         {
@@ -351,6 +363,13 @@ public sealed class QuestService
                         }
                         else if (item.Count > 0)
                         {
+                            // P216：Java MapleQuestAction.checkEnd——唯一道具且 haveItem(id, 1, true, false)（剛好 1 個）。
+                            if (_items?.IsPickupRestricted(item.ItemId) == true && player.HasExactlyOneIncludingEquipped(item.ItemId))
+                            {
+                                uniqueItemId = item.ItemId;
+                                return QuestTransactionStatus.AlreadyHaveUniqueItem;
+                            }
+
                             var type = Player.InventoryTypeOf(item.ItemId);
                             requiredFreeSlots[type] = requiredFreeSlots.GetValueOrDefault(type) + 1;
                         }

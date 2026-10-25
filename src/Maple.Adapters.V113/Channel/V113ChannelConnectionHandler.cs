@@ -3494,6 +3494,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MapleSession session,
         CancellationToken ct)
     {
+        // P216：Java checkEnd 的 dropMessage(1, "你已經有了這個道具: " + getName(id))。
+        if (result.Status == QuestTransactionStatus.AlreadyHaveUniqueItem && result.UniqueItemId is { } uniqueId)
+        {
+            var name = _strings?.GetItemName(uniqueId) ?? uniqueId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            await session.SendAsync(V113BroadcastPackets.ServerNotice(1, $"你已經有了這個道具: {name}"), ct);
+            return;
+        }
+
         if (result.Quest is { } quest)
         {
             await session.SendAsync(V113QuestPackets.UpdateQuest(quest), ct);
