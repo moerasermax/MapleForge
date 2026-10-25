@@ -112,13 +112,11 @@ public sealed class ChannelMobMovementTests
         var r = new PacketReader(pkt);
         Assert.Equal(V113ChannelSendOp.MoveMonster, r.ReadShort());  // opcode 0xE8
         Assert.Equal(200001, r.ReadInt());    // objectId
-        Assert.Equal(0, r.ReadByte());        // not init
+        // P117：對照 Java MobPacket.moveMonster（移除原本照抄 c2s 的 2+12 個多餘位元組）。
+        Assert.Equal(0, r.ReadByte());        // moveid always 0
         Assert.Equal(1, r.ReadByte());        // useSkill
-        Assert.Equal(2, r.ReadByte());        // skillIndex
-        Assert.Equal(0, r.ReadByte());        // skillId (MVP: 0)
-        Assert.Equal(0, r.ReadByte());        // skillLevel (MVP: 0)
-        Assert.Equal(999, r.ReadInt());       // skillData
-        r.Skip(12);                           // 12 zero bytes (1 + 11 unknown)
+        Assert.Equal(2, r.ReadByte());        // skill
+        Assert.Equal(999, r.ReadInt());       // unk
         Assert.Equal(50, r.ReadShort());      // startX
         Assert.Equal(60, r.ReadShort());      // startY
 
@@ -137,9 +135,8 @@ public sealed class ChannelMobMovementTests
         var r = new PacketReader(pkt);
         Assert.Equal(V113ChannelSendOp.MoveMonster, r.ReadShort());
         r.ReadInt();   // objectId
-        r.Skip(5);     // not init + useSkill + skillIndex + skillId + skillLevel
-        r.ReadInt();   // skillData
-        r.Skip(12);    // zeros
+        r.Skip(3);     // moveid + useSkill + skill
+        r.ReadInt();   // unk
         r.ReadShort(); // startX
         r.ReadShort(); // startY
         Assert.Equal(0, r.Remaining);

@@ -1755,3 +1755,13 @@ SPAWN_MONSTER 狀態區：EncodeTemporary(生效狀態 + EMPTY)（無狀態時�
 ```
 
 證據層級：Java source + Adapters focused tests；**unverified**。P110 只有模型與編碼，尚無技能套用來源（P111 起）。
+
+### 怪物移動廣播 `MOVE_MONSTER(0xE8)` 版型修正（P117）
+
+對照 Java `MobPacket.moveMonster(useskill, skill, unk, oid, startPos, endPos, moves)`：
+
+```text
+writeShort(0xE8) writeInt(oid) writeByte(0) writeByte(useskill?1:0) writeByte(skill) writeInt(unk) writePos(startPos) [movement list]
+```
+
+P117 前 MapleForge 在 `skill` 後多寫 2 個 0、`unk` 後多寫 12 個 0（照抄 c2s `MOVE_LIFE` 需略過的欄位），其他玩家看到的怪物移動欄位會錯位；既有測試把錯誤版型鎖成期望，已同步更正。movement 仍原樣轉送 c2s 剩餘位元組（Java 會重新序列化並捨棄尾端 9~17 位元組；尾端多餘資料客戶端不讀）。證據層級：Java source + Adapters focused tests；**unverified**（需雙客戶端真機確認他人畫面的怪物移動）。

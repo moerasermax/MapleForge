@@ -62,23 +62,20 @@ internal static class V113MobMovementPackets
     }
 
     /// <summary>
-    /// s2c MOVE_MONSTER broadcast (0xE8)。
-    /// 格式：[short opcode][int objectId][byte 0(not init)][byte useSkill][byte skillIndex]
-    ///       [byte 0(skillId)][byte 0(skillLevel)][int skillData][skip 12 zeros][short startX][short startY]
-    ///       [raw movement bytes]
+    /// s2c MOVE_MONSTER broadcast (0xE8)。P117：對照 Java <c>MobPacket.moveMonster</c>：
+    /// [short opcode][int objectId][byte 0(moveid, always 0)][byte useSkill][byte skill][int unk][short startX][short startY]
+    /// [movement list]。P117 前 MapleForge 在 skill 後多寫 2 個 0、unk 後多寫 12 個 0（照抄 c2s MOVE_LIFE 的略過欄位），
+    /// 已移除（unverified：未經多客戶端真機驗證）。movement 仍原樣轉送 c2s 剩餘位元組（Java 會重新序列化並去掉尾端資料）。
     /// </summary>
     public static byte[] BroadcastMoveMonster(int objectId, byte useSkill, byte skillIndex, int skillData, short startX, short startY, byte[] rawMovement)
     {
-        var w = new PacketWriter(32 + rawMovement.Length);
+        var w = new PacketWriter(16 + rawMovement.Length);
         w.WriteShort(V113ChannelSendOp.MoveMonster);
         w.WriteInt(objectId);
-        w.WriteByte(0);            // not init
-        w.WriteByte(useSkill);
-        w.WriteByte(skillIndex);
-        w.WriteByte(0);            // skillId (MVP: skip mob skill application)
-        w.WriteByte(0);            // skillLevel
-        w.WriteInt(skillData);
-        w.WriteZeroBytes(12);      // 1 unknown + 11 unknown
+        w.WriteByte(0);                          // moveid, always 0
+        w.WriteByte(useSkill > 0 ? 1 : 0);       // Java useskill ? 1 : 0
+        w.WriteByte(skillIndex);                 // Java skill（客戶端送來的 skill byte）
+        w.WriteInt(skillData);                   // Java unk2
         w.WriteShort(startX);
         w.WriteShort(startY);
         w.WriteBytes(rawMovement);
