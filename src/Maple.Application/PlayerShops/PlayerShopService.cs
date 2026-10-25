@@ -34,7 +34,8 @@ public sealed record PlayerShopListingResult(
     ShopInventoryMutation? Mutation = null,
     PlayerShopItemListing? Listing = null,
     InventoryType? ReturnedInventoryType = null,
-    Item? ReturnedItem = null);
+    Item? ReturnedItem = null,
+    InventoryStackGain? ReturnedStack = null);
 
 public sealed record PlayerShopPurchaseUseCaseResult(
     PlayerShopServiceStatus Status,
@@ -402,18 +403,23 @@ public sealed class PlayerShopService
 
         var listing = listingIndex >= 0 && listingIndex < merchant.Items.Count ? merchant.Items[listingIndex] : null;
         var type = listing is null ? (InventoryType?)null : (InventoryType)listing.InventoryType;
-        var canHold = type is { } inventoryType && owner.CanGainItem(inventoryType);
+        // P208：Java 收回商品——checkSpace(itemId, bundles × 每組數量, owner) 後 addFromDrop（疊加）。
+        var canHold = type is not null
+            && listing!.CreateRemainingItem() is var remaining
+            && owner.HasSpaceFor(remaining.ItemId, remaining.Quantity, remaining.Owner ?? string.Empty);
         var taken = merchant.TryTakeListing(listingIndex, canHold);
         if (taken.Status != PlayerShopTakeItemStatus.Success)
         {
             return new PlayerShopListingResult(MapTakeItemStatus(taken.Status), merchant);
         }
 
-        var returned = owner.Inventory.By(taken.InventoryType!.Value).Gain(taken.Item!);
-        if (returned is null)
+        var stack = owner.GainDropItemStacking(taken.Item!);
+        if (!stack.AnyChange)
         {
             return new PlayerShopListingResult(PlayerShopServiceStatus.InventoryFull, merchant);
         }
+
+        var returned = stack.Added.Count > 0 ? stack.Added[0] : taken.Item!;
 
         owner.FlushInventory();
         await _hiredMerchants.UpsertAsync(merchant, cancellationToken).ConfigureAwait(false);
@@ -421,7 +427,8 @@ public sealed class PlayerShopService
             PlayerShopServiceStatus.Success,
             merchant,
             ReturnedInventoryType: taken.InventoryType,
-            ReturnedItem: returned);
+            ReturnedItem: returned,
+            ReturnedStack: stack);
     }
 
     public async Task<PlayerShopSettlementResult> CollectMesosAsync(

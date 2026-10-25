@@ -224,6 +224,24 @@ public sealed class V113PlayerInteractionRouter
         }
     }
 
+    /// <summary>P202/P208：疊加取得的封包——先送合併格的數量更新，再送新增格。</summary>
+    private static async Task SendStackGainAsync(
+        Func<byte[], CancellationToken, Task>? sendSelf,
+        InventoryType type,
+        InventoryStackGain stack,
+        CancellationToken ct)
+    {
+        foreach (var merged in stack.Merged)
+        {
+            await SendAsync(sendSelf, V113ItemUsePackets.ModifyInventoryQuantity(merged), ct).ConfigureAwait(false);
+        }
+
+        foreach (var added in stack.Added)
+        {
+            await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(type, added), ct).ConfigureAwait(false);
+        }
+    }
+
     private async Task<bool> HandleCreateAsync(
         PacketReader reader,
         Player player,
@@ -563,15 +581,7 @@ public sealed class V113PlayerInteractionRouter
 
         if (result.GainedStack is { } stack)
         {
-            foreach (var merged in stack.Merged)
-            {
-                await SendAsync(sendSelf, V113ItemUsePackets.ModifyInventoryQuantity(merged), ct).ConfigureAwait(false);
-            }
-
-            foreach (var added in stack.Added)
-            {
-                await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(result.InventoryType.Value, added), ct).ConfigureAwait(false);
-            }
+            await SendStackGainAsync(sendSelf, result.InventoryType.Value, stack, ct).ConfigureAwait(false);
         }
         else
         {
@@ -614,8 +624,16 @@ public sealed class V113PlayerInteractionRouter
             return false;
         }
 
-        await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(result.ReturnedInventoryType.Value, result.ReturnedItem), ct)
-            .ConfigureAwait(false);
+        if (result.ReturnedStack is { } returnedStack)
+        {
+            await SendStackGainAsync(sendSelf, result.ReturnedInventoryType.Value, returnedStack, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(result.ReturnedInventoryType.Value, result.ReturnedItem), ct)
+                .ConfigureAwait(false);
+        }
+
         RegisterMerchantSession(player, storeId, sendSelf);
         await SendToMerchantParticipantsAsync(
                 result.Merchant,

@@ -104,6 +104,31 @@ public sealed class PlayerShopServiceTests
     }
 
     [Fact]
+    public async Task TakeListing_FullBag_StacksIntoOwnersExistingStack()
+    {
+        // P208：Java checkSpace + addFromDrop——背包滿但可疊進既有堆疊時照樣收回。
+        var repo = new InMemoryHiredMerchantRepository();
+        var service = new PlayerShopService(repo);
+        var merchant = NewOpenMerchant();
+        merchant.TryAddListing(InventoryType.Use, new Item { ItemId = 2000000, Quantity = 6 }, 3, 2, 100);
+        await repo.AddAsync(merchant);
+        var owner = NewPlayer(1, "Owner", 10, meso: 0);
+        var bag = owner.Inventory.By(InventoryType.Use);
+        bag.Put(new Item { ItemId = 2000000, Quantity = 5, Slot = 1 });
+        for (short slot = 2; slot <= bag.SlotLimit; slot++)
+        {
+            bag.Put(new Item { ItemId = 2010000 + slot, Quantity = 1, Slot = slot });
+        }
+
+        var result = await service.TakeListingAsync(merchant.StoreId, owner, listingIndex: 0);
+
+        Assert.Equal(PlayerShopServiceStatus.Success, result.Status);
+        Assert.Equal((short)11, bag.Get(1)!.Quantity);
+        Assert.Empty(result.ReturnedStack!.Added);
+        Assert.Equal((short)1, Assert.Single(result.ReturnedStack.Merged).Slot);
+    }
+
+    [Fact]
     public async Task Claim_ReturnsPendingMerchantItemsAndMesosThenDeletesPackage()
     {
         var repo = new InMemoryHiredMerchantRepository();
