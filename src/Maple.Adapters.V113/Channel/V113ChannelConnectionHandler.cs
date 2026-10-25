@@ -2290,6 +2290,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 NpcUiEffectKind.IntroDisableUi => session.SendAsync(V113UiPackets.IntroDisableUi(effect.A != 0), c),
                 NpcUiEffectKind.IntroLock => session.SendAsync(V113UiPackets.IntroLock(effect.A != 0), c),
                 NpcUiEffectKind.StatusMessage => session.SendAsync(V113UiPackets.StatusMessage(effect.A), c),
+                NpcUiEffectKind.EnableActions => session.SendAsync(V113StatsPackets.EnableActions(), c),
                 _ => BroadcastPacketToMapAsync(player.Character, session, V113BroadcastPackets.ServerNotice(effect.A, effect.Text), c),
             });
 

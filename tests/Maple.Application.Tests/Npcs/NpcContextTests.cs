@@ -405,6 +405,27 @@ public sealed class NpcContextTests
     }
 
     [Fact]
+    public async Task GainItem_NoSpace_SendsEnableActions()
+    {
+        // P218：Java gainItem——!checkSpace && quantity > 0 → enableActions。
+        var player = NewPlayer();
+        var ctx = new NpcContext(9000000, player, NewQuestService(), isPickupRestricted: static id => id == 4030003);
+        ctx.GainItem(4030003, 1);
+        var effects = new List<NpcUiEffect>();
+        var convo = new NpcConversation(
+            9000000,
+            new CountingScript(() => { ctx.GainItem(4030003, 1); ctx.Dispose(); }, () => { }),
+            ctx,
+            (_, _) => Task.CompletedTask,
+            (_, _) => Task.CompletedTask,
+            sendUiEffect: (e, _) => { effects.Add(e); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal([NpcUiEffectKind.EnableActions], effects.Select(static e => e.Kind));
+    }
+
+    [Fact]
     public async Task SafeDispose_EndsOnNextResponseWithoutCallingScript()
     {
         var player = NewPlayer();

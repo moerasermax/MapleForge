@@ -582,6 +582,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         {
             if (quantity > 0 && !CanHold(itemId, quantity))
             {
+                // P218：Java gainItem——!checkSpace && quantity > 0 → enableActions 後 return。
+                _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.EnableActions, string.Empty));
                 return;
             }
 

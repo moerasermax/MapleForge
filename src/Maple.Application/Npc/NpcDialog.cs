@@ -79,6 +79,9 @@ public enum NpcUiEffectKind
 
     /// <summary>P200：UIPacket.getStatusMsg(A = itemId)（SHOW_STATUS_INFO 7）。</summary>
     StatusMessage,
+
+    /// <summary>P218：MaplePacketCreator.enableActions()（如 gainItem 背包放不下時）。</summary>
+    EnableActions,
 }
 
 public sealed record NpcUiEffect(NpcUiEffectKind Kind, string Text, int A = 0, int B = 0);
