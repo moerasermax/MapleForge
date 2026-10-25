@@ -15,7 +15,12 @@ public enum StorageResultKind
     Closed,
 }
 
-public sealed record StorageResult(StorageResultKind Kind, InventoryType? ChangedType = null)
+public sealed record StorageResult(
+    StorageResultKind Kind,
+    InventoryType? ChangedType = null,
+    InventoryStackGain? Gained = null,
+    bool MesoChanged = false,
+    string? PopupMessage = null)
 {
     public static StorageResult None { get; } = new(StorageResultKind.None);
 }
@@ -40,10 +45,24 @@ public sealed class StorageService
             : StorageResult.None;
     }
 
-    public StorageResult TakeOut(Player player, InventoryType type, byte storageTypeSlot) =>
-        player.TryTakeItemFromStorage(type, storageTypeSlot)
-            ? new StorageResult(StorageResultKind.TakenOut, type)
-            : StorageResult.None;
+    /// <summary>Java：自由市場入口（910000000）取出收 1000 楓幣。</summary>
+    public const int FreeMarketMapId = 910000000;
+    public const int FreeMarketTakeOutFee = 1000;
+    public const string NoSpaceMessage = "你的物品攔已經滿了..";
+    public const string NotEnoughMesoMessage = "你沒有足夠的楓幣放倉庫道具。";
+
+    /// <summary>P210：Java handleStorage mode 4（checkSpace、自由市場手續費、addFromDrop 疊加；失敗時 dropMessage(1)）。</summary>
+    public StorageResult TakeOut(Player player, InventoryType type, byte storageTypeSlot)
+    {
+        var fee = player.Character.MapId == FreeMarketMapId ? FreeMarketTakeOutFee : 0;
+        return player.TryTakeItemFromStorage(type, storageTypeSlot, fee, out var gain) switch
+        {
+            StorageTakeOutStatus.Success => new StorageResult(StorageResultKind.TakenOut, type, gain, MesoChanged: fee > 0),
+            StorageTakeOutStatus.NoSpace => new StorageResult(StorageResultKind.None, PopupMessage: NoSpaceMessage),
+            StorageTakeOutStatus.NotEnoughMeso => new StorageResult(StorageResultKind.None, PopupMessage: NotEnoughMesoMessage),
+            _ => new StorageResult(StorageResultKind.None),
+        };
+    }
 
     public StorageResult MoveMeso(Player player, int clientMesoDelta) =>
         player.TryApplyStorageMesoClientDelta(clientMesoDelta)

@@ -4319,6 +4319,22 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await _accounts.UpdateAsync(account, ct);
         }
 
+        // P210：取出——Java gainMeso(-1000) 的楓幣更新 → addFromDrop 的背包封包 → sendTakenOut；失敗時 dropMessage(1)。
+        if (result.PopupMessage is { } popup)
+        {
+            await session.SendAsync(V113BroadcastPackets.ServerNotice(1, popup), ct);
+        }
+
+        if (result.MesoChanged)
+        {
+            await session.SendAsync(V113ShopPackets.UpdateMeso(player.Character.Meso, itemReaction: true), ct);
+        }
+
+        if (result.Gained is { } gained && result.ChangedType is { } gainedType)
+        {
+            await SendStackGainAsync(session, gainedType, gained, ct);
+        }
+
         var packet = V113StoragePackets.EncodeResult(result, npcId, player.Storage);
         if (packet is not null)
         {

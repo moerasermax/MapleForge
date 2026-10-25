@@ -53,21 +53,43 @@ public sealed partial class Player
     }
 
     public bool TryTakeItemFromStorage(InventoryType type, byte storageTypeSlot)
-    {
-        var bag = Inventory.By(type);
-        if (bag.FirstFreeSlot() is null) return false;
-        if (!Storage.TryTakeOut(type, storageTypeSlot, out var item) || item is null)
-            return false;
+        => TryTakeItemFromStorage(type, storageTypeSlot, fee: 0, out _) == StorageTakeOutStatus.Success;
 
-        if (bag.Gain(item) is null)
+    /// <summary>
+    /// P210：Java NPCHandler.handleStorage mode 4——takeOut 後 <c>checkSpace(id, qty, owner)</c> 不過或楓幣不足手續費就
+    /// <c>store</c> 放回；否則扣手續費（自由市場 1000）並 <c>addFromDrop</c>（疊加）。
+    /// </summary>
+    public StorageTakeOutStatus TryTakeItemFromStorage(InventoryType type, byte storageTypeSlot, int fee, out InventoryStackGain? gain)
+    {
+        gain = null;
+        if (!Storage.TryTakeOut(type, storageTypeSlot, out var item) || item is null)
+            return StorageTakeOutStatus.NotFound;
+
+        if (!HasSpaceFor(item.ItemId, item.Quantity, item.Owner ?? string.Empty))
         {
             Storage.TryStore(item);
-            return false;
+            return StorageTakeOutStatus.NoSpace;
         }
 
+        if (fee > 0 && Character.Meso < fee)
+        {
+            Storage.TryStore(item);
+            return StorageTakeOutStatus.NotEnoughMeso;
+        }
+
+        if (item.Quantity < 1)
+        {
+            Storage.TryStore(item);
+            return StorageTakeOutStatus.NotFound;
+        }
+
+        if (fee > 0)
+            GainMeso(-fee);
+
+        gain = GainDropItemStacking(item);
         FlushInventory();
         FlushStorage();
-        return true;
+        return StorageTakeOutStatus.Success;
     }
 
     public bool TryApplyStorageMesoClientDelta(int meso)
@@ -115,4 +137,13 @@ public sealed partial class Player
         item.Slot = originalSlot;
         bag.Put(item);
     }
+}
+
+/// <summary>P210：倉庫取出結果。</summary>
+public enum StorageTakeOutStatus
+{
+    Success,
+    NotFound,
+    NoSpace,
+    NotEnoughMeso,
 }

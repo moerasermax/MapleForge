@@ -30,8 +30,9 @@ public sealed class StorageDomainTests
         Assert.True(player.TryTakeItemFromStorage(InventoryType.Use, storageTypeSlot: 0));
         Assert.Empty(player.Storage.Items);
         Assert.Empty(account.Storage.Items);
-        Assert.Equal(10, player.Inventory.By(InventoryType.Use).Get(1)!.Quantity);
-        Assert.Equal(20, player.Inventory.By(InventoryType.Use).Get(2)!.Quantity);
+        // P210：Java addFromDrop——疊回原本的堆疊。
+        Assert.Equal(30, player.Inventory.By(InventoryType.Use).Get(1)!.Quantity);
+        Assert.Null(player.Inventory.By(InventoryType.Use).Get(2));
     }
 
     [Fact]
@@ -137,6 +138,43 @@ public sealed class StorageDomainTests
         Assert.Equal(StorageResultKind.None, result.Kind);
         Assert.Empty(player.Storage.Items);
         Assert.Equal(2, player.Inventory.By(InventoryType.Use).Get(1)!.Quantity);
+    }
+
+    [Fact]
+    public void TakeOut_FreeMarketFee_AndFailuresPutItemBack()
+    {
+        // P210：Java handleStorage mode 4——自由市場收 1000；楓幣不足／背包放不下時放回倉庫並 dropMessage(1)。
+        var account = new Account { Id = 7 };
+        var player = BuildPlayer(account, new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2000000, Slot = 1, Quantity = 30 });
+        player.AttachStorage(account);
+        Assert.True(player.TryStoreItemToStorage(InventoryType.Use, inventorySlot: 1, quantity: 30));
+        player.Character.MapId = StorageService.FreeMarketMapId;
+        player.Character.Meso = 999;
+        var service = new StorageService();
+
+        var poor = service.TakeOut(player, InventoryType.Use, 0);
+        Assert.Equal(StorageService.NotEnoughMesoMessage, poor.PopupMessage);
+        Assert.Single(player.Storage.Items);
+
+        var bag = player.Inventory.By(InventoryType.Use);
+        for (short slot = 1; slot <= bag.SlotLimit; slot++)
+        {
+            bag.Put(new Item { ItemId = 2010000 + slot, Quantity = 1, Slot = slot });
+        }
+
+        player.Character.Meso = 5000;
+        var full = service.TakeOut(player, InventoryType.Use, 0);
+        Assert.Equal(StorageService.NoSpaceMessage, full.PopupMessage);
+        Assert.Single(player.Storage.Items);
+        Assert.Equal(5000, player.Character.Meso);
+
+        bag.TryTake(1, 1, out _);
+        var ok = service.TakeOut(player, InventoryType.Use, 0);
+        Assert.Equal(StorageResultKind.TakenOut, ok.Kind);
+        Assert.True(ok.MesoChanged);
+        Assert.Equal(4000, player.Character.Meso);
+        Assert.Equal((short)30, Assert.Single(ok.Gained!.Added).Quantity);
+        Assert.Empty(player.Storage.Items);
     }
 
     private static Player BuildPlayer(Account account, params ItemRecord[] inventoryItems)
