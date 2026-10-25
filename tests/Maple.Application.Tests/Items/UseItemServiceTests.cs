@@ -51,6 +51,28 @@ public sealed class UseItemServiceTests
     }
 
     [Fact]
+    public void Use_NightLordWithAlchemist_BoostsFlatRecovery()
+    {
+        // P120：Java alchemistModifyVal：紅藥水 50 HP × 藥劑精通 X=150 / 100 = 75。
+        var player = NewPlayer(hp: 1, maxHp: 500, mp: 10, maxMp: 50, UseItem(2000000, 1, 1));
+        player.Character.Job = 411;
+        player.ChangeSkillLevel(4110000, level: 1, masterLevel: 0);
+        var skills = new Maple.Application.Skills.InMemorySkillCatalog(new[]
+        {
+            new Maple.Core.Skills.MapleSkill
+            {
+                Id = 4110000,
+                Effects = [new Maple.Core.Skills.MapleStatEffect { SourceId = 4110000, Level = 1, X = 150 }],
+            },
+        });
+        var service = new UseItemService(new HardcodedItemEffectCatalog(), skills);
+
+        service.Use(player, slot: 1, itemId: 2000000);
+
+        Assert.Equal((short)76, player.Hp);
+    }
+
+    [Fact]
     public void Use_ClampsHpToMaxHp()
     {
         var player = NewPlayer(hp: 90, maxHp: 100, mp: 10, maxMp: 50, UseItem(2000002, 1, 1));

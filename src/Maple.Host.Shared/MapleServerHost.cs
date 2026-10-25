@@ -196,9 +196,11 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113RepairHandler>();
         builder.Services.AddSingleton<V113OwlHandler>();
         builder.Services.AddSingleton<V113BuffItemHandler>();
-        builder.Services.AddSingleton<IItemEffectCatalog, HardcodedItemEffectCatalog>();
+        // P120：消耗品回復改讀 Item.wz spec（原 HardcodedItemEffectCatalog 只列 7 種藥水，其餘 200xxxx 一律 +100 HP）。
+        builder.Services.AddSingleton<WzItemUseCatalog>();
+        builder.Services.AddSingleton<IItemEffectCatalog>(sp => sp.GetRequiredService<WzItemUseCatalog>());
         builder.Services.AddSingleton<UseItemService>();
-        builder.Services.AddSingleton<IItemUseCatalog, WzItemUseCatalog>();
+        builder.Services.AddSingleton<IItemUseCatalog>(sp => sp.GetRequiredService<WzItemUseCatalog>());
         builder.Services.AddSingleton<ItemUseService>();
         builder.Services.AddSingleton<WzItemMakeCatalog>();
         builder.Services.AddSingleton<IItemMakeCatalog>(sp => sp.GetRequiredService<WzItemMakeCatalog>());

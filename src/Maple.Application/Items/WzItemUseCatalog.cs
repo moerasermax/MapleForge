@@ -7,7 +7,7 @@ namespace Maple.Application.Items;
 /// <summary>
 /// Item-use metadata backed by Item.wz.
 /// </summary>
-public sealed class WzItemUseCatalog : IItemUseCatalog
+public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog
 {
     private readonly IDataProvider _data;
 
@@ -43,6 +43,27 @@ public sealed class WzItemUseCatalog : IItemUseCatalog
         }
 
         return entries.Count == 0 ? null : entries;
+    }
+
+    /// <summary>
+    /// P120：消耗品回復數值（對照 Java <c>MapleItemInformationProvider.getItemEffect</c> →
+    /// <c>MapleStatEffect.loadItemEffectFromData(item/spec)</c> 的 hp/mp/hpR/mpR）。查無道具回 null；有道具但無 spec 回全 0。
+    /// </summary>
+    public ItemEffect? GetEffect(int itemId)
+    {
+        var node = GetItemNode(itemId);
+        if (node is null)
+        {
+            return null;
+        }
+
+        var spec = node["spec"];
+        return new ItemEffect(
+            itemId,
+            Hp: GetInt(spec, "hp") ?? 0,
+            Mp: GetInt(spec, "mp") ?? 0,
+            HpRate: GetInt(spec, "hpR") ?? 0,
+            MpRate: GetInt(spec, "mpR") ?? 0);
     }
 
     private IDataNode? GetItemNode(int itemId)

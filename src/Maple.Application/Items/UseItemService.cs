@@ -1,6 +1,7 @@
 using Maple.Core.Inventory;
 using Maple.Core.Items;
 using Maple.Core.Shops;
+using Maple.Core.Skills;
 using Maple.Core.World;
 
 namespace Maple.Application.Items;
@@ -16,11 +17,13 @@ public sealed record UseItemResult(
 public sealed class UseItemService
 {
     private readonly IItemEffectCatalog _catalog;
+    private readonly ISkillCatalog? _skills;
 
-    public UseItemService(IItemEffectCatalog catalog)
+    public UseItemService(IItemEffectCatalog catalog, ISkillCatalog? skills = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         _catalog = catalog;
+        _skills = skills;
     }
 
     public UseItemResult Use(Player player, short slot, int itemId)
@@ -54,25 +57,43 @@ public sealed class UseItemService
             player.Inventory.By(InventoryType.Use).TryTake(slot, out _);
         }
 
-        var updates = ApplyEffect(player, effect);
+        var updates = ApplyEffect(player, effect, AlchemistOffset(player));
         player.FlushInventory();
         return new UseItemResult(true, updates, mutation);
     }
 
-    private static IReadOnlyList<PlayerStatUpdate> ApplyEffect(Player player, ItemEffect effect)
+    /// <summary>
+    /// P120：對照 Java <c>MapleStatEffect.alchemistModifyVal</c>（withX=true，HP 與 MP 都用 X）：
+    /// 夜使者 411/412 的藥劑精通 4110000、暗夜行者 1411/1412 的 14110003 有學時 offset = X，否則 100。
+    /// Java 另加 <c>RecoveryUP</c>（裝備潛能），MapleForge 尚無潛能，視為 0。
+    /// </summary>
+    private int AlchemistOffset(Player player)
+    {
+        var skillId = player.Character.Job switch
+        {
+            411 or 412 => 4110000,
+            1411 or 1412 => 14110003,
+            _ => 0,
+        };
+        var level = skillId == 0 ? 0 : player.GetSkillLevel(skillId);
+        return level > 0 && _skills?.GetSkill(skillId)?.GetEffect(level) is { } alchemist ? alchemist.X : 100;
+    }
+
+    private static IReadOnlyList<PlayerStatUpdate> ApplyEffect(Player player, ItemEffect effect, int alchemistOffset)
     {
         var stats = player.Character.Stats;
         var updates = new List<PlayerStatUpdate>(2);
 
         // P115：Java calcHPChange 以 getCurrentMaxHp（含裝備與 MAXHP buff）計算百分比與上限。
-        var hpRecovery = effect.Hp + (player.MaxHp * effect.HpRate / 100);
+        // P120：固定值經 alchemistModifyVal（val * offset / 100），百分比不受影響。
+        var hpRecovery = effect.Hp * alchemistOffset / 100 + (player.MaxHp * effect.HpRate / 100);
         if (hpRecovery > 0)
         {
             stats.Hp = (short)Math.Min(player.MaxHp, stats.Hp + hpRecovery);
             updates.Add(new PlayerStatUpdate(PlayerStatKind.Hp, stats.Hp));
         }
 
-        var mpRecovery = effect.Mp + (player.MaxMp * effect.MpRate / 100);
+        var mpRecovery = effect.Mp * alchemistOffset / 100 + (player.MaxMp * effect.MpRate / 100);
         if (mpRecovery > 0)
         {
             stats.Mp = (short)Math.Min(player.MaxMp, stats.Mp + mpRecovery);

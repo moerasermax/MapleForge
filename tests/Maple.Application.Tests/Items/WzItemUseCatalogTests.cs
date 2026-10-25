@@ -34,6 +34,34 @@ public sealed class WzItemUseCatalogTests
             });
     }
 
+    [Fact]
+    public void GetEffect_ReadsSpecHpMpAndRates()
+    {
+        var catalog = new WzItemUseCatalog(new ItemDataProvider());
+
+        var effect = catalog.GetEffect(2000019)!;
+
+        Assert.Equal(2000019, effect.ItemId);
+        Assert.Equal(400, effect.Hp);
+        Assert.Equal(0, effect.Mp);
+        Assert.Equal(0, effect.HpRate);
+        Assert.Equal(30, effect.MpRate);
+    }
+
+    [Fact]
+    public void GetEffect_UnknownItem_ReturnsNull()
+    {
+        Assert.Null(new WzItemUseCatalog(new ItemDataProvider()).GetEffect(2000999));
+    }
+
+    [Fact]
+    public void GetEffect_ItemWithoutSpec_ReturnsZeroEffect()
+    {
+        var effect = new WzItemUseCatalog(new ItemDataProvider()).GetEffect(2100000)!;
+
+        Assert.Equal(0, effect.Hp + effect.Mp + effect.HpRate + effect.MpRate);
+    }
+
     private sealed class ItemDataProvider : IDataProvider
     {
         private readonly IDataNode _itemRoot;
@@ -65,10 +93,23 @@ public sealed class WzItemUseCatalogTests
                 }),
             });
 
+            var potion = new Node("02000019", children: new Dictionary<string, IDataNode>
+            {
+                ["spec"] = new Node("spec", children: new Dictionary<string, IDataNode>
+                {
+                    ["hp"] = new Node("hp", 400),
+                    ["mpR"] = new Node("mpR", 30),
+                }),
+            });
+
             _itemRoot = new Node("Item", children: new Dictionary<string, IDataNode>
             {
                 ["Consume"] = new Node("Consume", children: new Dictionary<string, IDataNode>
                 {
+                    ["0200.img"] = new Node("0200.img", children: new Dictionary<string, IDataNode>
+                    {
+                        ["02000019"] = potion,
+                    }),
                     ["0203.img"] = new Node("0203.img", children: new Dictionary<string, IDataNode>
                     {
                         ["02030000"] = returnScroll,
