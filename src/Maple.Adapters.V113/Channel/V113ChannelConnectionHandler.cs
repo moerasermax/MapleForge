@@ -3999,6 +3999,19 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 }
             }
 
+            // P143：吸魔成功 → showOwnBuffEffect(skill, 1)；未變身時對他人 showBuffeffect(id, skill, 1)。
+            if (hit.MpEaterSkillId != 0)
+            {
+                await session.SendAsync(V113SkillPackets.ShowOwnBuffEffect(hit.MpEaterSkillId, 1), ct);
+                if (player.GetBuffValue(MapleBuffStat.MORPH) is null)
+                {
+                    await BroadcastPacketToOthersAsync(
+                        player.Character,
+                        V113SkillPackets.ShowForeignBuffEffect(player.Character.Id, hit.MpEaterSkillId, 1),
+                        ct);
+                }
+            }
+
             if (hit.Killed)
             {
                 await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(hit.ObjectId), ct);

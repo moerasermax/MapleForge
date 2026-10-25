@@ -360,6 +360,24 @@ public sealed class Mob : IFieldObject
     /// <summary>P122：扣怪物 MP（Java <c>setMp(getMp() - mpCon)</c>，負值夾 0）。</summary>
     public void ConsumeMp(int amount) => Mp = Math.Max(0, Mp - amount);
 
+    /// <summary>P143：Java <c>lastAbsorbMP</c>（吸魔時間）。</summary>
+    public DateTimeOffset? LastAbsorbMpAt { get; private set; }
+
+    /// <summary>Java <c>canAbsorbMP</c>：距上次被吸超過 10 秒。</summary>
+    public bool CanAbsorbMp(DateTimeOffset now) => LastAbsorbMpAt is not { } at || (now - at).TotalMilliseconds > 10_000;
+
+    /// <summary>Java <c>absorbMP</c>：可吸時扣 MP（不足歸 0）並記錄時間。</summary>
+    public void AbsorbMp(int amount, DateTimeOffset now)
+    {
+        if (!CanAbsorbMp(now))
+        {
+            return;
+        }
+
+        Mp = Math.Max(0, Mp - amount);
+        LastAbsorbMpAt = now;
+    }
+
     /// <summary>套用怪物移動最終位置（MONSTER_MOVE 後續接線用）。</summary>
     public void MoveTo(Position position) => Position = position;
 }

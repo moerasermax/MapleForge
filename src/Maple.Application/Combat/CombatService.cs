@@ -39,7 +39,9 @@ public sealed record CombatMobHit(
     // P111：此次命中成功套用的怪物異常狀態（呼叫端逐一廣播 APPLY_MONSTER_STATUS）。
     IReadOnlyList<MonsterStatusEffect>? AppliedStatuses = null,
     // P124：怪物身上有物/魔反射時，攻擊者因此被扣的 HP（Java player.addHP(-(7000 + nextInt(8000)))，實際扣血量）。
-    int ReflectedDamage = 0);
+    int ReflectedDamage = 0,
+    // P143：吸魔成功時的被動技能 ID（呼叫端送 showOwnBuffEffect／showBuffeffect）；0 = 未觸發。
+    int MpEaterSkillId = 0);
 
 /// <summary>
 /// 怪物血條顯示所需快照（在戰鬥鎖內擷取）：顯示類型、血量、王血條顏色、最近攻擊者。
@@ -80,6 +82,7 @@ public sealed class CombatService
     private readonly Random _random;
     private readonly PlayerLocalStatsCalculator? _localStats;
     private readonly OnHitStatusApplier? _onHitStatuses;
+    private readonly ISkillCatalog? _skills;
 
     public CombatService(
         MapService maps,
@@ -90,6 +93,7 @@ public sealed class CombatService
         ISkillCatalog? skills = null)
     {
         _localStats = localStats;
+        _skills = skills;
         _onHitStatuses = skills is null ? null : new OnHitStatusApplier(skills, random ?? Random.Shared);
         _maps = maps;
         _mobKillHandler = mobKillHandler;
@@ -273,6 +277,9 @@ public sealed class CombatService
                     ApplySkillStatuses(mob, attack.SkillEffect, attacker, now))
                 : null;
 
+            // P143：Java applyAttackMagic——totDamageToOneMonster > 0 且有吸魔被動 → applyPassive（不看怪物是否存活）。
+            var mpEaterSkillId = attack.IsMagic && totalDamage > 0 ? ApplyMpEater(attacker, mob, now) : 0;
+
             var rewards = result.Killed
                 ? _mobKillHandler?.OnMobKilled(field, attacker, mob)
                 : null;
@@ -297,7 +304,8 @@ public sealed class CombatService
                     : null,
                 mulungEnergyAfter,
                 appliedStatuses,
-                ApplyReflect(mob, attacker, attack.IsMagic, totalDamage)));
+                ApplyReflect(mob, attacker, attack.IsMagic, totalDamage),
+                mpEaterSkillId));
 
             if (totalDamage > 0 && !attack.IsMagic && !attack.FromSummon)
             {
@@ -312,6 +320,42 @@ public sealed class CombatService
         }
 
         return new CombatAttackResult(hits);
+    }
+
+    /// <summary>
+    /// P143：Java <c>MapleStatEffect.applyPassive</c>（魔力吸收 2100000／2200000／2300000，依 <c>getMPEaterForJob</c>：
+    /// 210~212 火毒、220~222 冰雷、230~232 僧侶，其他職業預設 2100000）：擲機率 → 非王 →
+    /// <c>absorb = min((int)(怪物最大 MP * (x / 70.0)), 目前 MP)</c> &gt; 0 且 10 秒內未被吸 → 怪物扣 MP、攻擊者加 MP
+    /// （<c>setMp</c> 夾在目前最大 MP、不送封包，MP 隨尾段 applyTo 的屬性更新送出）。回觸發的技能 ID，未觸發回 0。
+    /// </summary>
+    private int ApplyMpEater(Player attacker, Mob mob, DateTimeOffset now)
+    {
+        var eaterId = attacker.Character.Job switch
+        {
+            220 or 221 or 222 => 2200000,
+            230 or 231 or 232 => 2300000,
+            _ => 2100000,
+        };
+        var level = attacker.GetSkillLevel(eaterId);
+        if (level <= 0 || _skills?.GetSkill(eaterId)?.GetEffect(level) is not { } eater || !MakeChanceResult(eater.Prop))
+        {
+            return 0;
+        }
+
+        if (mob.Stats.Boss)
+        {
+            return 0;
+        }
+
+        var absorb = Math.Min((int)(mob.Stats.MaxMp * (eater.X / 70.0)), mob.Mp);
+        if (absorb <= 0 || !mob.CanAbsorbMp(now))
+        {
+            return 0;
+        }
+
+        mob.AbsorbMp(absorb, now);
+        attacker.Character.Stats.Mp = (short)Math.Min(attacker.MaxMp, attacker.Character.Stats.Mp + absorb);
+        return eaterId;
     }
 
     /// <summary>P142：buff 衍生異常（先）與技能 monsterStatus（後）合併；皆無回 null。</summary>
