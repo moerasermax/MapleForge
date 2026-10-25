@@ -139,6 +139,36 @@ public sealed class Mob : IFieldObject
         _lastAttackTimes[characterId] = at;
     }
 
+    private readonly Dictionary<int, long> _damageByCharacter = new();
+
+    /// <summary>
+    /// P150：Java <c>MapleMonster.damage</c> 的 <c>attacker.addDamage(from, min(damage, hp))</c>（在扣血之前呼叫）——
+    /// 經驗分配用的各角色累計傷害。存活且傷害 &gt; 0 才記錄。
+    /// </summary>
+    public void AddAttackerDamage(int characterId, long damage)
+    {
+        if (damage <= 0 || !IsAlive)
+        {
+            return;
+        }
+
+        var right = Math.Max(0, Math.Min(damage, Hp));
+        _damageByCharacter[characterId] = _damageByCharacter.GetValueOrDefault(characterId) + right;
+    }
+
+    /// <summary>P150：持續傷害已先扣血，以扣血前的 HP 上限直接累加（呼叫端已夾值）。</summary>
+    public void RecordDotDamage(int characterId, long damage)
+    {
+        if (damage > 0)
+        {
+            _damageByCharacter[characterId] = _damageByCharacter.GetValueOrDefault(characterId) + damage;
+        }
+    }
+
+    /// <summary>P150：各角色累計傷害（依首次攻擊順序）。</summary>
+    public IReadOnlyList<(int CharacterId, long Damage)> AttackerDamages
+        => _damageByCharacter.Select(static p => (p.Key, p.Value)).ToArray();
+
     /// <summary>最近 <see cref="RecentAttackerWindow"/> 內攻擊過的角色 Id（含邊界）。</summary>
     public IReadOnlyList<int> GetRecentAttackers(DateTimeOffset now)
         => _lastAttackTimes

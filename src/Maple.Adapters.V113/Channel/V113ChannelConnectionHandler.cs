@@ -4311,7 +4311,32 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         if (rewards.ExpGained > 0)
         {
-            await session.SendAsync(V113DropPackets.ShowExpGainMonster(rewards.ExpGained), ct);
+            await session.SendAsync(V113DropPackets.ShowExpGainMonster(rewards.ExpGained, white: rewards.KillerHighestDamage), ct);
+        }
+
+        // P150：其他攻擊者／隊友依 Java killBy 分得的經驗（各自的 session）。
+        foreach (var award in rewards.OtherAwards ?? [])
+        {
+            var entry = _mapRegistry.GetAll(award.Receiver.Character.MapId).FirstOrDefault(e => e.CharId == award.Receiver.Character.Id);
+            if (entry is null)
+            {
+                continue;
+            }
+
+            if (award.StatsMutation is { } otherMutation && V113StatsHandlers.EncodeUpdateStats(otherMutation) is { } otherStats)
+            {
+                await SendBestEffortAsync(entry, otherStats, ct);
+                if (otherMutation.Updates.Any(static u => u.Kind == PlayerStatKind.Level))
+                {
+                    await _guildOperationHandler.SyncMemberLevelJobAsync(award.Receiver, entry.SendPacket, ct);
+                }
+            }
+            else
+            {
+                await SendBestEffortAsync(entry, V113DropPackets.UpdateExp(award.Receiver.Character.Exp), ct);
+            }
+
+            await SendBestEffortAsync(entry, V113DropPackets.ShowExpGainMonster(award.Exp, white: award.HighestDamage), ct);
         }
 
         foreach (var drop in rewards.SpawnedDrops)

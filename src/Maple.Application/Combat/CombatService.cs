@@ -280,6 +280,7 @@ public sealed class CombatService
             var requested = attack.SkillId == HeavensHammerSkillId && totalDamage > 0
                 ? (mob.Stats.Boss ? 199_999 : Math.Max(0, mob.Hp - 1))
                 : totalDamage;
+            mob.AddAttackerDamage(attacker.Character.Id, requested);
             var result = mob.TakeDamage(requested);
             // P108：對照 Java MapleMonster.damage case -1/2（存活時）→ from.mulungEnergyModify(true)。
             short? mulungEnergyAfter = result.AppliedDamage > 0 && !result.Killed && mob.Stats.HpDisplayType is -1 or 2
@@ -564,8 +565,15 @@ public sealed class CombatService
         var hits = new List<CombatMobHit>();
         foreach (var mob in field.Objects.OfType<Mob>().ToArray())
         {
+            // P150：Java applyEffectTask → damage(from, dam, false)——毒傷也計入經驗分配（在扣血前取 HP 上限）。
+            var hpBeforeTick = mob.Hp;
             foreach (var (effect, damage) in mob.TickDamageOverTime())
             {
+                if (effect.FromCharacterId != 0)
+                {
+                    mob.RecordDotDamage(effect.FromCharacterId, Math.Min(damage, hpBeforeTick));
+                }
+
                 hits.Add(new CombatMobHit(
                     mob.ObjectId,
                     mob.Definition.MonsterId,

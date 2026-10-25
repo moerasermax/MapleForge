@@ -14,10 +14,18 @@ public sealed record DropServiceOptions(
     int MesoRate = 1,
     int DropObjectIdBase = 1_000_000);
 
+/// <summary>P150：擊殺者以外的經驗領取者（呼叫端送到對方 session）。</summary>
+public sealed record MobExpAward(Player Receiver, int Exp, bool HighestDamage, PlayerStatsMutation? StatsMutation);
+
+/// <param name="ExpGained">擊殺者本人獲得的經驗（P150 起依傷害分配，可能為 0）。</param>
+/// <param name="KillerHighestDamage">P150：擊殺者是否為最高傷害者（經驗訊息 white 旗標）。</param>
+/// <param name="OtherAwards">P150：其他攻擊者／隊友的經驗。</param>
 public sealed record MobKillRewards(
     int ExpGained,
     IReadOnlyList<MapDrop> SpawnedDrops,
-    PlayerStatsMutation? StatsMutation = null)
+    PlayerStatsMutation? StatsMutation = null,
+    bool KillerHighestDamage = true,
+    IReadOnlyList<MobExpAward>? OtherAwards = null)
 {
     public static MobKillRewards Empty => new(0, Array.Empty<MapDrop>());
 }
@@ -100,16 +108,162 @@ public sealed class DropService : IMobKillHandler
         ArgumentNullException.ThrowIfNull(killer);
         ArgumentNullException.ThrowIfNull(mob);
 
-        var expGained = ScalePositive(mob.Stats.Exp, _options.ExpRate);
-        var statsMutation = expGained > 0
-            ? killer.GainExperience(expGained)
-            : null;
+        var awards = DistributeExp(field, killer, mob);
+        var killerAward = awards.FirstOrDefault(a => ReferenceEquals(a.Receiver, killer));
+        var others = awards.Where(a => !ReferenceEquals(a.Receiver, killer)).ToArray();
         var drops = SpawnDropsFromMonster(field, killer, mob);
 
-        return expGained == 0 && drops.Count == 0
+        return killerAward is null && others.Length == 0 && drops.Count == 0
             ? MobKillRewards.Empty
-            : new MobKillRewards(expGained, drops, statsMutation);
+            : new MobKillRewards(
+                killerAward?.Exp ?? 0,
+                drops,
+                killerAward?.StatsMutation,
+                killerAward?.HighestDamage ?? false,
+                others.Length > 0 ? others : null);
     }
+
+    /// <summary>
+    /// P150：對照 Java <c>MapleMonster.killBy</c> 的經驗分配：攻擊者依「有隊伍 → 隊伍 entry、否則個人 entry」分組
+    /// （MapleForge 以擊殺當下的隊伍分組，Java 以每次攻擊時的隊伍）；最高傷害 entry 取第一個嚴格最大者；
+    /// 每個 entry <c>baseExp = ceil(總經驗 * entry 傷害 / 怪物最大 HP)</c>。
+    /// 個人：仍在本圖且存活才給。隊伍：對 entry 內每位（仍在本圖的）攻擊者，取同隊且
+    /// <c>攻擊者等級 - 隊友等級 &lt;= 5 || 怪物等級 - 隊友等級 &lt;= 5</c>、在本圖存活的隊友為 expApplicable，
+    /// <c>expFraction = baseExp * (個人傷害 / 隊伍總傷) / (人數 + 1)</c>，攻擊者權重 2.0、其他 0.3，
+    /// 等級修正 <c>min(1, 等級 / 平均等級)</c>（本身也有攻擊則 1），<c>Math.round</c> 累加；最高傷害旗標只給該隊最高傷害者。
+    /// 之後每位領取者走 <c>gainExpMonster</c> 的基礎部分：詛咒減半 → 伺服器倍率（隊伍加成等見後續）。
+    /// </summary>
+    private IReadOnlyList<MobExpAward> DistributeExp(FieldInstance field, Player killer, Mob mob)
+    {
+        var damages = mob.AttackerDamages;
+        if (damages.Count == 0)
+        {
+            // 沒有傷害紀錄（例如直接呼叫 OnMobKilled 的舊路徑）：全歸擊殺者。
+            damages = [(killer.Character.Id, mob.Stats.MaxHp)];
+        }
+
+        var entries = new List<(int? PartyId, List<(int CharacterId, long Damage)> Members, long Total)>();
+        foreach (var (characterId, damage) in damages)
+        {
+            var partyId = _parties?.GetPartyForCharacter(characterId)?.Id;
+            var index = partyId is null ? -1 : entries.FindIndex(e => e.PartyId == partyId);
+            if (index < 0)
+            {
+                entries.Add((partyId, [(characterId, damage)], damage));
+            }
+            else
+            {
+                var entry = entries[index];
+                entry.Members.Add((characterId, damage));
+                entries[index] = (entry.PartyId, entry.Members, entry.Total + damage);
+            }
+        }
+
+        var highestIndex = -1;
+        long highestDamage = 0;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            if (entries[i].Total > highestDamage)
+            {
+                highestIndex = i;
+                highestDamage = entries[i].Total;
+            }
+        }
+
+        var raw = new List<(Player Receiver, int Exp, bool Highest)>();
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var baseExp = (int)Math.Ceiling(mob.Stats.Exp * ((double)entry.Total / mob.Stats.MaxHp));
+            if (entry.PartyId is null)
+            {
+                if (FindPlayer(field, entry.Members[0].CharacterId) is { IsAlive: true } single)
+                {
+                    raw.Add((single, baseExp, i == highestIndex));
+                }
+
+                continue;
+            }
+
+            raw.AddRange(DistributePartyExp(field, mob, entry.PartyId.Value, entry.Members, entry.Total, baseExp, i == highestIndex));
+        }
+
+        var awards = new List<MobExpAward>(raw.Count);
+        foreach (var (receiver, exp, highest) in raw)
+        {
+            var gain = receiver.HasDisease(PlayerDisease.Curse) ? exp / 2 : exp;
+            gain = ScalePositive(gain, _options.ExpRate);
+            if (gain > 0)
+            {
+                awards.Add(new MobExpAward(receiver, gain, highest, receiver.GainExperience(gain)));
+            }
+        }
+
+        return awards;
+    }
+
+    private IEnumerable<(Player Receiver, int Exp, bool Highest)> DistributePartyExp(
+        FieldInstance field,
+        Mob mob,
+        int partyId,
+        IReadOnlyList<(int CharacterId, long Damage)> members,
+        long totalDamage,
+        int baseExp,
+        bool mostDamage)
+    {
+        var party = _parties?.GetParty(partyId);
+        var attackerIds = members.Select(static m => m.CharacterId).ToHashSet();
+        var expMap = new Dictionary<Player, int>();
+        Player? highest = null;
+        long highestDamage = 0;
+        foreach (var (attackerId, damage) in members)
+        {
+            if (FindPlayer(field, attackerId) is not { } attacker || party is null)
+            {
+                continue;
+            }
+
+            var applicable = party.Members
+                .Select(m => FindPlayer(field, m.CharacterId))
+                .OfType<Player>()
+                .Where(p => p.IsAlive
+                    && (attacker.Character.Level - p.Character.Level <= 5 || mob.Stats.Level - p.Character.Level <= 5))
+                .ToArray();
+            double averageLevel = applicable.Sum(static p => (double)p.Character.Level);
+            if (applicable.Length > 1)
+            {
+                averageLevel /= applicable.Length;
+            }
+
+            if (damage > highestDamage)
+            {
+                highest = attacker;
+                highestDamage = damage;
+            }
+
+            var innerBaseExp = baseExp * ((double)damage / totalDamage);
+            var expFraction = innerBaseExp / (applicable.Length + 1);
+            foreach (var receiver in applicable)
+            {
+                var weight = ReferenceEquals(receiver, attacker) ? 2.0 : 0.3;
+                var levelMod = receiver.Character.Level / averageLevel;
+                if (levelMod > 1.0 || attackerIds.Contains(receiver.Character.Id))
+                {
+                    levelMod = 1.0;
+                }
+
+                expMap[receiver] = expMap.GetValueOrDefault(receiver) + (int)JavaRound(expFraction * weight * levelMod);
+            }
+        }
+
+        return expMap.Select(p => (p.Key, p.Value, mostDamage && ReferenceEquals(p.Key, highest)));
+    }
+
+    private static Player? FindPlayer(FieldInstance field, int characterId)
+        => field.Players.FirstOrDefault(p => p.Character.Id == characterId);
+
+    /// <summary>Java <c>Math.round(double)</c>：<c>floor(x + 0.5)</c>。</summary>
+    private static double JavaRound(double value) => Math.Floor(value + 0.5);
 
     public DropPickupResult TryPickup(FieldInstance field, Player player, int dropObjectId)
     {
