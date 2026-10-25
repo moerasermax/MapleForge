@@ -14,19 +14,20 @@ public sealed class SessionCommandRegistryTests
         var maps = new InMemoryMapSessionRegistry();
         var registry = new V113SessionCommandRegistry(maps);
         var warps = new List<(int Char, int Map, int Portal)>();
+        var tokens = new Dictionary<int, object> { [1] = new(), [2] = new() };
         foreach (var id in new[] { 1, 2 })
         {
             var player = new Player(new Character { Id = id, Name = $"P{id}", MapId = 101000301 }, new Position(0, 0, 0, 0));
             maps.Register(101000301, id, player, (_, _) => Task.CompletedTask, new object());
-            registry.Register(id, $"t{id}", (map, portal) => { warps.Add((id, map, portal)); return true; });
+            registry.Register(id, tokens[id], (map, portal) => { warps.Add((id, map, portal)); return true; });
         }
 
         Assert.Equal(2, registry.WarpAll(101000301, 200090010, 0));
         Assert.Equal([(1, 200090010, 0), (2, 200090010, 0)], warps.OrderBy(static w => w.Char));
 
-        registry.Unregister(1, "stale");
+        registry.Unregister(1, new object()); // 舊連線的 token
         Assert.True(registry.Warp(1, 100000000, 0));
-        registry.Unregister(1, "t1");
+        registry.Unregister(1, tokens[1]);
         Assert.False(registry.Warp(1, 100000000, 0));
     }
 }
