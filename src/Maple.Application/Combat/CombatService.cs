@@ -8,11 +8,13 @@ namespace Maple.Application.Combat;
 /// <param name="SkillEffect">P111：攻擊技能效果（Java <c>getAttackEffect</c>）；命中存活怪物時依其 MonsterStatuses 附帶異常狀態。</param>
 /// <param name="SkillId">P124：客戶端宣稱的攻擊技能 id（Java <c>attack.skill</c>，用於鬼神之擊等特例）。</param>
 /// <param name="IsMagic">P124：魔法攻擊（Java <c>applyAttackMagic</c>）——反射判斷改看 MAGIC_DAMAGE_REFLECT。</param>
+/// <param name="FromSummon">P138：召喚獸攻擊（Java SummonAttack 另一條路徑，不做 applyAttack 的射程檢查）。</param>
 public sealed record CombatAttack(
     IReadOnlyList<CombatAttackTarget> Targets,
     MapleStatEffect? SkillEffect = null,
     int SkillId = 0,
-    bool IsMagic = false);
+    bool IsMagic = false,
+    bool FromSummon = false);
 
 public sealed record CombatAttackTarget(int ObjectId, IReadOnlyList<int> DamageLines)
 {
@@ -55,7 +57,10 @@ public sealed record CombatMobHpDisplay(
     public byte HpPercent => (byte)Math.Clamp((int)Math.Ceiling(Hp * 100.0 / Math.Max(1, MaxHp)), 0, 100);
 }
 
-/// <param name="Aborted">P137：Java applyAttackMagic 中途 <c>return</c>（傷害封鎖門檻）——後續怪物未處理，呼叫端不做尾段 applyTo。</param>
+/// <param name="Aborted">
+/// P137/P138：Java applyAttack／applyAttackMagic 中途 <c>return</c>（魔法傷害封鎖門檻、超出射程）——後續怪物未處理，
+/// 呼叫端不做尾段 applyTo。
+/// </param>
 public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits, bool Aborted = false)
 {
     public bool AnyKilled => Hits.Any(static h => h.Killed);
@@ -200,10 +205,19 @@ public sealed class CombatService
 
         var hits = new List<CombatMobHit>();
         // P137：魔法攻擊的伺服器端傷害上限（需玩家總屬性；未注入計算器時沿用客戶端值）。
-        PlayerLocalStats? magicStats = attack.IsMagic ? _localStats?.Calculate(attacker) : null;
+        var localStats = _localStats?.Calculate(attacker);
+        PlayerLocalStats? magicStats = attack.IsMagic ? localStats : null;
         var magicBaseMax = magicStats is null
             ? 0
             : MagicDamageCap.BaseMaxDamagePerHit(attack.SkillId, attack.SkillEffect, magicStats, attacker.Character.Stats.Int);
+        // P138：射程檢查（Java 在逐行傷害之後、monster.damage 之前；王圖豁免，物理攻擊另豁免傳送門 2 秒內）。
+        var rangeExempt = localStats is null
+            || attack.FromSummon
+            || AttackRange.IsBossMap(attacker.Character.MapId)
+            || (!attack.IsMagic && attacker.IsUsingPortal(_timeProvider.GetUtcNow()));
+        var maxRangeSq = rangeExempt
+            ? double.MaxValue
+            : AttackRange.MaxDistanceSq(attacker, attack.SkillEffect, attack.SkillId, localStats!.DefRange);
         foreach (var target in attack.Targets)
         {
             if (field.Get(target.ObjectId) is not Mob mob || !mob.IsAlive)
@@ -225,6 +239,11 @@ public sealed class CombatService
             else
             {
                 totalDamage = AdjustedTotalDamage(mob.Stats, attack, target);
+            }
+
+            if (AttackRange.DistanceSq(attacker.Position, mob.Position) > maxRangeSq)
+            {
+                return new CombatAttackResult(hits, Aborted: true);
             }
 
             if (totalDamage > 0)

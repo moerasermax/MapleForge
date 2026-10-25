@@ -20,7 +20,8 @@ public sealed record PlayerLocalStats(
     double DamageRate,
     double BossDamageRate,
     int Hands,
-    float MaxBaseDamage);
+    float MaxBaseDamage,
+    int DefRange = 0);
 
 /// <summary>
 /// P136：對照 Java <c>PlayerStats.recalcLocalStats</c>（隨需計算，不快取；Java 在裝備/buff 變動時重算）。
@@ -150,7 +151,36 @@ public sealed class PlayerLocalStatsCalculator
             dam,
             bossDam,
             dex + intel + luk,
-            CalculateMaxBaseDamage(player, str, dex, intel, luk, magic, watk));
+            CalculateMaxBaseDamage(player, str, dex, intel, luk, magic, watk),
+            CalculateDefRange(player));
+    }
+
+    /// <summary>
+    /// P138：Java <c>CalcPassive_Range</c>（<c>defRange</c> 先歸 0）：弓箭手 300~322／盜賊 410~422／皇家弓 1300~1312／
+    /// 皇家盜 1400~1412 = 100 + 對應被動（3000002、4000001、13000001、14000001）的 range；槍神 520~522 = 100；
+    /// 狂狼 2100~2112 = 80。
+    /// </summary>
+    private int CalculateDefRange(Player player)
+    {
+        int? passive = player.Character.Job switch
+        {
+            300 or 310 or 311 or 312 or 320 or 321 or 322 => 3000002,
+            410 or 411 or 412 or 420 or 421 or 422 => 4000001,
+            1300 or 1310 or 1311 or 1312 => 13000001,
+            1400 or 1410 or 1411 or 1412 => 14000001,
+            _ => null,
+        };
+        if (passive is { } skillId)
+        {
+            return 100 + (Effect(skillId, player.GetSkillLevel(skillId))?.Range ?? 0);
+        }
+
+        return player.Character.Job switch
+        {
+            520 or 521 or 522 => 100,
+            2100 or 2110 or 2111 or 2112 => 80,
+            _ => 0,
+        };
     }
 
     /// <summary>

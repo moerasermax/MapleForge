@@ -129,7 +129,8 @@ internal static class V113SummonHandler
         => new(targets
             .Where(static t => t.Damage < MaxSummonHitDamage)
             .Select(static t => new CombatAttackTarget(t.ObjectId, [t.Damage]))
-            .ToList());
+            .ToList(),
+            FromSummon: true);
 
     public static async Task HandleDamageSummonAsync(
         PacketReader reader,

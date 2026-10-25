@@ -81,6 +81,23 @@ public sealed class MapleStatEffect
     /// </summary>
     public World.MobSkillArea? Area { get; init; }
 
+    /// <summary>P138：WZ <c>range</c>（Java <c>getRange</c>，預設 0）。</summary>
+    public int Range { get; init; }
+
+    /// <summary>
+    /// P138：Java <c>getMaxDistanceSq</c>：<c>maxX = max(|lt.x|, |rb.x|)</c>、<c>maxY = max(|lt.y|, |rb.y|)</c>，回 maxX² + maxY²
+    /// （無 lt/rb 時為 0）。
+    /// </summary>
+    public int MaxDistanceSq
+    {
+        get
+        {
+            var maxX = Area is { } a ? Math.Max(Math.Abs((int)a.LtX), Math.Abs((int)a.RbX)) : 0;
+            var maxY = Area is { } b ? Math.Max(Math.Abs((int)b.LtY), Math.Abs((int)b.RbY)) : 0;
+            return maxX * maxX + maxY * maxY;
+        }
+    }
+
     /// <summary>P137：WZ <c>fixdamage</c>（Java <c>getFixDamage</c>，預設 0；新手蝸牛殼等固定傷害上限）。</summary>
     public int FixDamage { get; init; }
 

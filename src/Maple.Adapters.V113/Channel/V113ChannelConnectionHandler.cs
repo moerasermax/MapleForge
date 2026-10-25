@@ -3574,8 +3574,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SendCombatHitsAsync(result.Hits, player, session, ct);
         await ApplyReflectedDamageAsync(result.Hits, player, field, session, ct);
 
-        // P133：Java applyAttack 尾段 applyTo（近戰解析器未保留座標，霧位置用玩家位置）。
-        await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: false, player.Position, session, ct);
+        // P133：Java applyAttack 尾段 applyTo（近戰解析器未保留座標，霧位置用玩家位置）；P138：中止時不執行。
+        if (!result.Aborted)
+        {
+            await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: false, player.Position, session, ct);
+        }
     }
 
     private async Task HandleRangedAttackAsync(
@@ -3667,7 +3670,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await ApplyReflectedDamageAsync(result.Combat.Hits, player, field, session, ct);
 
         // P132/P133：Java applyAttack 尾段 effect.applyTo(player, skillposition ?? position)——HP/MP 消耗、毒炸彈 14111006 毒霧。
-        // MapleForge 解析器只保留 attack.position（skillposition 未解析），先以其為準。
+        // MapleForge 解析器只保留 attack.position（skillposition 未解析），先以其為準。P138：中止時不執行。
+        if (result.Combat.Aborted)
+        {
+            return;
+        }
+
         await ApplyAttackSkillEffectAsync(
             player,
             field,
@@ -3754,7 +3762,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         // P132/P133：Java applyAttackMagic 尾段 effect.applyTo(player)（pos = null → 玩家位置）——HP/MP 消耗、
         // 劇毒霧 2111003／火焰齒輪 12111005。
-        // P137：傷害封鎖門檻中止時 Java 已 return，尾段 applyTo 不執行。
+        // P137/P138：傷害封鎖門檻或射程中止時 Java 已 return，尾段 applyTo 不執行。
         if (!result.Aborted)
         {
             await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: true, player.Position, session, ct);
@@ -4555,6 +4563,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
     private async Task HandleUseInnerPortalAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
     {
+        // P138：Java InnerPortal 開頭 chr.updateUsingPortal(true)——之後 2 秒內物理攻擊不做射程檢查。
+        player.MarkUsingPortal(DateTimeOffset.UtcNow);
+
         V113InnerPortalRequest request;
         try
         {
