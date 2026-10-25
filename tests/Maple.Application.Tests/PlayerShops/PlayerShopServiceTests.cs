@@ -129,6 +129,27 @@ public sealed class PlayerShopServiceTests
     }
 
     [Fact]
+    public async Task Claim_StacksIntoOwnersExistingStack()
+    {
+        // P209：Java 弗德里克領回 addFromDrop——疊進既有堆疊。
+        var repo = new InMemoryHiredMerchantRepository();
+        var service = new PlayerShopService(repo);
+        var merchant = NewOpenMerchant();
+        merchant.TryAddListing(InventoryType.Use, new Item { ItemId = 2000001, Quantity = 4 }, 2, 2, 100);
+        merchant.CloseForClaim(_now);
+        await repo.AddAsync(merchant);
+        var owner = NewPlayer(1, "Owner", 10, meso: 0, new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2000001, Slot = 5, Quantity = 3 });
+
+        var result = await service.ClaimAsync(owner);
+
+        Assert.Equal(PlayerShopServiceStatus.Success, result.Status);
+        Assert.Equal((short)7, Assert.Single(owner.Inventory.By(InventoryType.Use).Items).Quantity);
+        var (_, gain) = Assert.Single(result.Gains);
+        Assert.Empty(gain.Added);
+        Assert.Equal((short)5, Assert.Single(gain.Merged).Slot);
+    }
+
+    [Fact]
     public async Task Claim_ReturnsPendingMerchantItemsAndMesosThenDeletesPackage()
     {
         var repo = new InMemoryHiredMerchantRepository();

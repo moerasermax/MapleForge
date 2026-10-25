@@ -56,10 +56,15 @@ public sealed record PlayerShopSettlementResult(
     PlayerShopServiceStatus Status,
     HiredMerchant? Merchant = null,
     IReadOnlyList<(InventoryType Type, Item Item)> Items = null!,
-    int Mesos = 0)
+    int Mesos = 0,
+    IReadOnlyList<(InventoryType Type, InventoryStackGain Gain)>? Gains = null)
 {
     public IReadOnlyList<(InventoryType Type, Item Item)> Items { get; init; } =
         Items ?? Array.Empty<(InventoryType Type, Item Item)>();
+
+    /// <summary>P209：領回時每件的疊加結果（呼叫端送合併／新增封包）。</summary>
+    public IReadOnlyList<(InventoryType Type, InventoryStackGain Gain)> Gains { get; init; } =
+        Gains ?? Array.Empty<(InventoryType Type, InventoryStackGain Gain)>();
 }
 
 public sealed class PlayerShopService
@@ -512,16 +517,18 @@ public sealed class PlayerShopService
             return new PlayerShopSettlementResult(PlayerShopServiceStatus.InventoryFull, merchant, settlement.Items, settlement.Mesos);
         }
 
+        // P209：Java 弗德里克領回——gainMeso 後逐件 addFromDrop(show=true)（疊加）；預檢「各類空格 ≥ 件數」保證放得下。
+        owner.GainMeso(settlement.Mesos);
+        var gains = new List<(InventoryType, InventoryStackGain)>(settlement.Items.Count);
         foreach (var (type, item) in settlement.Items)
         {
-            owner.Inventory.By(type).Gain(item);
+            gains.Add((type, owner.GainDropItemStacking(item)));
         }
 
-        owner.GainMeso(settlement.Mesos);
         owner.FlushInventory();
         merchant.MarkClosed();
         await _hiredMerchants.DeleteAsync(merchant.StoreId, cancellationToken).ConfigureAwait(false);
-        return new PlayerShopSettlementResult(PlayerShopServiceStatus.Success, merchant, settlement.Items, settlement.Mesos);
+        return new PlayerShopSettlementResult(PlayerShopServiceStatus.Success, merchant, settlement.Items, settlement.Mesos, gains);
     }
 
     public async Task<int> ExpireOpenMerchantsAsync(DateTimeOffset now, CancellationToken cancellationToken = default)

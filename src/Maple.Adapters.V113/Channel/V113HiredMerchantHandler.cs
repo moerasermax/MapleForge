@@ -202,13 +202,25 @@ public sealed class V113HiredMerchantHandler
             return SelfOnly(packet);
         }
 
-        var packets = new List<byte[]>();
-        foreach (var (type, item) in result.Items)
+        // P209：Java case 26——gainMeso(mesos, true) → 逐件 addFromDrop(show=true)：背包封包 + getShowItemGain(id, qty)。
+        var packets = new List<byte[]> { V113ShopPackets.UpdateMeso(player.Character.Meso, itemReaction: true) };
+        for (var i = 0; i < result.Gains.Count; i++)
         {
-            packets.Add(V113ShopPackets.ModifyInventoryAdd(type, item));
+            var (type, gain) = result.Gains[i];
+            foreach (var merged in gain.Merged)
+            {
+                packets.Add(V113ItemUsePackets.ModifyInventoryQuantity(merged));
+            }
+
+            foreach (var added in gain.Added)
+            {
+                packets.Add(V113ShopPackets.ModifyInventoryAdd(type, added));
+            }
+
+            var claimed = result.Items[i].Item;
+            packets.Add(V113DropPackets.ShowItemGain(claimed.ItemId, claimed.Quantity, inChat: false));
         }
 
-        packets.Add(V113ShopPackets.UpdateMeso(player.Character.Meso, itemReaction: true));
         packets.Add(V113HiredMerchantPackets.MerchItemMessage(V113HiredMerchantPackets.MerchItemClaimSuccess));
         return new V113HiredMerchantHandleResult(true, true, packets, Array.Empty<byte[]>());
     }
