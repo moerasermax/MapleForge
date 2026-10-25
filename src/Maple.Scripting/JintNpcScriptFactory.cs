@@ -261,8 +261,40 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public bool getEvanIntroState(string data) => _cm.GetEvanIntroState(data);
         public void updateEvanIntroState(string data) => _cm.UpdateEvanIntroState(data);
 
+        // ── P173 ─────────────────────────────────────────────────────────────────────
+        public EventManagerFacade? getEventManager(string name) => _cm.HasEventManager(name) ? new(_cm, name) : null;
+        public void changeMusic(string song) => _cm.ChangeMusic(song);
+        public ClientFacade getClient() => new(_cm);
+
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);
+    }
+
+    /// <summary>P173：EventManager 子集（getProperty／setProperty）。</summary>
+    private sealed class EventManagerFacade
+    {
+        private readonly INpcScriptContext _cm;
+        private readonly string _name;
+
+        public EventManagerFacade(INpcScriptContext cm, string name) => (_cm, _name) = (cm, name);
+
+        public string? getProperty(string key) => _cm.GetEventProperty(_name, key);
+
+        public void setProperty(string key, string value) => _cm.SetEventProperty(_name, key, value);
+    }
+
+    /// <summary>P173：<c>getClient().getChannelServer().getEventSM().getEventManager(name)</c> 鏈（portal 腳本 OBoat1 等用）。</summary>
+    private sealed class ClientFacade
+    {
+        private readonly INpcScriptContext _cm;
+
+        public ClientFacade(INpcScriptContext cm) => _cm = cm;
+
+        public ClientFacade getChannelServer() => this;
+
+        public ClientFacade getEventSM() => this;
+
+        public EventManagerFacade? getEventManager(string name) => _cm.HasEventManager(name) ? new(_cm, name) : null;
     }
 
     /// <summary>P170：MaplePortal 子集（getId／getName）。</summary>
@@ -345,6 +377,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void gainAp(int amount) => _cm.GainAp(amount);
         public void changeJob(int job) => _cm.ChangeJob(job);
         public MapFacade getMap() => new(_cm, _cm.GetMap());
+        public ClientFacade getClient() => new(_cm);
 
         /// <summary>P170：Java <c>changeMap(MapleMap, MaplePortal)</c> → warp(map, portal id)。</summary>
         public void changeMap(MapFacade map, PortalRef? portal) => _cm.Warp(map.MapId, portal?.Id ?? 0);

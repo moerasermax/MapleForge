@@ -28,6 +28,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly Func<int, bool> _itemExists;
     private readonly Func<int, int> _playerCount;
     private readonly (string Name, int Id)? _portal;
+    private readonly Maple.Application.Events.TransportService? _transport;
     private readonly Func<int, string, int> _portalIdOf;
 
     internal string? PendingWarpPortalName { get; private set; }
@@ -53,8 +54,10 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Func<int, int>? playerCount = null,
         Func<int, int>? returnMapOf = null,
         (string Name, int Id)? portal = null,
-        Func<int, string, int>? portalIdOf = null)
+        Func<int, string, int>? portalIdOf = null,
+        Maple.Application.Events.TransportService? transport = null)
     {
+        _transport = transport;
         _portal = portal;
         _portalIdOf = portalIdOf ?? (static (_, _) => -1);
         _playerCount = playerCount ?? (static _ => 0);
@@ -244,6 +247,8 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     /// <summary>Java <c>playSound(broadcast, sound)</c> → environmentChange(sound, 4)。</summary>
     public void PlaySound(bool broadcast, string sound) => _pendingEnvironment.Add((broadcast, 4, sound));
 
+    public void ChangeMusic(string song) => _pendingEnvironment.Add((true, 6, song));
+
     /// <summary>Java <c>showEffect(broadcast, effect)</c> → environmentChange(effect, 3)。</summary>
     public void ShowEffect(bool broadcast, string effect) => _pendingEnvironment.Add((broadcast, 3, effect));
 
@@ -303,6 +308,13 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public bool GetEvanIntroState(string data) => GetInfoQuest(22013) == data;
 
     public void UpdateEvanIntroState(string data) => UpdateInfoQuest(22013, data);
+
+    /// <summary>P173：Java <c>getEventManager(name) != null</c>（目前只有交通船班事件）。</summary>
+    public bool HasEventManager(string name) => _transport is not null && Maple.Application.Events.TransportService.IsKnownEvent(name);
+
+    public string? GetEventProperty(string name, string key) => _transport?.GetProperty(name, key);
+
+    public void SetEventProperty(string name, string key, string value) => _transport?.SetProperty(name, key, value);
 
     /// <summary>MapleMap.getPortal(name).getId()（找不到回 -1）。</summary>
     public int GetMapPortalId(int mapId, string portalName) => _portalIdOf(mapId, portalName);

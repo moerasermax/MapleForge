@@ -49,6 +49,7 @@ public sealed class MapService
             MapId = mapId,
             ReturnMapId = returnMapId,
             Town = town,
+            HasShip = mapImg["shipObj"] is not null,
             FieldLimit = fieldLimit,
             Everlast = everlast,
             DecHp = decHp,

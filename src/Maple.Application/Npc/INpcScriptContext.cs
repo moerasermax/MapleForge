@@ -171,4 +171,12 @@ public interface INpcScriptContext
     void MapMessage(int type, string message);
     bool GetEvanIntroState(string data);
     void UpdateEvanIntroState(string data);
+
+    // ── P173：cm.getEventManager(name)（目前只有交通船班的屬性）────────────────────────────
+    bool HasEventManager(string name);
+    string? GetEventProperty(string name, string key);
+    void SetEventProperty(string name, string key, string value);
+
+    /// <summary>Java <c>changeMusic(song)</c> → 全地圖 musicChange（environmentChange mode 6）。</summary>
+    void ChangeMusic(string song);
 }

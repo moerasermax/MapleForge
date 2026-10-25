@@ -622,6 +622,30 @@ public sealed class CombatService
     /// <summary>Java <c>MapleStatEffect.makeChanceResult</c>：<c>prop == 100 || nextInt(99) &lt; prop</c>。</summary>
     private bool MakeChanceResult(int prop) => prop == 100 || _random.Next(99) < prop;
 
+    /// <summary>
+    /// P173：Java <c>MapleMap.spawnMonsterOnGroundBelow(mob, pos)</c>：<c>calcPointBelow(x, y − 1)</c> 後 y − 1；找不到踏腳石用原座標。
+    /// 呼叫端持有 field 鎖並廣播 spawnMonster。查無怪物資料回 null。
+    /// </summary>
+    public Mob? SpawnMonsterOnGroundBelow(FieldInstance field, int monsterId, int x, int y)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        if (_maps.LoadMobStats(monsterId) is not { } stats)
+        {
+            return null;
+        }
+
+        var (fh, px, py) = FootholdMath.CalcPointBelow(_maps.LoadMap(field.MapId).Footholds, x, y - 1) is { } below
+            ? (below.FootholdId, below.X, below.Y - 1)
+            : (0, x, y);
+        var mob = new Mob(
+            new MapMonster { MonsterId = monsterId, X = px, Y = py, Cy = py, Fh = fh, Team = -1 },
+            stats,
+            AllocateNextMobObjectId(field));
+        field.Add(mob);
+        return mob;
+    }
+
     /// <summary>Kill a mob without EXP/drop rewards. Used by Java MonsterBomb self-destruction path.</summary>
     public CombatMobKillResult KillMobWithoutRewards(FieldInstance field, int mobObjectId, byte animation, int controllerId = 0)
     {

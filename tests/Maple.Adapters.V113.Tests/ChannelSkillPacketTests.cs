@@ -31,6 +31,16 @@ public sealed class ChannelSkillPacketTests
             V113SkillPackets.CancelSkillEffect(7, 3121020));
 
     [Fact]
+    public void BoatPackets_MatchJava()
+    {
+        // P173：boatPacket(true/false)、boatEffect(1034)、getClock(60)。
+        Assert.Equal(new byte[] { 0x8F, 0x00, 0x01, 0x00 }, V113TransportEffects.BoatPacket(true));
+        Assert.Equal(new byte[] { 0x8F, 0x00, 0x02, 0x00 }, V113TransportEffects.BoatPacket(false));
+        Assert.Equal(new byte[] { 0x8E, 0x00, 0x0A, 0x04 }, V113TransportEffects.BoatEffect(1034));
+        Assert.Equal(new byte[] { 0x8D, 0x00, 0x02, 0x3C, 0x00, 0x00, 0x00 }, V113TransportEffects.Clock(60));
+    }
+
+    [Fact]
     public void SendHintAndWzEffect_MatchJava()
     {
         // P171：sendHint：寬 <1 → max(字數×10, 40)、高 <5 → 5；ShowWZEffect：[0xC7][0x12][string]。

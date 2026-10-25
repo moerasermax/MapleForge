@@ -28,6 +28,9 @@ public sealed class MapData
     /// <summary>對照 Java <c>MapleMap.protectItem</c>（WZ <c>info/protectItem</c>，預設 0）：穿著此裝備可免扣血。</summary>
     public int ProtectItem { get; init; }
 
+    /// <summary>P173：Java <c>MapleMap.boat</c>（WZ 根節點有 <c>shipObj</c>）：進圖時送 boatPacket(false)。</summary>
+    public bool HasShip { get; init; }
+
     public IReadOnlyList<MapPortal> Portals { get; init; } = Array.Empty<MapPortal>();
     public IReadOnlyList<MapFoothold> Footholds { get; init; } = Array.Empty<MapFoothold>();
 

@@ -1851,3 +1851,16 @@ partyPortal: [0x37][short 0x24][byte 0][int 村莊][int 目標][short x][short y
 ```
 
 證據層級：Java source（見任務歷程 2026-10-26_162）＋ focused tests；**unverified**。
+
+### 交通船班：BOAT_PACKET／BOAT_EFFECT／CLOCK（P173）
+
+```text
+boatPacket(docked): [0x8F][byte docked ? 1 : 2][byte 0]   進圖：docked → (true)；WZ shipObj → (false)
+boatEffect(effect): [0x8E][short effect]                   1034 巴洛古船、1548 船來、3 船走
+getClock(seconds):  [0x8D][byte 2][int 秒]
+musicChange(song):  BOSS_ENV [0x87][byte 6][string]
+```
+
+排程（Java scripts/event）：Boats 120s 停止入場＋出發、出發後 60s 巴洛古（chance≤4 無／5 換音樂／其餘 2 隻 8150000）、600s 到站；
+Trains／Geenie／Flight 240s 停止入場、300s 出發、600s 到站；AirPlane 240/300s 循環、60s 到站；Subway 120s、60s（含時鐘與到離站公告）。
+證據層級：Java source（`MaplePacketCreator.boatPacket:3896`／`boatEffect:3885`／`getClock:2712`、`MapleMap.addPlayer:2179`）＋ focused tests；**unverified**。

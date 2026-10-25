@@ -316,6 +316,11 @@ public static class MapleServerHost
         builder.Services.AddSingleton<V113MobStatusTickHandler>();
         builder.Services.AddHostedService<MobStatusTickHostedService>();
 
+        // P173：交通船班（Boats／Trains／Geenie／Flight／AirPlane／Subway）。
+        builder.Services.AddSingleton<ITransportEffects, V113TransportEffects>();
+        builder.Services.AddSingleton<TransportService>();
+        builder.Services.AddHostedService<TransportHostedService>();
+
         return builder;
     }
 

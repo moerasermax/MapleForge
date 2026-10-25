@@ -70,6 +70,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly JobAdvancementService _jobAdvancement;
     private readonly IPortalScriptFactory? _portalScripts;
     private readonly V113SessionCommandRegistry? _sessionCommands;
+    private readonly Maple.Application.Events.TransportService? _transport;
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -188,8 +189,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         AbilityPointService? abilityPoints = null,
         JobAdvancementService? jobAdvancement = null,
         IPortalScriptFactory? portalScripts = null,
-        V113SessionCommandRegistry? sessionCommands = null)
+        V113SessionCommandRegistry? sessionCommands = null,
+        Maple.Application.Events.TransportService? transport = null)
     {
+        _transport = transport;
         _sessionCommands = sessionCommands;
         _portalScripts = portalScripts ?? npcScripts as IPortalScriptFactory;
         _jobAdvancement = jobAdvancement ?? new JobAdvancementService();
@@ -381,9 +384,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             r.ReadByte();
             var portalName = r.ReadMapleString();
             var portal = _mapService.LoadMap(player.Character.MapId).Portals.FirstOrDefault(p => p.Name == portalName);
-            if (portal is not null && !string.IsNullOrEmpty(portal.Script))
+            if (portal is not null && WithScriptOverride(player.Character.MapId, portal) is { Script.Length: > 0 } scripted)
             {
-                await EnterScriptPortalAsync(portal, token);
+                await EnterScriptPortalAsync(scripted, token);
                 return;
             }
 
@@ -401,10 +404,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 // 一般腳走傳送點：查當前圖 portal(by name) → 取目標圖(tm)+目標 portal(tn) → 換圖落地
                 var map = _mapService.LoadMap(chr.MapId);
                 var portal = map.Portals.FirstOrDefault(p => p.Name == req.PortalName);
-                // P170：script portal → Java enterPortal → executePortalScript。
-                if (portal is not null && !string.IsNullOrEmpty(portal.Script))
+                // P170：script portal → Java enterPortal → executePortalScript（P173：船艙出口由 Boats 事件覆寫腳本）。
+                if (portal is not null && WithScriptOverride(chr.MapId, portal) is { Script.Length: > 0 } scripted)
                 {
-                    await EnterScriptPortalAsync(portal, token);
+                    await EnterScriptPortalAsync(scripted, token);
                     return;
                 }
 
@@ -597,6 +600,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             foreach (var doorPacket in _buffEffects.BuildDoorSpawnData(chr.MapId, chr.Id))
                             {
                                 await s.SendAsync(doorPacket, token); // P160：MapleDoor.sendSpawnData
+                            }
+
+                            if (BoatPacketOnEntry(chr.MapId) is { } boatPacket)
+                            {
+                                await s.SendAsync(boatPacket, token); // P173：MapleMap.addPlayer 的 hasBoat
                             }
 
                             await V113ReactorHandler.SendFieldReactorsAsync(currentField, s, token);
@@ -2311,6 +2319,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// c2s NPC_TALK_MORE：[byte lastMsg][byte action(mode)][selection]。
     /// 對照 Java NPCMoreTalk：lastMsg==2(getText) 帶字串、否則 selection = 剩餘≥4 readInt / &gt;0 readByte / else -1。
     /// </summary>
+    /// <summary>P173：Boats.js 的 setScriptName（船艙 out00/out01 → OBoat1/2、EBoat1/2）。</summary>
+    private static MapPortal WithScriptOverride(int mapId, MapPortal portal)
+        => Maple.Application.Events.TransportService.GetPortalScriptOverride(mapId, portal.Name) is { } script
+            ? new MapPortal { Id = portal.Id, Name = portal.Name, Type = portal.Type, X = portal.X, Y = portal.Y, TargetMapId = portal.TargetMapId, TargetPortalName = portal.TargetPortalName, Script = script }
+            : portal;
+
+    /// <summary>
+    /// P173：Java <c>MapleMap.addPlayer</c>：<c>hasBoat() == 2</c>（船班 docked）→ boatPacket(true)；<c>== 1</c>（WZ shipObj）→ boatPacket(false)。
+    /// </summary>
+    private byte[]? BoatPacketOnEntry(int mapId)
+        => _transport?.IsDocked(mapId) == true
+            ? V113TransportEffects.BoatPacket(true)
+            : _mapService.LoadMap(mapId).HasShip ? V113TransportEffects.BoatPacket(false) : null;
+
     /// <summary>P169：NPC cm 的領域依賴（道具存在、地圖人數、returnMap、P170 portal 名稱→ID）。</summary>
     private NpcContext NewNpcContext(int npcId, Player player, (string Name, int Id)? portal = null)
         => new(
@@ -2322,7 +2344,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             playerCount: mapId => _mapRegistry.GetAll(mapId).Count(),
             returnMapOf: mapId => _mapService.LoadMap(mapId).ReturnMapId,
             portal: portal,
-            portalIdOf: (mapId, name) => _mapService.LoadMap(mapId).Portals.FirstOrDefault(p => p.Name == name)?.Id ?? -1);
+            portalIdOf: (mapId, name) => _mapService.LoadMap(mapId).Portals.FirstOrDefault(p => p.Name == name)?.Id ?? -1,
+            transport: _transport);
 
     private static async Task ContinueNpcConversationAsync(PacketReader reader, NpcConversation convo, CancellationToken ct)
     {
@@ -2422,6 +2445,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var doorPacket in _buffEffects.BuildDoorSpawnData(mapId, chr.Id))
         {
             await session.SendAsync(doorPacket, ct); // P160：MapleDoor.sendSpawnData
+        }
+
+        if (BoatPacketOnEntry(mapId) is { } boatPacket)
+        {
+            await session.SendAsync(boatPacket, ct); // P173：MapleMap.addPlayer 的 hasBoat
         }
 
         await V113ReactorHandler.SendFieldReactorsAsync(field, session, ct);
