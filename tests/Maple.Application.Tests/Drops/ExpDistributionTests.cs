@@ -173,6 +173,24 @@ public sealed class ExpDistributionTests
         };
 
     [Fact]
+    public void Drops_BelongToHighestDamageDealer()
+    {
+        var parties = new InMemoryPartyRegistry();
+        var field = new FieldInstance(100000000);
+        var mob = MakeMob();
+        field.Add(mob);
+        var drops = new DropService(new EmptyDropCatalog(), new DropServiceOptions(), parties: parties);
+        var killer = AddPlayer(field, 1, level: 30);
+        AddPlayer(field, 2, level: 30);
+        mob.AddAttackerDamage(2, 70);
+        mob.AddAttackerDamage(1, 30);
+
+        var meso = Assert.Single(drops.OnMobKilled(field, killer, mob).SpawnedDrops);
+
+        Assert.Equal(2, meso.OwnerId);
+    }
+
+    [Fact]
     public void AttackerDamage_CappedAtRemainingHp()
     {
         var mob = MakeMob();

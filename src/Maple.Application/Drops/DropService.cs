@@ -123,7 +123,9 @@ public sealed class DropService : IMobKillHandler
         var awards = DistributeExp(field, killer, mob);
         var killerAward = awards.FirstOrDefault(a => ReferenceEquals(a.Receiver, killer));
         var others = awards.Where(a => !ReferenceEquals(a.Receiver, killer)).ToArray();
-        var drops = SpawnDropsFromMonster(field, killer, mob);
+        // P152：Java killMonster 的 dropOwner = killBy 回傳的 highestDamageChar（最高傷害且領到經驗者），否則擊殺者。
+        var dropOwner = awards.FirstOrDefault(static a => a.HighestDamage)?.Receiver ?? killer;
+        var drops = SpawnDropsFromMonster(field, dropOwner, mob);
 
         return killerAward is null && others.Length == 0 && drops.Count == 0
             ? MobKillRewards.Empty
