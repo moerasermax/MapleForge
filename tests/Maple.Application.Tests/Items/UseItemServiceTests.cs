@@ -37,6 +37,20 @@ public sealed class UseItemServiceTests
     }
 
     [Fact]
+    public void Use_Elixir_RateAndCapIncludeEquipHp()
+    {
+        // P115：Java calcHPChange 用 getCurrentMaxHp（基礎 200 ＋ 裝備 100 = 300）；Elixir 50%。
+        var player = NewPlayer(hp: 50, maxHp: 200, mp: 20, maxMp: 100, UseItem(2001000, 1, 1));
+        player.Character.Equips.Add(new EquipEntry { Position = -5, ItemId = 1040002, Hp = 100 });
+        var service = NewService();
+
+        var result = service.Use(player, slot: 1, itemId: 2001000);
+
+        Assert.True(result.Success);
+        Assert.Equal((short)200, player.Hp);
+    }
+
+    [Fact]
     public void Use_ClampsHpToMaxHp()
     {
         var player = NewPlayer(hp: 90, maxHp: 100, mp: 10, maxMp: 50, UseItem(2000002, 1, 1));

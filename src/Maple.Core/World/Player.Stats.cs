@@ -344,7 +344,7 @@ public sealed partial class Player
             return;
         }
 
-        Character.Stats.Mp = (short)Math.Min(Character.Stats.MaxMp, Character.Stats.Mp + amount);
+        Character.Stats.Mp = (short)Math.Min(MaxMp, Character.Stats.Mp + amount);
     }
 
     public PlayerStatsMutation GainExperience(int amount, Func<int, int, int>? rollInclusive = null)

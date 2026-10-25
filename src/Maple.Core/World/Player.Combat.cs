@@ -1,14 +1,42 @@
+using Maple.Core.Characters;
+using Maple.Core.Skills;
+
 namespace Maple.Core.World;
 
 public sealed partial class Player
 {
     public short Hp => Character.Stats.Hp;
 
-    public short MaxHp => Character.Stats.MaxHp;
+    /// <summary>
+    /// P115：目前最大 HP（對照 Java <c>PlayerStats.getCurrentMaxHp</c>＝<c>localmaxhp</c>）：基礎值＋裝備 HP，
+    /// 再乘 MAXHP buff 百分比，最後夾在 ±30000 取絕對值。基礎值（AP/升級、角色資訊封包）仍是 <c>Character.Stats.MaxHp</c>。
+    /// 尚未納入：裝備 HpR、套裝、潛能（C# 尚無資料欄位）。
+    /// </summary>
+    public short MaxHp => ComputeCurrentMax(Character.Stats.MaxHp, static e => e.Hp, MapleBuffStat.MAXHP);
 
     public short Mp => Character.Stats.Mp;
 
-    public short MaxMp => Character.Stats.MaxMp;
+    /// <summary>P115：目前最大 MP（Java <c>getCurrentMaxMp</c>），規則同 <see cref="MaxHp"/>。</summary>
+    public short MaxMp => ComputeCurrentMax(Character.Stats.MaxMp, static e => e.Mp, MapleBuffStat.MAXMP);
+
+    private short ComputeCurrentMax(short baseValue, Func<EquipEntry, short> equipValue, MapleBuffStat buffStat)
+    {
+        // Java recalcLocalStats：int localmaxhp_ = getMaxHp() + Σ equip.getHp()；
+        // localmaxhp_ += (percent_hp * localmaxhp_) / 100f（裝備 HpR，C# 尚無）；
+        // localmaxhp_ += (buff / 100.0) * localmaxhp_（複合指定 → 截斷成 int）。
+        var total = (int)baseValue;
+        foreach (var equip in Character.Equips)
+        {
+            total += equipValue(equip);
+        }
+
+        if (GetBuffValue(buffStat) is { } buff)
+        {
+            total = (int)(total + buff / 100.0 * total);
+        }
+
+        return (short)Math.Min(30000, Math.Abs(Math.Max(-30000, total)));
+    }
 
     public bool IsAlive => Hp > 0;
 
@@ -32,7 +60,7 @@ public sealed partial class Player
             return;
         }
 
-        Character.Stats.Hp = (short)Math.Min(Character.Stats.MaxHp, Character.Stats.Hp + amount);
+        Character.Stats.Hp = (short)Math.Min(MaxHp, Character.Stats.Hp + amount);
     }
 
     public void UseMp(int amount)

@@ -64,17 +64,18 @@ public sealed class UseItemService
         var stats = player.Character.Stats;
         var updates = new List<PlayerStatUpdate>(2);
 
-        var hpRecovery = effect.Hp + (stats.MaxHp * effect.HpRate / 100);
+        // P115：Java calcHPChange 以 getCurrentMaxHp（含裝備與 MAXHP buff）計算百分比與上限。
+        var hpRecovery = effect.Hp + (player.MaxHp * effect.HpRate / 100);
         if (hpRecovery > 0)
         {
-            stats.Hp = (short)Math.Min(stats.MaxHp, stats.Hp + hpRecovery);
+            stats.Hp = (short)Math.Min(player.MaxHp, stats.Hp + hpRecovery);
             updates.Add(new PlayerStatUpdate(PlayerStatKind.Hp, stats.Hp));
         }
 
-        var mpRecovery = effect.Mp + (stats.MaxMp * effect.MpRate / 100);
+        var mpRecovery = effect.Mp + (player.MaxMp * effect.MpRate / 100);
         if (mpRecovery > 0)
         {
-            stats.Mp = (short)Math.Min(stats.MaxMp, stats.Mp + mpRecovery);
+            stats.Mp = (short)Math.Min(player.MaxMp, stats.Mp + mpRecovery);
             updates.Add(new PlayerStatUpdate(PlayerStatKind.Mp, stats.Mp));
         }
 

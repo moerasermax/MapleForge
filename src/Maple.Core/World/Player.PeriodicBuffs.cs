@@ -102,7 +102,7 @@ public sealed partial class Player
             _lastRecoveryAt = now;
         }
 
-        if (Character.Stats.Hp >= Character.Stats.MaxHp)
+        if (Character.Stats.Hp >= MaxHp)
         {
             return new PeriodicBuffTick(0, CancelBuffBySource(recovery.SourceId));
         }

@@ -28,6 +28,15 @@ public sealed partial class Player
         }
     }
 
+    /// <summary>目前生效中的 buff 數值（Java <c>getBuffedValue</c>）；沒有則 null。</summary>
+    public int? GetBuffValue(MapleBuffStat stat)
+    {
+        lock (_skillsGate)
+        {
+            return _activeBuffs.TryGetValue(stat, out var buff) ? buff.Value : null;
+        }
+    }
+
     public int GetSkillLevel(int skillId)
     {
         var skill = Character.Skills.FirstOrDefault(s => s.SkillId == skillId);
@@ -278,7 +287,7 @@ public sealed partial class Player
 
         if (effect.Mp > 0)
         {
-            Character.Stats.Mp = (short)Math.Min(Character.Stats.MaxMp, Character.Stats.Mp + effect.Mp);
+            Character.Stats.Mp = (short)Math.Min(MaxMp, Character.Stats.Mp + effect.Mp);
         }
         else if (effect.Mp < 0)
         {
@@ -287,17 +296,17 @@ public sealed partial class Player
 
         if (effect.HpRate != 0)
         {
-            var delta = (int)Math.Round(Character.Stats.MaxHp * effect.HpRate);
+            var delta = (int)Math.Round(MaxHp * effect.HpRate);
             if (delta > 0) HealHp(delta);
             else if (delta < 0) TakeDamage(-delta);
         }
 
         if (effect.MpRate != 0)
         {
-            var delta = (int)Math.Round(Character.Stats.MaxMp * effect.MpRate);
+            var delta = (int)Math.Round(MaxMp * effect.MpRate);
             if (delta > 0)
             {
-                Character.Stats.Mp = (short)Math.Min(Character.Stats.MaxMp, Character.Stats.Mp + delta);
+                Character.Stats.Mp = (short)Math.Min(MaxMp, Character.Stats.Mp + delta);
             }
             else if (delta < 0)
             {
