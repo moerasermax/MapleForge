@@ -4322,6 +4322,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
         }
 
+        // P125：Java heal(…, broadcast=true) → map.broadcastMessage(healMonster)。
+        if (skillUse?.Heals is { } heals)
+        {
+            foreach (var heal in heals)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.HealMonster(heal.ObjectId, heal.Amount), ct);
+            }
+        }
+
         // Response 給控制者
         await session.SendAsync(
             V113MobMovementPackets.MoveMonsterResponse(

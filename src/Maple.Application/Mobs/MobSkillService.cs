@@ -3,7 +3,13 @@ using Maple.Core.World;
 namespace Maple.Application.Mobs;
 
 /// <summary>怪物這次移動實際施放的技能（null＝沒有施放）與已套用的效果。</summary>
-public sealed record MobSkillUse(MobSkillDefinition Skill, IReadOnlyList<MobBuffApplication>? Buffs = null);
+public sealed record MobSkillUse(
+    MobSkillDefinition Skill,
+    IReadOnlyList<MobBuffApplication>? Buffs = null,
+    IReadOnlyList<MobHeal>? Heals = null);
+
+/// <summary>P125：怪物補血（Java healMonster 廣播的 oid 與補血量）。</summary>
+public sealed record MobHeal(int ObjectId, int Amount);
 
 /// <summary>P123：單隻怪物身上的自身 buff 變化（先解除的狀態、新套用的狀態）。</summary>
 public sealed record MobBuffApplication(int ObjectId, IReadOnlyList<MonsterStatus> Cancelled, IReadOnlyList<MonsterStatusEffect> Applied);
@@ -57,8 +63,9 @@ public sealed class MobSkillService
         }
 
         var buffs = ApplyEffect(field, mob, skill, now);
+        var heals = skill.SkillId == HealSkillId ? ApplyHeal(field, mob, skill) : null;
         mob.ConsumeMp(skill.MpCon);
-        return new MobSkillUse(skill, buffs);
+        return new MobSkillUse(skill, buffs, heals);
     }
 
     /// <summary>
@@ -85,6 +92,25 @@ public sealed class MobSkillService
                 return new MobBuffApplication(target.ObjectId, cancelled, applied);
             })
             .ToArray();
+    }
+
+    public const int HealSkillId = 114;
+
+    /// <summary>
+    /// P125：對照 Java <c>applyEffect</c> case 114：有 lt/rb 時範圍內所有怪物、否則自己，各 <c>heal(getHP(), 0, true)</c>
+    /// （補血量取技能的 hp 欄位——與施放門檻同一個值，照抄）。
+    /// </summary>
+    private static IReadOnlyList<MobHeal> ApplyHeal(FieldInstance field, Mob mob, MobSkillDefinition skill)
+    {
+        var targets = skill.Area is { } area
+            ? field.Objects.OfType<Mob>().Where(m => m.IsAlive && Contains(BoundingBox(area, mob), m.Position)).ToArray()
+            : [mob];
+        foreach (var target in targets)
+        {
+            target.Heal(skill.Hp, 0);
+        }
+
+        return targets.Select(t => new MobHeal(t.ObjectId, skill.Hp)).ToArray();
     }
 
     /// <summary>Java <c>applyEffect</c> switch 的 stats 對應（數值皆為 x）。</summary>

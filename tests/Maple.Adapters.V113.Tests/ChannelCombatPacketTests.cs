@@ -72,6 +72,14 @@ public sealed class ChannelCombatPacketTests
     }
 
     [Fact]
+    public void HealMonster_WritesNegativeDamage()
+    {
+        Assert.Equal(
+            new byte[] { 0xEF, 0x00, 0xA1, 0x86, 0x01, 0x00, 0x00, 0xCE, 0xFF, 0xFF, 0xFF },
+            V113CombatPackets.HealMonster(100001, 50));
+    }
+
+    [Fact]
     public void ShowMonsterHp_MatchesJavaMobPacketLayout()
     {
         Assert.Equal(

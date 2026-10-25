@@ -334,6 +334,18 @@ public sealed class Mob : IFieldObject
         }
     }
 
+    /// <summary>P125：Java <c>MapleMonster.heal(hp, mp)</c>：加 HP/MP，夾在最大值（已死不處理）。</summary>
+    public void Heal(long hp, int mp)
+    {
+        if (!IsAlive)
+        {
+            return;
+        }
+
+        Hp = Math.Min(Stats.MaxHp, Hp + hp);
+        Mp = Math.Min(Stats.MaxMp, Mp + mp);
+    }
+
     /// <summary>P122：扣怪物 MP（Java <c>setMp(getMp() - mpCon)</c>，負值夾 0）。</summary>
     public void ConsumeMp(int amount) => Mp = Math.Max(0, Mp - amount);
 

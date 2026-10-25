@@ -187,6 +187,29 @@ public sealed class MobSkillServiceTests
         Assert.Equal((-20, -50, 220, 60), box);
     }
 
+    // ── P125：補血（Java applyEffect case 114 → heal(getHP(), 0, true)）──
+
+    [Fact]
+    public void TryUseSkill_Heal_RestoresHpByHpFieldCappedAtMax()
+    {
+        var (field, mob) = Setup([new MobSkillRef(114, 1)], hp: 40, maxHp: 100);
+
+        var use = Service(Skill(114, hpThreshold: 50)).TryUseSkill(field, mob, T0)!;
+
+        Assert.Equal(new MobHeal(mob.ObjectId, 50), Assert.Single(use.Heals!));
+        Assert.Equal(90, mob.Hp);
+    }
+
+    [Fact]
+    public void Heal_CapsAtMaxHp()
+    {
+        var (_, mob) = Setup(null, hp: 90, maxHp: 100);
+
+        mob.Heal(500, 0);
+
+        Assert.Equal(100, mob.Hp);
+    }
+
     private static Mob AddMob(FieldInstance field, int objectId, short x, short y)
     {
         var mob = new Mob(

@@ -175,6 +175,17 @@ internal static class V113CombatPackets
 
     private static int ClampToInt(long value) => value > int.MaxValue ? int.MaxValue : (int)value;
 
+    /// <summary>P125：對照 Java <c>MobPacket.healMonster</c>：DAMAGE_MONSTER 帶負傷害（unverified）。</summary>
+    public static byte[] HealMonster(int objectId, int heal)
+    {
+        var w = new PacketWriter(11);
+        w.WriteShort(DamageMonsterOp);
+        w.WriteInt(objectId);
+        w.WriteByte(0);
+        w.WriteInt(-heal);
+        return w.ToArray();
+    }
+
     public static byte[] KillMonster(int objectId, byte animation = 1)
     {
         var w = new PacketWriter(8);
