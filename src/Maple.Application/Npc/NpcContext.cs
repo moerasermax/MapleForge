@@ -22,12 +22,18 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly List<(int QuestId, string Data)> _pendingInfoQuestUpdates = new();
     private readonly List<(int Type, string Message)> _pendingMessages = new();
 
-    public NpcContext(int npcId, Player player, QuestService quests)
+    private readonly Maple.Application.Stats.JobAdvancementService? _jobs;
+    private readonly List<Maple.Application.Stats.JobChangeResult> _pendingJobChanges = new();
+
+    public NpcContext(int npcId, Player player, QuestService quests, Maple.Application.Stats.JobAdvancementService? jobs = null)
     {
         _npcId = npcId;
         _player = player;
         _quests = quests;
+        _jobs = jobs;
     }
+
+    internal IReadOnlyList<Maple.Application.Stats.JobChangeResult> PendingJobChanges => _pendingJobChanges;
 
     // ── coordinator-facing（internal：不外洩給 JS）──────────────────────────────
     internal NpcDialog? PendingDialog { get; private set; }
@@ -61,14 +67,68 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingQuestResults.Clear();
         _pendingInfoQuestUpdates.Clear();
         _pendingMessages.Clear();
+        _pendingJobChanges.Clear();
     }
 
     // ── cm surface（暴露給腳本）────────────────────────────────────────────────
-    public void SendNext(string text) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.Next, text);
-    public void SendPrev(string text) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.Prev, text);
-    public void SendNextPrev(string text) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.NextPrev, text);
-    public void SendOk(string text) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.Ok, text);
-    public void SendYesNo(string text) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.YesNo, text);
+    public void SendNext(string text) => SendS(NpcDialogKind.Next, text, 0);
+    public void SendPrev(string text) => SendS(NpcDialogKind.Prev, text, 0);
+    public void SendNextPrev(string text) => SendS(NpcDialogKind.NextPrev, text, 0);
+    public void SendOk(string text) => SendS(NpcDialogKind.Ok, text, 0);
+    public void SendYesNo(string text) => SendS(NpcDialogKind.YesNo, text, 0);
+
+    // ── P167：S（speaker type）／接受拒絕變體；Java 一律「含 #L 改送 sendSimple(S)」避免客戶端斷線 ─────────
+    public void SendNextS(string text, int type) => SendS(NpcDialogKind.Next, text, type);
+    public void SendPrevS(string text, int type) => SendS(NpcDialogKind.Prev, text, type);
+    public void SendNextPrevS(string text, int type) => SendS(NpcDialogKind.NextPrev, text, type);
+    public void SendOkS(string text, int type) => SendS(NpcDialogKind.Ok, text, type);
+    public void SendYesNoS(string text, int type) => SendS(NpcDialogKind.YesNo, text, type);
+    public void SendSimpleS(string text, int type) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.Simple, text, (byte)type);
+    public void AskAcceptDecline(string text) => SendS(NpcDialogKind.AcceptDecline, text, 0);
+    public void AskAcceptDeclineNoEsc(string text) => SendS(NpcDialogKind.AcceptDeclineNoEsc, text, 0);
+
+    private void SendS(NpcDialogKind kind, string text, int type)
+        => PendingDialog = text.Contains("#L", StringComparison.Ordinal)
+            ? new NpcDialog(_npcId, NpcDialogKind.Simple, text, (byte)type)
+            : new NpcDialog(_npcId, kind, text, (byte)type);
+
+    /// <summary>P167：Java <c>cm.changeJob</c> → <c>MapleCharacter.changeJob</c>（結果由呼叫端送包與廣播）。</summary>
+    public void ChangeJob(int job)
+    {
+        if (_jobs is null)
+        {
+            return;
+        }
+
+        var result = _jobs.ChangeJob(_player, job);
+        if (result.AbnormalLevel)
+        {
+            PlayerMessage(6, Maple.Application.Stats.JobAdvancementService.AbnormalLevelMessage);
+        }
+
+        _pendingJobChanges.Add(result);
+    }
+
+    /// <summary>P167：Java <c>resetStats(str, dex, int, luk)</c>（updatePlayerStats itemReaction=false）。</summary>
+    public void ResetStats(int str, int dex, int intel, int luk)
+        => EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success)
+        {
+            StatUpdates = Maple.Application.Stats.JobAdvancementService.ResetStats(_player, str, dex, intel, luk),
+        });
+
+    /// <summary>P167：Java <c>teachSkill(id, level, master)</c> → changeSkillLevel（updateSkill）。</summary>
+    public void TeachSkill(int skillId, int level, int masterLevel)
+    {
+        _player.ChangeSkillLevel(skillId, (byte)level, (byte)masterLevel);
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success)
+        {
+            SkillChanges = [(skillId, (byte)level, (byte)masterLevel)],
+        });
+    }
+
+    /// <summary>P167：Java <c>teachSkill(id, level)</c>：等級取 max(目前, level)，master = 技能最大等級。</summary>
+    public void TeachSkill(int skillId, int level)
+        => TeachSkill(skillId, Math.Max(level, _player.GetSkillLevel(skillId)), _jobs?.GetMaxLevel(skillId) ?? 0);
     public void SendSimple(string text) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.Simple, text);
     public void SendGetText(string text) => PendingDialog = new NpcDialog(_npcId, NpcDialogKind.GetText, text);
 

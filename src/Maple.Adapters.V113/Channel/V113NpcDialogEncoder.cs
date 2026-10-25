@@ -66,6 +66,8 @@ internal static class V113NpcDialogEncoder
         NpcDialogKind.GetText => (2, 0, 0),
         NpcDialogKind.GetNumber => (3, 0, 0),
         NpcDialogKind.Simple => (4, 0, 0),
+        NpcDialogKind.AcceptDecline => (0x0B, 0, 0), // P167：Java getNPCTalk(npc, 0x0B, text, "", 0)
+        NpcDialogKind.AcceptDeclineNoEsc => (0x0C, 0, 0),
         _ => (0, 0, 0),
     };
 }

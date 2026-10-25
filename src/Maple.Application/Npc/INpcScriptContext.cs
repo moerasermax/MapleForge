@@ -117,4 +117,18 @@ public interface INpcScriptContext
     int GetMasterLevel(int skillId);
     bool HasEquipped(int itemId);
     void GainAp(int amount);
+
+    // ── P167：轉職與技能 ─────────────────────────────────────────────────────────────────
+    void ChangeJob(int job);
+    void ResetStats(int str, int dex, int intel, int luk);
+    void TeachSkill(int skillId, int level, int masterLevel);
+    void TeachSkill(int skillId, int level);
+    void AskAcceptDecline(string text);
+    void AskAcceptDeclineNoEsc(string text);
+    void SendNextS(string text, int type);
+    void SendPrevS(string text, int type);
+    void SendNextPrevS(string text, int type);
+    void SendOkS(string text, int type);
+    void SendYesNoS(string text, int type);
+    void SendSimpleS(string text, int type);
 }

@@ -27,6 +27,7 @@ public sealed class NpcConversation
     private readonly Func<int, CancellationToken, Task>? _sendRepairWindow;
     private readonly Func<int, int, CancellationToken, Task>? _warpToPortal;
     private readonly Func<int, string, CancellationToken, Task>? _sendMessage;
+    private readonly Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? _sendJobChange;
 
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
@@ -47,8 +48,10 @@ public sealed class NpcConversation
         Func<CancellationToken, Task>? disbandGuild = null,
         Func<int, CancellationToken, Task>? sendRepairWindow = null,
         Func<int, int, CancellationToken, Task>? warpToPortal = null,
-        Func<int, string, CancellationToken, Task>? sendMessage = null)
+        Func<int, string, CancellationToken, Task>? sendMessage = null,
+        Func<Maple.Application.Stats.JobChangeResult, CancellationToken, Task>? sendJobChange = null)
     {
+        _sendJobChange = sendJobChange;
         _warpToPortal = warpToPortal;
         _sendMessage = sendMessage;
         NpcId = npcId;
@@ -94,6 +97,14 @@ public sealed class NpcConversation
 
     private async Task FlushAsync(CancellationToken ct)
     {
+        if (_sendJobChange is not null)
+        {
+            foreach (var change in _ctx.PendingJobChanges)
+            {
+                await _sendJobChange(change, ct);
+            }
+        }
+
         if (_sendQuestResult is not null)
         {
             foreach (var result in _ctx.PendingQuestResults)

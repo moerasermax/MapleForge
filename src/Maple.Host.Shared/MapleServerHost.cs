@@ -135,6 +135,7 @@ public static class MapleServerHost
         // P145：隊伍 buff（Java applyBuff 隊伍分支）。
         builder.Services.AddSingleton<PartyBuffService>();
         builder.Services.AddSingleton<AbilityPointService>(); // P162
+        builder.Services.AddSingleton<JobAdvancementService>(); // P167
         // P119：怪物掉落表（Java drop_data）。資料檔不進版控，路徑由 Content:MonsterDropCatalogPath 指定
         // （tools/drop-data/convert_drop_data.py 從 Java SQL dump 轉出）；未設定或檔案不存在時退回空表並警告。
         builder.Services.AddSingleton<IMonsterDropCatalog>(sp =>

@@ -12,6 +12,9 @@ public sealed class MapleSkill
 
     public bool IsTimeLimited { get; init; }
 
+    /// <summary>P167：WZ <c>invisible</c>（Java <c>Skill.isInvisible</c>）。</summary>
+    public bool IsInvisible { get; init; }
+
     /// <summary>P114：WZ <c>elemAttr</c> 首字元（Java <c>Skill.element</c>）。</summary>
     public World.Element Element { get; init; } = World.Element.Neutral;
 

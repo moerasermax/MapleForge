@@ -31,6 +31,14 @@ public sealed class ChannelSkillPacketTests
             V113SkillPackets.CancelSkillEffect(7, 3121020));
 
     [Fact]
+    public void NpcAcceptDecline_UsesMsgType0B()
+    {
+        // P167：Java askAcceptDecline → getNPCTalk(npc, 0x0B, text, "", 0)：無 trailing。
+        var packet = V113NpcDialogEncoder.Encode(new Maple.Application.Npcs.NpcDialog(1022000, Maple.Application.Npcs.NpcDialogKind.AcceptDecline, "a"));
+        Assert.Equal(new byte[] { 0x3C, 0x01, 0x04, 0x30, 0x98, 0x0F, 0x00, 0x0B, 0x00, 0x01, 0x00, (byte)'a' }, packet);
+    }
+
+    [Fact]
     public void ShowForeignEffect_LevelUp_MatchesJava()
         // P165：showForeignEffect(cid, 0)：[0xBF][int cid][byte 0]。
         => Assert.Equal(new byte[] { 0xBF, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00 }, V113StatsPackets.ShowForeignEffect(7, 0));

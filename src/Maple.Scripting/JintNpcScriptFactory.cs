@@ -146,6 +146,22 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public int getMapId() => _cm.GetMapId();
         public bool isQuestActive(int questId) => _cm.IsQuestActive(questId);
         public bool isQuestFinished(int questId) => _cm.IsQuestFinished(questId);
+        // ── P167：轉職與對話變體 ──────────────────────────────────────────────────────
+        public void changeJob(int job) => _cm.ChangeJob(job);
+        public void resetStats(int str, int dex, int intel, int luk) => _cm.ResetStats(str, dex, intel, luk);
+        public void teachSkill(int skillId, int level, int masterLevel) => _cm.TeachSkill(skillId, level, masterLevel);
+        public void teachSkill(int skillId, int level) => _cm.TeachSkill(skillId, level);
+        public void askAcceptDecline(string text) => _cm.AskAcceptDecline(text);
+        public void sendAcceptDecline(string text) => _cm.AskAcceptDecline(text);
+        public void askAcceptDeclineNoESC(string text) => _cm.AskAcceptDeclineNoEsc(text);
+        public void sendAcceptDeclineNoESC(string text) => _cm.AskAcceptDeclineNoEsc(text);
+        public void sendNextS(string text, int type) => _cm.SendNextS(text, type);
+        public void sendPrevS(string text, int type) => _cm.SendPrevS(text, type);
+        public void sendNextPrevS(string text, int type) => _cm.SendNextPrevS(text, type);
+        public void sendOkS(string text, int type) => _cm.SendOkS(text, type);
+        public void sendYesNoS(string text, int type) => _cm.SendYesNoS(text, type);
+        public void sendSimpleS(string text, int type) => _cm.SendSimpleS(text, type);
+
         public PlayerFacade getPlayer() => new(_cm);
         public PlayerFacade getChar() => new(_cm);
     }
@@ -177,6 +193,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory
         public bool haveItem(int itemId, int quantity) => _cm.HaveItem(itemId, quantity);
         public bool hasEquipped(int itemId) => _cm.HasEquipped(itemId);
         public void gainAp(int amount) => _cm.GainAp(amount);
+        public void changeJob(int job) => _cm.ChangeJob(job);
         public void dropMessage(string message) => _cm.PlayerMessage(5, message);
         public void dropMessage(int type, string message) => _cm.PlayerMessage(type, message);
     }

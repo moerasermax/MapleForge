@@ -19,6 +19,24 @@ public sealed class WzSkillCatalog : ISkillCatalog
     public MapleSkill? GetSkill(int skillId)
         => _cache.GetOrAdd(skillId, id => new CachedSkill(LoadSkill(id))).Skill;
 
+    /// <summary>P167：Skill.wz/&lt;job:D3&gt;.img/skill 的子節點（7 位數技能 ID）。</summary>
+    public IReadOnlyList<int> GetSkillIdsByJob(int job)
+    {
+        IDataNode? skills;
+        try
+        {
+            skills = _data.GetAt("Skill", $"{job:D3}.img/skill");
+        }
+        catch (InvalidDataException)
+        {
+            return [];
+        }
+
+        return skills is null
+            ? []
+            : skills.Children.Keys.Select(static k => int.TryParse(k, out var id) ? id : 0).Where(static id => id > 0).Order().ToArray();
+    }
+
     private MapleSkill? LoadSkill(int skillId)
     {
         IDataNode? skillNode;
@@ -50,6 +68,7 @@ public sealed class WzSkillCatalog : ISkillCatalog
             MasterLevel = masterLevel,
             IsChargeSkill = skillNode["keydown"] is not null,
             IsTimeLimited = GetInt(skillNode, "timeLimited", 0) > 0,
+            IsInvisible = GetInt(skillNode, "invisible", 0) > 0,
             Element = element,
             Effects = effects,
         };

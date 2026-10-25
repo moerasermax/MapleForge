@@ -22,6 +22,10 @@ public enum NpcDialogKind
     GetText,
     /// <summary>輸入數字（sendGetNumber，含預設/最小/最大）。</summary>
     GetNumber,
+    /// <summary>P167：接受／拒絕（askAcceptDecline，msgType 0x0B）。</summary>
+    AcceptDecline,
+    /// <summary>P167：接受／拒絕、不可 ESC（askAcceptDeclineNoESC，msgType 0x0C）。</summary>
+    AcceptDeclineNoEsc,
 }
 
 /// <summary>

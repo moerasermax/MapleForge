@@ -67,6 +67,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly PlayerMistService? _playerMists;
     private readonly PartyBuffService? _partyBuffs;
     private readonly AbilityPointService _abilityPoints;
+    private readonly JobAdvancementService _jobAdvancement;
 
     internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
@@ -182,8 +183,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         MobSkillService? mobSkills = null,
         PlayerMistService? playerMists = null,
         PartyBuffService? partyBuffs = null,
-        AbilityPointService? abilityPoints = null)
+        AbilityPointService? abilityPoints = null,
+        JobAdvancementService? jobAdvancement = null)
     {
+        _jobAdvancement = jobAdvancement ?? new JobAdvancementService();
         _log = log;
         _playerMists = playerMists;
         _partyBuffs = partyBuffs;
@@ -2026,7 +2029,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return null;
         }
 
-        var ctx = new NpcContext(npcId, player, _questService);
+        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement);
         var script = _npcScripts.TryCreate(npcId, ctx);
         if (script is null)
         {
@@ -2048,7 +2051,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
             sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
             warpToPortal: warpToPortal,
-            sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
+            sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
+            sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -2065,7 +2069,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         CancellationToken ct,
         Func<int, int, CancellationToken, Task>? warpToPortal = null)
     {
-        var ctx = new NpcContext(npcId, player, _questService);
+        var ctx = new NpcContext(npcId, player, _questService, _jobAdvancement);
         var script = _npcScripts.TryCreate(npcId, ctx);
         if (script is null)
         {
@@ -2087,7 +2091,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             disbandGuild: c => DisbandGuildAndCleanupAsync(player, session, c),
             sendRepairWindow: (npcId, c) => session.SendAsync(V113RepairPackets.RepairWindow(npcId), c),
             warpToPortal: warpToPortal,
-            sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c));
+            sendMessage: (type, msg, c) => session.SendAsync(V113BroadcastPackets.ServerNotice(type, msg), c),
+            sendJobChange: (change, c) => SendJobChangeAsync(player, change, session, c));
 
         await convo.StartAsync(ct);
         _log.LogInformation("[Channel] NPC {Npc} 對話開始", npcId);
@@ -2457,6 +2462,32 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await _guildOperationHandler.SyncMemberLevelJobAsync(
                 player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
             await OnLeveledUpAsync(player, ct);
+        }
+    }
+
+    /// <summary>
+    /// P167：Java <c>changeJob</c> 的封包順序：resetStatsByJob（updatePlayerStats false）→ updateSp → updateSingleStat(JOB)
+    /// → MAXHP/MAXMP/HP/MP → 他人 showForeignEffect(id, 8) → silentPartyUpdate → guildUpdate → baseSkills（updateSkill）。
+    /// </summary>
+    private async Task SendJobChangeAsync(Player player, JobChangeResult change, MapleSession session, CancellationToken ct)
+    {
+        if (change.ResetStats.Count > 0)
+        {
+            await session.SendAsync(V113StatsPackets.UpdateStats(change.ResetStats), ct);
+        }
+
+        foreach (var update in change.SpAndJob)
+        {
+            await session.SendAsync(V113StatsPackets.UpdateStats([update]), ct);
+        }
+
+        await session.SendAsync(V113StatsPackets.UpdateStats(change.Vitals), ct);
+        await BroadcastPacketToOthersAsync(player.Character, V113StatsPackets.ShowForeignEffect(player.Character.Id, 8), ct);
+        await _partyOperationHandler.NotifySilentUpdateAsync(player, ct);
+        await _guildOperationHandler.SyncMemberLevelJobAsync(player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
+        foreach (var (skillId, level, masterLevel) in change.BaseSkills)
+        {
+            await session.SendAsync(V113StatsPackets.UpdateSkill(skillId, level, masterLevel), ct);
         }
     }
 

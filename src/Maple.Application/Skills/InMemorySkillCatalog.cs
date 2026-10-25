@@ -15,4 +15,7 @@ public sealed class InMemorySkillCatalog : ISkillCatalog
 
     public MapleSkill? GetSkill(int skillId)
         => _skills.TryGetValue(skillId, out var skill) ? skill : null;
+
+    public IReadOnlyList<int> GetSkillIdsByJob(int job)
+        => _skills.Keys.Where(id => id / 10000 == job).Order().ToArray();
 }

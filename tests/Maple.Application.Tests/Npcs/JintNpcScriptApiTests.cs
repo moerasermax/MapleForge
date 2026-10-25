@@ -46,6 +46,44 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.False(convo.Active);
     }
 
+    [Fact]
+    public async Task Script_ChangeJobTeachSkillAcceptDecline()
+    {
+        // P167：轉職 NPC 常見寫法：askAcceptDecline → changeJob → teachSkill(id, level)（master = 技能最大等級）。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999998.js"), """
+            function start() { cm.askAcceptDecline("轉職？"); }
+            function action(mode, type, selection) {
+                cm.changeJob(100);
+                cm.teachSkill(1000001, 1);
+                cm.sendNext("#L0#選單#l");
+                cm.dispose();
+            }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 10 }, new Position(0, 0, 0, 0));
+        var skill = new Maple.Core.Skills.MapleSkill { Id = 1000001, Effects = [new(), new(), new()] };
+        var jobs = new Maple.Application.Stats.JobAdvancementService(new Maple.Application.Skills.InMemorySkillCatalog([skill]));
+        var ctx = new NpcContext(9999998, player, new QuestService(new EmptyQuestCatalog()), jobs);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        var jobChanges = 0;
+        var convo = new NpcConversation(
+            9999998,
+            factory.TryCreate(9999998, ctx)!,
+            ctx,
+            (d, _) => { dialogs.Add(d); return Task.CompletedTask; },
+            (_, _) => Task.CompletedTask,
+            sendJobChange: (_, _) => { jobChanges++; return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+        await convo.ContinueAsync(1, 0x0B, -1, CancellationToken.None);
+
+        Assert.Equal(NpcDialogKind.AcceptDecline, dialogs[0].Kind);
+        Assert.Equal(NpcDialogKind.Simple, dialogs[1].Kind); // 含 #L 改 sendSimple
+        Assert.Equal(1, jobChanges);
+        Assert.Equal(100, player.Character.Job);
+        Assert.Equal((1, 3), (player.GetSkillLevel(1000001), player.GetMasterLevel(1000001)));
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;
