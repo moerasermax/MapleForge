@@ -8,7 +8,7 @@ namespace Maple.Content.Tests.Items;
 
 public sealed class WzItemMakeCatalogTests
 {
-    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
+    private static readonly string WzDir = WzTestData.Directory;
 
     [Fact]
     public void GetRecipes_ParsesGemAndCreateEntries()
@@ -107,7 +107,7 @@ public sealed class WzItemMakeCatalogTests
         Assert.True(catalog.IsDropRestricted(4000000));
     }
 
-    [Fact]
+    [WzFact]
     public void RealCharacterWz_Create_LoadsAxeDefaultStats()
     {
         // P101 真機實測值：斧頭 1312004 的 WZ 為 Watk 17、tuc 7；修正前建角/掉落/給予/商城都拿到 0。
@@ -120,7 +120,7 @@ public sealed class WzItemMakeCatalogTests
         Assert.Equal(7, axe.UpgradeSlots);
     }
 
-    [Fact]
+    [WzFact]
     public void RealItemMakeWz_LoadsRecipes()
     {
         using var provider = new WzDataProvider(WzDir);

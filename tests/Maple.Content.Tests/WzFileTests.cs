@@ -5,10 +5,10 @@ namespace Maple.Content.Tests;
 
 public sealed class WzFileTests
 {
-    private const string StringWzPath = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client\String.wz";
-    private const string ListWzPath = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client\List.wz";
+    private static readonly string StringWzPath = Path.Combine(WzTestData.Directory, "String.wz");
+    private static readonly string ListWzPath = Path.Combine(WzTestData.Directory, "List.wz");
 
-    [Fact]
+    [WzFact]
     public void String_Wz_Opens_And_Has_Top_Level_Directories()
     {
         using var wz = WzFile.Open(StringWzPath);
@@ -16,14 +16,14 @@ public sealed class WzFileTests
         Assert.NotEmpty(wz.Root.Children);
     }
 
-    [Fact]
+    [WzFact]
     public void List_Wz_Opens_Successfully()
     {
         using var wz = WzFile.Open(ListWzPath);
         Assert.NotNull(wz.Root);
     }
 
-    [Fact]
+    [WzFact]
     public void String_Wz_Root_Contains_Common_String_Images()
     {
         using var wz = WzFile.Open(StringWzPath);
@@ -32,7 +32,7 @@ public sealed class WzFileTests
         Assert.Contains("Cash.img", wz.Root.Children.Keys);
     }
 
-    [Fact]
+    [WzFact]
     public void String_Wz_Eqp_Image_Contains_Known_Item_Name()
     {
         using var wz = WzFile.Open(StringWzPath);
@@ -43,7 +43,7 @@ public sealed class WzFileTests
         Assert.Equal("藍色毛帽", Assert.IsType<string>(item["name"].Value));
     }
 
-    [Fact]
+    [WzFact]
     public void String_Wz_Detects_Version_113()
     {
         using var wz = WzFile.Open(StringWzPath);
@@ -53,12 +53,12 @@ public sealed class WzFileTests
 
 public sealed class WzDataProviderTests : IDisposable
 {
-    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
+    private static readonly string WzDir = WzTestData.Directory;
     private readonly WzDataProvider _provider = new(WzDir);
 
     public void Dispose() => _provider.Dispose();
 
-    [Fact]
+    [WzFact]
     public void GetRoot_Returns_String_Root_With_Children()
     {
         var root = _provider.GetRoot("String");
@@ -66,7 +66,7 @@ public sealed class WzDataProviderTests : IDisposable
         Assert.NotEmpty(root.Children);
     }
 
-    [Fact]
+    [WzFact]
     public void GetAt_Traverses_Path_To_Known_Value()
     {
         // Eqp.img / Eqp / Cap / 1000000 / name = "藍色毛帽"
@@ -75,7 +75,7 @@ public sealed class WzDataProviderTests : IDisposable
         Assert.Equal("藍色毛帽", node.Value);
     }
 
-    [Fact]
+    [WzFact]
     public void GetAt_Traverses_QuestInfo_With_Long_Unicode_String()
     {
         var node = _provider.GetAt("Quest", "QuestInfo.img/10001/1");
@@ -86,14 +86,14 @@ public sealed class WzDataProviderTests : IDisposable
         Assert.Contains("特殊幹員O", text);
     }
 
-    [Fact]
+    [WzFact]
     public void GetAt_Returns_Null_For_Missing_Path()
     {
         var node = _provider.GetAt("String", "Eqp.img/DoesNotExist/Nope");
         Assert.Null(node);
     }
 
-    [Fact]
+    [WzFact]
     public void GetRoot_Same_File_Returns_Cached_Instance()
     {
         var root1 = _provider.GetRoot("String");

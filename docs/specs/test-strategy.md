@@ -68,3 +68,13 @@ AI/腳本啟動 `MapleStory.exe 127.0.0.1 8484` 後，視窗卡在 `Themida - ht
 ## 驗收（M1 完成定義）
 - L1+L2+L3 全綠 = M1「管線打通」全自動達標。
 - L4a 真客戶端握手 smoke 自動通過；L4b 真客戶端登入 = 最終人工/定期確認。
+
+## 外部資料依賴的測試（P105）
+
+| 依賴 | 標記 | 控制方式 | 缺少時 |
+|---|---|---|---|
+| 真實 v113 client WZ（`String.wz` 等） | `[WzFact]`（Content/Application 測試專案各一份 `WzTestData.cs`） | 環境變數 `MAPLEFORGE_WZ_DIR`，未設時用原開發機路徑 `E:\WorkSpace_離線資料\...\v113_Client` | 自動 Skip（以 `String.wz` 是否存在判斷） |
+| EphemeralMongo 下載 mongod | `[MongoFact]`（Persistence） | `MAPLEFORGE_SKIP_MONGO=1` | 未設定時照常下載；雲端 session 網路政策擋 MongoDB 下載站，須設此變數 |
+
+- 雲端 session 跑全測試：`MAPLEFORGE_SKIP_MONGO=1 dotnet test tests/<專案> --no-build`；WZ 測試自動 Skip。Skip 不等於通過，資料相關修補仍須在有 WZ 的機器上驗證一次。
+- 舊 Java repo（`YC_MapleStroy_Tsm113`）的 `wz/` 是 XML 匯出，不是 client `.wz` 二進位檔，不能指給 `MAPLEFORGE_WZ_DIR`。

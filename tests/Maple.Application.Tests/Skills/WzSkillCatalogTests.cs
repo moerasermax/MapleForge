@@ -6,12 +6,12 @@ namespace Maple.Application.Tests.Skills;
 
 public sealed class WzSkillCatalogTests : IDisposable
 {
-    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
+    private static readonly string WzDir = WzTestData.Directory;
     private readonly WzDataProvider _provider = new(WzDir);
 
     public void Dispose() => _provider.Dispose();
 
-    [Fact]
+    [WzFact]
     public void GetSkill_LoadsMagicGuardFromSkillWz()
     {
         var catalog = new WzSkillCatalog(_provider);

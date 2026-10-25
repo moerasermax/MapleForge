@@ -7,7 +7,7 @@ namespace Maple.Content.Tests.Quests;
 
 public sealed class WzQuestCatalogTests
 {
-    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
+    private static readonly string WzDir = WzTestData.Directory;
 
     [Fact]
     public void GetQuest_ParsesQuestInfoCheckAndActNodes()
@@ -49,7 +49,7 @@ public sealed class WzQuestCatalogTests
         Assert.Equal(2000000, Assert.Single(itemAction.Items!).ItemId);
     }
 
-    [Fact]
+    [WzFact]
     public void GetQuest_LoadsQuest1000FromRealQuestWz()
     {
         using var provider = new WzDataProvider(WzDir);

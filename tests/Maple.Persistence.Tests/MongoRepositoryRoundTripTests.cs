@@ -44,7 +44,7 @@ public sealed class MongoRepositoryRoundTripTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    [Fact]
+    [MongoFact]
     public async Task AccountRoundTrip_PreservesAllFieldsAndUniqueName()
     {
         var account = new Account
@@ -84,7 +84,7 @@ public sealed class MongoRepositoryRoundTripTests : IAsyncLifetime
         Assert.False(await Accounts.TryAddAsync(duplicate));
     }
 
-    [Fact]
+    [MongoFact]
     public async Task CharacterRoundTrip_PreservesWholePocoDocument()
     {
         var account = new Account
@@ -202,7 +202,7 @@ public sealed class MongoRepositoryRoundTripTests : IAsyncLifetime
         }));
     }
 
-    [Fact]
+    [MongoFact]
     public void AddMaplePersistence_DefaultsToMongoProvider()
     {
         var options = new MapleDatabaseOptions

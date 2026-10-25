@@ -5,14 +5,14 @@ namespace Maple.Application.Tests.Maps;
 
 public sealed class MapServiceTests : IDisposable
 {
-    private const string WzDir = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
+    private static readonly string WzDir = WzTestData.Directory;
     private readonly WzDataProvider _provider = new(WzDir);
     private readonly MapService _svc;
 
     public MapServiceTests() => _svc = new MapService(_provider);
     public void Dispose() => _provider.Dispose();
 
-    [Fact]
+    [WzFact]
     public void Henesys_Loads_With_Portals()
     {
         var map = _svc.LoadMap(100000000);
@@ -20,7 +20,7 @@ public sealed class MapServiceTests : IDisposable
         Assert.NotEmpty(map.Portals);
     }
 
-    [Fact]
+    [WzFact]
     public void Henesys_Has_Spawn_Points()
     {
         var map = _svc.LoadMap(100000000);
@@ -28,7 +28,7 @@ public sealed class MapServiceTests : IDisposable
         Assert.NotEmpty(spawns);
     }
 
-    [Fact]
+    [WzFact]
     public void Henesys_GetSpawnPoint_Returns_Valid_Position()
     {
         var map = _svc.LoadMap(100000000);
@@ -37,21 +37,21 @@ public sealed class MapServiceTests : IDisposable
         Assert.True(spawn.X != 0 || spawn.Y != 0, "spawn position should not be origin (0,0)");
     }
 
-    [Fact]
+    [WzFact]
     public void Henesys_Has_Footholds()
     {
         var map = _svc.LoadMap(100000000);
         Assert.NotEmpty(map.Footholds);
     }
 
-    [Fact]
+    [WzFact]
     public void Henesys_Is_Town()
     {
         var map = _svc.LoadMap(100000000);
         Assert.True(map.Town);
     }
 
-    [Fact]
+    [WzFact]
     public void Henesys_Loads_Npcs()
     {
         var map = _svc.LoadMap(100000000);
