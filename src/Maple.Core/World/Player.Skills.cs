@@ -174,10 +174,16 @@ public sealed partial class Player
     /// （技能走 <c>SkillService</c> 的 Java calcHPChange/calcMPChange）。非 overTime 或無 statups 回 null。
     /// </summary>
     /// <param name="statupsOverride">P156：以這組 statups 取代效果本身的（Java applyBuffEffect 的 Selfstat，例如變身）。</param>
-    public PlayerBuffChange? ApplyBuffStats(MapleStatEffect effect, DateTimeOffset now, IReadOnlyList<BuffStatValue>? statupsOverride = null)
+    /// <param name="durationOverride">P157：取代效果持續時間（Java 騎寵 localDuration = 2100000000）。</param>
+    public PlayerBuffChange? ApplyBuffStats(
+        MapleStatEffect effect,
+        DateTimeOffset now,
+        IReadOnlyList<BuffStatValue>? statupsOverride = null,
+        int? durationOverride = null)
     {
         ArgumentNullException.ThrowIfNull(effect);
 
+        var duration = durationOverride ?? effect.DurationMilliseconds;
         var source = statupsOverride ?? effect.Statups;
         if (!effect.IsOverTime || source.Count == 0)
         {
@@ -195,11 +201,11 @@ public sealed partial class Player
                     effect.SourceId,
                     effect.Level,
                     now,
-                    effect.DurationMilliseconds);
+                    duration);
             }
         }
 
-        return new PlayerBuffChange(effect.SourceId, effect.DurationMilliseconds, now, stats);
+        return new PlayerBuffChange(effect.SourceId, duration, now, stats);
     }
 
     public int AddAranCombo(int amount, DateTimeOffset now)

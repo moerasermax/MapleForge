@@ -558,8 +558,9 @@ public sealed class WzSkillCatalog : ISkillCatalog
     private static bool IsEnergyCharge(int skillId)
         => skillId is 5110001 or 15100004;
 
+    /// <summary>Java <c>isMonsterRiding</c>：<c>isMonsterRiding_()</c> 或 <c>getMountItem(sourceid) != 0</c>（P157 補後者）。</summary>
     private static bool IsMonsterRiding(int skillId)
-        => skillId is 1004 or 10001004 or 20001004 or 20011004 or 30001004;
+        => skillId is 1004 or 10001004 or 20001004 or 20011004 or 30001004 || SkillService.GetMountItem(skillId) != 0;
 
     private static bool IsFieldObjectSkill(int skillId)
         => skillId is 2311002 or 8001 or 10008001 or 20008001 or 20018001 or 30008001

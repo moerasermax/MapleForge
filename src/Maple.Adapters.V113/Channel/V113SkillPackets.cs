@@ -158,6 +158,47 @@ internal static class V113SkillPackets
 
     private static bool IsSpeedInfusion(int skillId) => skillId is 5121009 or 15111005;
 
+    private static readonly BuffStatValue[] MountStatups = [new BuffStatValue(MapleBuffStat.MONSTER_RIDING, 0)];
+
+    /// <summary>
+    /// P157：對照 Java <c>giveMount(buffid = 騎寵道具, skillid, [MONSTER_RIDING 0])</c>：
+    /// <c>[GIVE_BUFF][mask][short 0][int 道具][int 技能][int 0][short 0][byte 0][byte 2]</c>。
+    /// </summary>
+    public static byte[] GiveMount(int mountItemId, int skillId)
+    {
+        var w = new PacketWriter(40);
+        w.WriteShort(GiveBuffOp);
+        WriteBuffMask(w, MountStatups.Select(static s => s.Stat));
+        w.WriteShort(0);
+        w.WriteInt(mountItemId);
+        w.WriteInt(skillId);
+        w.WriteInt(0);
+        w.WriteShort(0);
+        w.WriteByte(0);
+        w.WriteByte(2);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// P157：對照 Java <c>showMonsterRiding(cid, [MONSTER_RIDING 0], itemId, skillId)</c>：
+    /// <c>[GIVE_FOREIGN_BUFF][int cid][mask][short 0][int 道具][int 技能][int 0][short 0][byte 0][byte 0]</c>。
+    /// </summary>
+    public static byte[] ShowMonsterRiding(int characterId, int mountItemId, int skillId)
+    {
+        var w = new PacketWriter(44);
+        w.WriteShort(GiveForeignBuffOp);
+        w.WriteInt(characterId);
+        WriteBuffMask(w, MountStatups.Select(static s => s.Stat));
+        w.WriteShort(0);
+        w.WriteInt(mountItemId);
+        w.WriteInt(skillId);
+        w.WriteInt(0);
+        w.WriteShort(0);
+        w.WriteByte(0);
+        w.WriteByte(0);
+        return w.ToArray();
+    }
+
     public static byte[] CancelBuff(IReadOnlyList<MapleBuffStat> stats)
     {
         var w = new PacketWriter(24);
@@ -292,7 +333,9 @@ internal static class V113SkillMoveHandler
         var mpBefore = player.Mp;
         var result = skillService.Cast(player, request.SkillId, request.SkillLevel, now);
         var packet = result.Status == SkillCastStatus.Success && result.AppliedBuff is not null && result.Effect is not null
-            ? BuildGiveBuff(request.SkillId, result.AppliedBuff, result.Effect)
+            ? result.Mount is { } mount
+                ? V113SkillPackets.GiveMount(mount.SelfMountItemId, request.SkillId)
+                : BuildGiveBuff(request.SkillId, result.AppliedBuff, result.Effect)
             : null;
 
         // 對照 Java PlayerHandler.SpecialMove：冷卻中被拒回 enableActions 解鎖客戶端；

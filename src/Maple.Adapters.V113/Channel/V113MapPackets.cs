@@ -128,7 +128,7 @@ internal static class V113MapPackets
         WriteCharMagicShortBlock(w, tick);   // energy charge
         WriteCharMagicShortBlock(w, tick);   // dash speed
         WriteCharMagicShortBlock(w, tick);   // dash jump
-        WriteCharMagicShortBlock(w, tick);   // monster riding
+        WriteMonsterRidingBlock(w, player, tick); // monster riding（P157）
         WriteCharMagicLongBlock(w, tick);    // speed infusion
         // homing beacon
         w.WriteInt(1); w.WriteLong(0L); w.WriteByte(0); w.WriteShort(0); w.WriteByte(1); w.WriteInt(tick);
@@ -362,6 +362,36 @@ internal static class V113MapPackets
     private static void WriteCharMagicShortBlock(PacketWriter w, int tick)
     {
         w.WriteShort(0); w.WriteLong(0L); w.WriteByte(1); w.WriteInt(tick);
+    }
+
+    /// <summary>
+    /// P157：Java spawnPlayerMapobject 的騎寵區塊：<c>[short 0]</c>，有 MONSTER_RIDING buff 時
+    /// <c>[int 騎寵道具][int 來源技能]</c>（getMountItem(來源) 為 0 時取 -118 現金騎寵、再取 -18），否則 <c>[long 0]</c>；再 <c>[byte 1][int tick]</c>。
+    /// </summary>
+    internal static void WriteMonsterRidingBlock(PacketWriter w, Player player, int tick)
+    {
+        w.WriteShort(0);
+        var source = player.ActiveBuffs.FirstOrDefault(static b => b.Stat == MapleBuffStat.MONSTER_RIDING)?.SourceId ?? 0;
+        if (source > 0)
+        {
+            var mountItem = Maple.Application.Skills.SkillService.GetMountItem(source);
+            if (mountItem == 0)
+            {
+                mountItem = player.Character.Equips.FirstOrDefault(static e => e.Position == -118)?.ItemId
+                    ?? player.Character.Equips.FirstOrDefault(static e => e.Position == -18)?.ItemId
+                    ?? 0;
+            }
+
+            w.WriteInt(mountItem);
+            w.WriteInt(source);
+        }
+        else
+        {
+            w.WriteLong(0L);
+        }
+
+        w.WriteByte(1);
+        w.WriteInt(tick);
     }
 
     private static void WriteCharMagicLongBlock(PacketWriter w, int tick)

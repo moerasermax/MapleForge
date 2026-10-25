@@ -1810,3 +1810,13 @@ giveForeignPirate: [0xC0][int cid][mask 16B][short 0]{ [int 值][long 技能][in
 ```
 
 證據層級：Java source（`MaplePacketCreator.givePirate:1697`／`giveForeignPirate:1716`）＋ Adapters focused tests；**unverified**。
+
+### 騎寵：`GIVE_BUFF` 的 giveMount 變體／`GIVE_FOREIGN_BUFF` 的 showMonsterRiding（P157）
+
+```text
+giveMount:         [0x1E][mask(MONSTER_RIDING)][short 0][int 騎寵道具(parseMountInfo_Pure)][int 技能][int 0][short 0][byte 0][byte 2]
+showMonsterRiding: [0xC0][int cid][mask(MONSTER_RIDING)][short 0][int 騎寵道具(parseMountInfo)][int 技能][int 0][short 0][byte 0][byte 0]
+SPAWN_PLAYER 騎寵區塊: [short 0]{ 騎乘中: [int 道具][int 來源技能] | 否: [long 0] }[byte 1][int tick]
+```
+
+證據層級：Java source（`MaplePacketCreator.giveMount:1679`／`showMonsterRiding:1870`／`spawnPlayerMapobject:938`）＋ focused tests；**unverified**。

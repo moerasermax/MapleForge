@@ -46,7 +46,14 @@ public sealed record SkillCastResult(
     // P108：未學武陵技能在道場施放時能量歸零（呼叫端送能量封包）。
     bool MulungEnergyReset = false,
     // P127：驅散／英雄意志解除的異常（呼叫端送 cancelDebuff / cancelForeignDebuff）。
-    IReadOnlyList<PlayerDisease>? CuredDiseases = null);
+    IReadOnlyList<PlayerDisease>? CuredDiseases = null,
+    // P157：施放時被取消的 buff（騎寵解除 POWERGUARD／MANA_REFLECTION；呼叫端送 CANCEL_BUFF 與取消副作用）。
+    IReadOnlyList<PlayerBuffCancellation>? CancelledBuffs = null,
+    // P157：騎寵（giveMount 的騎寵道具 ID 與 showMonsterRiding 的道具 ID）；非騎寵為 null。
+    MountInfo? Mount = null);
+
+/// <summary>P157：Java parseMountInfo_Pure（giveMount 用）與 parseMountInfo（showMonsterRiding 用）。</summary>
+public sealed record MountInfo(int SelfMountItemId, int ForeignMountItemId);
 
 /// <summary>P108：武陵技能攻擊前的能量判斷（對照 Java DamageParse.applyAttack／applyAttackMagic）。</summary>
 public enum MulungAttackGate
@@ -147,6 +154,45 @@ public sealed partial class SkillService
     /// </summary>
     public static IReadOnlyList<BuffStatValue>? GetForeignBuffStats(MapleStatEffect effect)
         => GetForeignBuffStatsCore(effect);
+
+    public const int MountDurationMilliseconds = 2_100_000_000;
+
+    /// <summary>Java <c>GameConstants.getMountItem</c>（技能 → 騎寵道具）。</summary>
+    public static int GetMountItem(int skillId) => skillId switch
+    {
+        5221006 => 1932000,
+        1013 or 10001014 => 1932001,
+        1014 or 10001015 => 1932002,
+        1015 or 10001016 => 1932007,
+        1017 or 10001019 or 20001019 => 1932003,
+        _ => 0,
+    };
+
+    /// <summary>Java <c>isMonsterRiding_</c>（各職業怪物騎乘）。</summary>
+    public static bool IsMonsterRidingSkill(int skillId) => skillId is 1004 or 10001004 or 20001004 or 20011004 or 30001004;
+
+    /// <summary>Java <c>isMonsterRiding</c>。</summary>
+    public static bool IsMonsterRiding(MapleStatEffect effect)
+        => effect.IsSkill && (IsMonsterRidingSkill(effect.SourceId) || GetMountItem(effect.SourceId) != 0);
+
+    /// <summary>Java <c>parseMountInfo</c>：怪物騎乘時 -118／-119 都有裝備 → -118 道具，否則退回 parseMountInfo_Pure。</summary>
+    public static int ParseMountInfo(Player player, int skillId)
+        => IsMonsterRidingSkill(skillId) && EquippedItem(player, -118) is { } cashMount && EquippedItem(player, -119) is not null
+            ? cashMount
+            : ParseMountInfoPure(player, skillId);
+
+    /// <summary>Java <c>parseMountInfo_Pure</c>：怪物騎乘時 -18／-19 都有裝備 → -18 道具，否則 0；其他技能 getMountItem。</summary>
+    public static int ParseMountInfoPure(Player player, int skillId)
+        => IsMonsterRidingSkill(skillId)
+            ? EquippedItem(player, -18) is { } mount && EquippedItem(player, -19) is not null ? mount : 0
+            : GetMountItem(skillId);
+
+    private static int? EquippedItem(Player player, short position)
+        => player.Character.Equips.FirstOrDefault(e => e.Position == position)?.ItemId;
+
+    /// <summary>Java <c>cancelEffectFromBuffStat(stat)</c>。</summary>
+    private static IReadOnlyList<PlayerBuffCancellation> CancelBuffStat(Player player, MapleBuffStat stat)
+        => player.ActiveBuffs.FirstOrDefault(b => b.Stat == stat) is { } buff ? player.CancelBuffBySource(buff.SourceId) : [];
 
     /// <summary>Java <c>isPirateMorph</c>：15111002、5111005、5121003（技能）。</summary>
     public static bool IsPirateMorph(MapleStatEffect effect) => effect.IsSkill && effect.SourceId is 15111002 or 5111005 or 5121003;
@@ -273,9 +319,26 @@ public sealed partial class SkillService
 
         // P134：HP/MP 走 Java calcHPChange/calcMPChange（元素增幅、集中術、魔力無限、能量恢復），再登記 buff。
         var status = ApplySkillHpMp(player, effect).Status;
-        var appliedBuff = status == SkillCastStatus.Success
-            ? player.ApplyBuffStats(effect, now, GetMorphStatups(effect, player.Character.Gender))
-            : null;
+        PlayerBuffChange? appliedBuff = null;
+        MountInfo? mount = null;
+        IReadOnlyList<PlayerBuffCancellation>? cancelledBuffs = null;
+        if (status == SkillCastStatus.Success && IsMonsterRiding(effect))
+        {
+            // P157：Java applyBuffEffect 的 isMonsterRiding 分支：兩個騎寵 ID 都非 0 才給（否則整段 return，不註冊）；
+            // 先 cancelEffectFromBuffStat(POWERGUARD)、(MANA_REFLECTION)，持續時間改 2100000000。
+            var foreignMount = ParseMountInfo(player, effect.SourceId);
+            var selfMount = ParseMountInfoPure(player, effect.SourceId);
+            if (foreignMount != 0 && selfMount != 0)
+            {
+                cancelledBuffs = [.. CancelBuffStat(player, MapleBuffStat.POWERGUARD), .. CancelBuffStat(player, MapleBuffStat.MANA_REFLECTION)];
+                appliedBuff = player.ApplyBuffStats(effect, now, durationOverride: MountDurationMilliseconds);
+                mount = new MountInfo(selfMount, foreignMount);
+            }
+        }
+        else if (status == SkillCastStatus.Success)
+        {
+            appliedBuff = player.ApplyBuffStats(effect, now, GetMorphStatups(effect, player.Character.Gender));
+        }
 
         // 對照 Java PlayerHandler.SpecialMove：有冷卻的技能施放時登記冷卻（呼叫端據此送 COOLDOWN
         // 封包）；海盜船例外——Java 施放時不登記，船被打爆時才由 MapleCharacter 登記冷卻。
@@ -306,7 +369,9 @@ public sealed partial class SkillService
         }
 
         return new SkillCastResult(status, skillId, skill, effect, appliedBuff, cooldownStarted, reset, mulungEnergyReset,
-            cured is { Count: > 0 } ? cured : null);
+            cured is { Count: > 0 } ? cured : null,
+            cancelledBuffs is { Count: > 0 } ? cancelledBuffs : null,
+            mount);
     }
 
     /// <summary>

@@ -3126,6 +3126,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         // P099：Java applyTo 的 setHp（HpCon / 治癒）→ updatePartyMemberHP。
         await _partyHpSync.BroadcastIfChangedAsync(player, hpBeforeCast, ct);
 
+        // P157：騎寵施放前解除 POWERGUARD／MANA_REFLECTION（cancelEffectFromBuffStat → cancelBuff＋cancelForeignBuff）。
+        if (handled.Cast?.CancelledBuffs is { } castCancelled)
+        {
+            foreach (var cancellation in castCancelled)
+            {
+                await session.SendAsync(V113SkillPackets.CancelBuff(cancellation.Stats), ct);
+            }
+
+            await ApplyBuffCancellationSideEffectsAsync(player, field, castCancelled, session, ct);
+        }
+
         // P127：驅散／英雄意志 → dispelDebuff：自己 cancelDebuff、他人 cancelForeignDebuff。
         foreach (var cured in handled.Cast?.CuredDiseases ?? [])
         {
@@ -3140,10 +3151,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         // P139：Java applyBuffEffect 的 giveForeignBuff（同圖其他人看得到隱身／鬥氣／影分身等外觀）；
         // P147：海盜衝刺類改送 giveForeignPirate。
-        if (handled.Cast is { Status: SkillCastStatus.Success, AppliedBuff: { } appliedBuff, Effect: { } buffEffect }
-            && ForeignBuffPacket(player.Character.Id, buffEffect, appliedBuff) is { } foreignPacket)
+        if (handled.Cast is { Status: SkillCastStatus.Success, AppliedBuff: { } appliedBuff, Effect: { } buffEffect })
         {
-            await BroadcastPacketToOthersAsync(player.Character, foreignPacket, ct);
+            // P157：騎寵 → showMonsterRiding（parseMountInfo 的道具）。
+            var foreignPacket = handled.Cast.Mount is { } mount
+                ? V113SkillPackets.ShowMonsterRiding(player.Character.Id, mount.ForeignMountItemId, handled.SourceId)
+                : ForeignBuffPacket(player.Character.Id, buffEffect, appliedBuff);
+            if (foreignPacket is not null)
+            {
+                await BroadcastPacketToOthersAsync(player.Character, foreignPacket, ct);
+            }
         }
 
         foreach (var resetPacket in handled.CooldownResetPackets ?? Array.Empty<byte[]>())
