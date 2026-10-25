@@ -204,6 +204,12 @@ public interface INpcScriptContext
     void GainExpR(int gain) { }
     int GetMonsterCount(int mapId) => 0;
 
+    // ── P193 ────────────────────────────────────────────────────────────────────────
+    int GainGachaponItem(int itemId, int quantity, string? message) => -1;
+    string? GetItemName(int itemId) => null;
+    void SpawnMonster(int monsterId, int quantity, int? x, int? y, int? mapId) { }
+    void WarpMap(int mapId, string portal) { }
+
     // ── P191：打王／一次性紀錄 ─────────────────────────────────────────────────────────
     int GetBossLog(string bossId) => 0;
     void SetBossLog(string bossId) { }

@@ -393,6 +393,41 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal((byte)96, player.ExpandInventory(InventoryType.Use, 200)); // 上限 96
     }
 
+    [Fact]
+    public async Task Script_GachaponRareMega_SpawnAndWarpMap()
+    {
+        // P193：gainGachaponItem 稀有度 1 → 全服公告；spawnMonster 玩家位置；warpMap 待處理。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999988.js"), """
+            function start() {
+                var got = cm.gainGachaponItem(2022217, 1, "測試轉蛋");
+                cm.spawnMonster(100100, 2);
+                cm.warpMap(100000000, 3);
+                cm.sendOk("" + got);
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30, MapId = 104000000 }, new Position(15, 25, 0, 0));
+        var ctx = new NpcContext(9999988, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        (string, int, (int, int, int, int, int)[], (int, int)?) seen = default;
+        var convo = new NpcConversation(9999988, factory.TryCreate(9999988, ctx)!, ctx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (_, _) => Task.CompletedTask,
+            applyWorldEffects: (c, _) =>
+            {
+                seen = (c.PendingGachaponMegas.Single().Message, c.PendingGachaponMegas.Single().Item.ItemId, c.PendingMobSpawns.ToArray(), c.PendingMapWarp);
+                return Task.CompletedTask;
+            });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal("2022217", Assert.Single(dialogs).Text);
+        Assert.Equal("[測試轉蛋] Js : 被他抽到了，大家恭喜他吧！", seen.Item1);
+        Assert.Equal(2022217, seen.Item2);
+        Assert.Equal([(104000000, 100100, 2, 15, 25)], seen.Item3);
+        Assert.Equal((100000000, 3), seen.Item4);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Use).CountById(2022217));
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

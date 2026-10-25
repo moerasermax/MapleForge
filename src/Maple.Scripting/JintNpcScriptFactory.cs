@@ -340,6 +340,20 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public string getName() => _cm.GetName();
         public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
 
+        // ── P193 ───────────────────────────────────────────────────────────────────────
+        public int gainGachaponItem(int itemId, int quantity) => _cm.GainGachaponItem(itemId, quantity, null);
+        public int gainGachaponItem(int itemId, int quantity, string message) => _cm.GainGachaponItem(itemId, quantity, message);
+        public string? getItemName(int itemId) => _cm.GetItemName(itemId);
+        public void spawnMonster(int monsterId, int quantity) => _cm.SpawnMonster(monsterId, quantity, null, null, null);
+        public void spawnMonster(int monsterId) => _cm.SpawnMonster(monsterId, 1, null, null, null);
+        public void spawnMonster(int monsterId, int x, int y) => _cm.SpawnMonster(monsterId, 1, x, y, null);
+        public void spawnMonster(int monsterId, int quantity, int x, int y) => _cm.SpawnMonster(monsterId, quantity, x, y, null);
+        public void spawnMob(int monsterId, int quantity, int x, int y) => _cm.SpawnMonster(monsterId, quantity, x, y, null);
+        public void spawnMob(int monsterId, int x, int y) => _cm.SpawnMonster(monsterId, 1, x, y, null);
+        public void spawnMobOnMap(int monsterId, int quantity, int x, int y, int mapId) => _cm.SpawnMonster(monsterId, quantity, x, y, mapId);
+        public void warpMap(int mapId, string portal) => _cm.WarpMap(mapId, portal);
+        public void warpMap(int mapId, int portal) => _cm.WarpMap(mapId, portal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
         // ── P191 ───────────────────────────────────────────────────────────────────────
         public int getBossLog(string bossId) => _cm.GetBossLog(bossId);
         public void setBossLog(string bossId) => _cm.SetBossLog(bossId);

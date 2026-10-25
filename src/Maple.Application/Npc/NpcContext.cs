@@ -37,6 +37,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     private readonly int _expRate;
     private readonly List<NpcPartyAction> _pendingPartyActions = new();
     private readonly Maple.Application.Squads.SquadRegistry? _squads;
+    private readonly Maple.Application.Text.WzStringCatalog? _strings;
     private readonly List<Maple.Application.Squads.SquadNotice> _pendingSquadNotices = new();
 
     /// <summary>P190：遠征隊通知（開始地圖 clock／公告、對其他角色的 dropMessage）。</summary>
@@ -79,8 +80,10 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Maple.Application.Parties.IPartyRegistry? parties = null,
         Func<int, IReadOnlyList<int>>? playersOnMap = null,
         int expRate = 1,
-        Maple.Application.Squads.SquadRegistry? squads = null)
+        Maple.Application.Squads.SquadRegistry? squads = null,
+        Maple.Application.Text.WzStringCatalog? strings = null)
     {
+        _strings = strings;
         _squads = squads;
         _parties = parties;
         _playersOnMap = playersOnMap ?? (static _ => []);
@@ -147,6 +150,9 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingPartyActions.Clear();
         _pendingSquadNotices.Clear();
         _pendingSlotUpdates.Clear();
+        _pendingGachaponMegas.Clear();
+        _pendingMobSpawns.Clear();
+        _pendingMapWarp = null;
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -918,4 +924,71 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
 
     /// <summary>Java getMonsterCount(mapId)：該圖怪物數。</summary>
     public int GetMonsterCount(int mapId) => _monstersOf(mapId).Count;
+
+    // ── P193 ───────────────────────────────────────────────────────────────────────────
+    private readonly List<(string Message, Maple.Core.Inventory.Item Item)> _pendingGachaponMegas = new();
+    private readonly List<(int MapId, int MonsterId, int Quantity, int X, int Y)> _pendingMobSpawns = new();
+    private (int MapId, int Portal)? _pendingMapWarp;
+
+    /// <summary>P193：全服 getGachaponMega（稀有轉蛋）。</summary>
+    public IReadOnlyList<(string Message, Maple.Core.Inventory.Item Item)> PendingGachaponMegas => _pendingGachaponMegas;
+
+    /// <summary>P193：spawnMonster／spawnMob／spawnMobOnMap（地圖、怪、數量、座標）。</summary>
+    public IReadOnlyList<(int MapId, int MonsterId, int Quantity, int X, int Y)> PendingMobSpawns => _pendingMobSpawns;
+
+    /// <summary>P193：warpMap——目前地圖上所有人（含自己）傳到該圖 portal。</summary>
+    public (int MapId, int Portal)? PendingMapWarp => _pendingMapWarp;
+
+    /// <summary>
+    /// Java gainGachaponItem(id, qty[, msg])：道具不存在或四欄任一沒空格回 −1；addbyId_Gachapon 疊加；
+    /// 稀有度 1／2／&gt;2 全服公告（訊息依稀有度）；成功回道具 ID。msg 預設「街名 - 地圖名」。
+    /// </summary>
+    public int GainGachaponItem(int itemId, int quantity, string? message)
+    {
+        if (!_itemExists(itemId)
+            || new[] { Maple.Core.Inventory.InventoryType.Equip, Maple.Core.Inventory.InventoryType.Use, Maple.Core.Inventory.InventoryType.Etc, Maple.Core.Inventory.InventoryType.Setup }
+                .Any(t => _player.Inventory.By(t).FirstFreeSlot() is null))
+        {
+            return -1;
+        }
+
+        var stack = _player.GainItemStacking(itemId, (short)Math.Clamp(quantity, 1, short.MaxValue));
+        if (!stack.AnyChange)
+        {
+            return -1;
+        }
+
+        _player.FlushInventory();
+        EnqueueQuestResult(new QuestTransactionResult(
+            QuestTransactionStatus.Success,
+            gainedItems: stack.Added,
+            inventoryMutations: stack.Merged.Select(QuestService.ToQuestMutation).ToArray()));
+
+        var item = stack.Added.FirstOrDefault() ?? _player.Inventory.By(InventoryTypeOf(itemId)).Get(stack.Merged[0].Slot)!;
+        var where = message ?? (_strings?.GetMapName(_player.Character.MapId) is { } names ? $"{names.StreetName} - {names.MapName}" : string.Empty);
+        var rareness = Maple.Application.Items.RandomRewardsCatalog.GetGachaponRareness(itemId);
+        var suffix = rareness switch
+        {
+            1 => " : 被他抽到了，大家恭喜他吧！",
+            2 => " : 被他成功轉到了，大家恭喜他吧！",
+            > 2 => " : 被他從楓葉轉蛋機轉到了，大家恭喜他吧！",
+            _ => null,
+        };
+        if (suffix is not null)
+        {
+            _pendingGachaponMegas.Add(($"[{where}] {_player.Character.Name}{suffix}", item));
+        }
+
+        return itemId;
+    }
+
+    public string? GetItemName(int itemId) => _strings?.GetItemName(itemId);
+
+    /// <summary>Java spawnMonster(id, qty)（玩家位置）／spawnMob(id, qty, x, y)／spawnMobOnMap(id, qty, x, y, map)。</summary>
+    public void SpawnMonster(int monsterId, int quantity, int? x, int? y, int? mapId)
+        => _pendingMobSpawns.Add((mapId ?? _player.Character.MapId, monsterId, quantity, x ?? _player.Position.X, y ?? _player.Position.Y));
+
+    /// <summary>Java warpMap(mapId, portalName)：目前地圖所有角色 changeMap(map, map.getPortal(portal))。</summary>
+    public void WarpMap(int mapId, string portal)
+        => _pendingMapWarp = (mapId, int.TryParse(portal, out var portalId) ? portalId : Math.Max(0, GetMapPortalId(mapId, portal)));
 }

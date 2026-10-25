@@ -80,6 +80,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly Maple.Application.Events.IEventWorld? _eventWorld;
     private readonly Maple.Application.Squads.SquadRegistry? _squads;
     private readonly V113SquadNotifier? _squadNotifier;
+    private readonly Maple.Application.Text.WzStringCatalog? _strings;
     private readonly DropServiceOptions? _dropOptions;
 
     /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
@@ -213,7 +214,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         IItemUseCatalog? itemUseCatalog = null,
         Maple.Application.Events.IEventWorld? eventWorld = null,
         Maple.Application.Squads.SquadRegistry? squads = null,
-        V113SquadNotifier? squadNotifier = null)
+        V113SquadNotifier? squadNotifier = null,
+        Maple.Application.Text.WzStringCatalog? strings = null)
     {
         _partyRegistry = partyRegistry;
         _portalOverrides = portalOverrides ?? new Maple.Application.Events.PortalScriptOverrideRegistry();
@@ -222,6 +224,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         _eventWorld = eventWorld;
         _squads = squads;
         _squadNotifier = squadNotifier;
+        _strings = strings;
         _dropOptions = dropOptions;
         _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
@@ -2271,6 +2274,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             sendPartyAction: SendPartyActionAsync,
             sendSquadNotice: (notice, c) => _squadNotifier is { } notifier ? notifier.SendAsync(notice, c) : Task.CompletedTask,
             sendSlotUpdate: (type, slots, c) => session.SendAsync(V113TransportEffects.SlotUpdate((byte)type, slots), c),
+            applyWorldEffects: (npcCtx, c) => ApplyNpcWorldEffectsAsync(npcCtx, player, c),
             sendUiEffect: (effect, c) => effect.Kind switch
             {
                 NpcUiEffectKind.Hint => session.SendAsync(V113StatsPackets.SendHint(effect.Text, effect.A, effect.B), c),
@@ -2513,7 +2517,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             parties: _partyRegistry,
             playersOnMap: mapId => _mapRegistry.GetAll(mapId).Select(static e => e.CharId).ToArray(),
             expRate: _dropOptions?.ExpRate ?? 1,
-            squads: _squads);
+            squads: _squads,
+            strings: _strings);
 
     /// <summary>
     /// P176：跨隊員腳本效果——排進該隊員自己的連線序列執行（warp／經驗／道具），結果照一般 cm 送包流程送給對方。
@@ -3999,6 +4004,34 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var (itemId, quantity) in ctx.ItemGainNotices)
         {
             await session.SendAsync(V113DropPackets.ShowItemGain(itemId, (short)quantity, inChat: true), ct);
+        }
+    }
+
+    /// <summary>
+    /// P193：NPC 腳本的跨玩家／地圖效果：全服轉蛋公告、生怪（事件世界的 spawnMonsterOnGroundBelow 並廣播）、
+    /// warpMap（目前地圖每位玩家排進各自連線換圖）。
+    /// </summary>
+    private async Task ApplyNpcWorldEffectsAsync(NpcContext ctx, Player player, CancellationToken ct)
+    {
+        foreach (var (message, item) in ctx.PendingGachaponMegas)
+        {
+            await BroadcastPacketToAllOnlineAsync(V113BroadcastPackets.GachaponMega(message, _options.ChannelIndex + 1, item), ct);
+        }
+
+        foreach (var (mapId, monsterId, quantity, x, y) in ctx.PendingMobSpawns)
+        {
+            for (var i = 0; i < quantity; i++)
+            {
+                RunEventHook(() => _eventWorld?.SpawnMonster(mapId, monsterId, x, y));
+            }
+        }
+
+        if (ctx.PendingMapWarp is { } warp && _sessionCommands is not null)
+        {
+            foreach (var entry in _mapRegistry.GetAll(player.Character.MapId).ToArray())
+            {
+                _sessionCommands.Warp(entry.CharId, warp.MapId, warp.Portal);
+            }
         }
     }
 

@@ -345,6 +345,7 @@ public static class MapleServerHost
                 : null);
         });
         builder.Services.AddSingleton<V113SquadNotifier>();
+        builder.Services.AddSingleton<Maple.Application.Text.WzStringCatalog>(); // P193：String.wz 名稱
         builder.Services.AddHostedService<SquadTickHostedService>();
 
         // P177：事件腳本（Java EventScriptManager；Jint 跑 scripts/event/*.js，em.schedule 由 1 秒 tick 驅動）。

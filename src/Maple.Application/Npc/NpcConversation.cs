@@ -37,6 +37,9 @@ public sealed class NpcConversation
     private readonly Func<Maple.Application.Squads.SquadNotice, CancellationToken, Task>? _sendSquadNotice;
     private readonly Func<Maple.Core.Inventory.InventoryType, byte, CancellationToken, Task>? _sendSlotUpdate;
 
+    /// <summary>P193：轉蛋公告、生怪、全圖傳送等跨玩家／地圖效果（adapter 讀 context 的待處理清單）。</summary>
+    private readonly Func<NpcContext, CancellationToken, Task>? _applyWorldEffects;
+
     public int NpcId { get; }
     public bool Active { get; private set; } = true;
 
@@ -65,8 +68,10 @@ public sealed class NpcConversation
         Func<CancellationToken, Task>? killAllMob = null,
         Func<NpcPartyAction, CancellationToken, Task>? sendPartyAction = null,
         Func<Maple.Application.Squads.SquadNotice, CancellationToken, Task>? sendSquadNotice = null,
-        Func<Maple.Core.Inventory.InventoryType, byte, CancellationToken, Task>? sendSlotUpdate = null)
+        Func<Maple.Core.Inventory.InventoryType, byte, CancellationToken, Task>? sendSlotUpdate = null,
+        Func<NpcContext, CancellationToken, Task>? applyWorldEffects = null)
     {
+        _applyWorldEffects = applyWorldEffects;
         _sendSlotUpdate = sendSlotUpdate;
         _sendSquadNotice = sendSquadNotice;
         _sendPartyAction = sendPartyAction;
@@ -203,6 +208,11 @@ public sealed class NpcConversation
             {
                 await _sendPartyAction(action, ct);
             }
+        }
+
+        if (_applyWorldEffects is not null)
+        {
+            await _applyWorldEffects(_ctx, ct);
         }
 
         if (_sendSlotUpdate is not null)
