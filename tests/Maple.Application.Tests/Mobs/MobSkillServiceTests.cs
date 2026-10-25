@@ -394,6 +394,33 @@ public sealed class MobSkillServiceTests
         };
     }
 
+    // ── P131：怪物毒霧（Java case 131）──
+
+    [Fact]
+    public void TryUseSkill_Mist_SpawnsFacingLeftBoxForXTimesTen()
+    {
+        var (field, mob) = Setup([new MobSkillRef(131, 1)]);
+        mob.MoveTo(new Position(100, 50, 4, 1)); // 面向右也照 Java 以面向左計算
+        var skill = Skill(131) with { Area = new MobSkillArea(-200, -100, 200, 20) };
+
+        var use = Service(skill).TryUseSkill(field, mob, T0)!;
+
+        var mist = use.SpawnedMist!;
+        Assert.Equal((-100, -50, 400, 120), mist.Box);
+        Assert.True(mist.IsMobMist);
+        Assert.Equal(100100, mist.OwnerId);
+        Assert.Equal(T0.AddMilliseconds(100), mist.ExpiresAt); // x=10 → 100ms
+        Assert.Same(mist, field.Get(mist.ObjectId));
+    }
+
+    [Fact]
+    public void TryUseSkill_MistWithoutArea_NoMist()
+    {
+        var (field, mob) = Setup([new MobSkillRef(131, 1)]);
+
+        Assert.Null(Service(Skill(131)).TryUseSkill(field, mob, T0)!.SpawnedMist);
+    }
+
     private static Mob AddMob(FieldInstance field, int objectId, short x, short y)
     {
         var mob = new Mob(

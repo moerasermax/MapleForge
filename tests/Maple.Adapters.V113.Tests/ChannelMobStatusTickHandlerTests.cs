@@ -41,6 +41,40 @@ public sealed class ChannelMobStatusTickHandlerTests
         Assert.True(mob.Statuses.ContainsKey(MonsterStatus.Stun));
     }
 
+    [Fact]
+    public async Task TickAsync_ExpiredMist_RemovesAndBroadcastsRemoveMist()
+    {
+        var (handler, field, _, received) = Setup();
+        var mist = new Mist(200001, 100100, 131, 1, true, 0, 0, (0, 0, 10, 10), T0.AddSeconds(1));
+        field.Add(mist);
+
+        await handler.TickAsync(field, T0.AddSeconds(1), CancellationToken.None);
+
+        Assert.Null(field.Get(mist.ObjectId));
+        Assert.Equal(V113MistPackets.RemoveMist(200001), Assert.Single(received));
+    }
+
+    [Fact]
+    public void SpawnMist_MatchesJavaLayout()
+    {
+        var mist = new Mist(200001, 7, 2111003, 20, false, 1, 8, (-10, -20, 30, 40), T0);
+        var r = new PacketReader(V113MistPackets.SpawnMist(mist));
+
+        Assert.Equal(0x10C, r.ReadShort());
+        Assert.Equal(200001, r.ReadInt());
+        Assert.Equal(1, r.ReadInt());        // 玩家毒霧
+        Assert.Equal(7, r.ReadInt());
+        Assert.Equal(2111003, r.ReadInt());
+        Assert.Equal(20, r.ReadByte());
+        Assert.Equal(8, r.ReadShort());
+        Assert.Equal(-10, r.ReadInt());
+        Assert.Equal(-20, r.ReadInt());
+        Assert.Equal(20, r.ReadInt());       // x + width
+        Assert.Equal(20, r.ReadInt());       // y + height
+        Assert.Equal(0, r.ReadInt());
+        Assert.Equal(0, r.Remaining);
+    }
+
     private static (V113MobStatusTickHandler Handler, FieldInstance Field, Mob Mob, List<byte[]> Received) Setup()
     {
         var registry = new InMemoryMapSessionRegistry();

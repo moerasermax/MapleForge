@@ -27,8 +27,16 @@ public sealed class V113MobStatusTickHandler
 
         var cancelled = new List<(int ObjectId, MonsterStatus Status)>();
         IReadOnlyList<CombatMobHit> dotHits;
+        Mist[] expiredMists;
         lock (field)
         {
+            // P131：Java spawnMist 的 tMan.schedule(remove, duration)——到期移除並廣播 REMOVE_MIST。
+            expiredMists = field.Objects.OfType<Mist>().Where(m => m.ExpiresAt <= now).ToArray();
+            foreach (var mist in expiredMists)
+            {
+                field.Remove(mist.ObjectId);
+            }
+
             // Java 的毒傷排程與解除排程各自獨立；同一跳先扣毒傷再處理到期，讓到期當秒的最後一跳仍生效。
             dotHits = _combat.TickDamageOverTime(field);
             foreach (var mob in field.Objects.OfType<Mob>())
@@ -40,12 +48,17 @@ public sealed class V113MobStatusTickHandler
             }
         }
 
-        if (cancelled.Count == 0 && dotHits.Count == 0)
+        if (cancelled.Count == 0 && dotHits.Count == 0 && expiredMists.Length == 0)
         {
             return;
         }
 
         var recipients = _mapRegistry.GetAll(field.MapId);
+        foreach (var mist in expiredMists)
+        {
+            await SendAsync(recipients, V113MistPackets.RemoveMist(mist.ObjectId), ct);
+        }
+
         foreach (var hit in dotHits)
         {
             if (hit.HpDisplay is not { } display)

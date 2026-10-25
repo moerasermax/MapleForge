@@ -17,7 +17,9 @@ public sealed record MobSkillUse(
     // P129：被驅散的控制者 buff（呼叫端送 CANCEL_BUFF 與 buff 連帶效果）。
     IReadOnlyList<PlayerBuffCancellation>? DispelledBuffs = null,
     // P130：控制者被放逐的目的地（呼叫端送提示並換圖）。
-    MobBanishInfo? Banish = null);
+    MobBanishInfo? Banish = null,
+    // P131：怪物毒霧（已加入 field；呼叫端廣播 SPAWN_MIST）。
+    Mist? SpawnedMist = null);
 
 /// <summary>P125：怪物補血（Java healMonster 廣播的 oid 與補血量）。</summary>
 public sealed record MobHeal(int ObjectId, int Amount);
@@ -88,8 +90,9 @@ public sealed class MobSkillService
         var banish = skill.SkillId == BanishSkillId && mob.Stats.Banish is { } info && controller is not null && InRange(mob, skill, controller)
             ? info
             : null;
+        var mist = skill.SkillId == MistSkillId ? SpawnMobMist(field, mob, skill, now) : null;
         mob.ConsumeMp(skill.MpCon);
-        return new MobSkillUse(skill, buffs, heals, disease, summoned, dispelled is { Count: > 0 } ? dispelled : null, banish);
+        return new MobSkillUse(skill, buffs, heals, disease, summoned, dispelled is { Count: > 0 } ? dispelled : null, banish, mist);
     }
 
     /// <summary>
@@ -122,6 +125,36 @@ public sealed class MobSkillService
     public const int SummonSkillId = 200;
     public const int DispelSkillId = 127;
     public const int BanishSkillId = 129;
+    public const int MistSkillId = 131;
+
+    /// <summary>
+    /// P131：對照 Java case 131：<c>spawnMist(new MapleMist(calculateBoundingBox(pos, true), monster, this), x * 10)</c>——
+    /// 範圍固定以「面向左」計算、持續 x×10 毫秒；怪物霧 isPoisonMist=0（伺服器端無週期效果）。無 lt/rb 時 Java 會 NPE，這裡不生。
+    /// </summary>
+    private static Mist? SpawnMobMist(FieldInstance field, Mob mob, MobSkillDefinition skill, DateTimeOffset now)
+    {
+        if (skill.Area is not { } area)
+        {
+            return null;
+        }
+
+        var box = BoundingBox(area, mob.Position, facingLeft: true);
+        var objectId = Math.Max(
+            CombatService.DefaultMobObjectIdBase,
+            field.Objects.Select(static o => o.ObjectId).DefaultIfEmpty(0).Max()) + 1;
+        var mist = new Mist(
+            objectId,
+            ownerId: mob.Definition.MonsterId,
+            skillId: skill.SkillId,
+            skillLevel: skill.Level,
+            isMobMist: true,
+            poisonMode: 0,
+            skillDelay: 0,
+            box,
+            now.AddMilliseconds(skill.X * 10.0));
+        field.Add(mist);
+        return mist;
+    }
 
     /// <summary>Java <c>getPlayersInRange</c>（候選只有控制者）：無 lt/rb 時恆在範圍內。</summary>
     private static bool InRange(Mob mob, MobSkillDefinition skill, Player controller)
@@ -287,21 +320,24 @@ public sealed class MobSkillService
     /// 回傳 (左, 上, 寬, 高)，對應 <c>java.awt.Rectangle</c>。
     /// </summary>
     public static (int X, int Y, int Width, int Height) BoundingBox(MobSkillArea area, Mob mob)
+        => BoundingBox(area, mob.Position, mob.IsFacingLeft);
+
+    public static (int X, int Y, int Width, int Height) BoundingBox(MobSkillArea area, Position position, bool facingLeft)
     {
         int ltX, ltY, rbX, rbY;
-        if (mob.IsFacingLeft)
+        if (facingLeft)
         {
-            ltX = area.LtX + mob.Position.X;
-            ltY = area.LtY + mob.Position.Y;
-            rbX = area.RbX + mob.Position.X;
-            rbY = area.RbY + mob.Position.Y;
+            ltX = area.LtX + position.X;
+            ltY = area.LtY + position.Y;
+            rbX = area.RbX + position.X;
+            rbY = area.RbY + position.Y;
         }
         else
         {
-            rbX = -area.LtX + mob.Position.X;
-            rbY = area.RbY + mob.Position.Y;
-            ltX = -area.RbX + mob.Position.X;
-            ltY = area.LtY + mob.Position.Y;
+            rbX = -area.LtX + position.X;
+            rbY = area.RbY + position.Y;
+            ltX = -area.RbX + position.X;
+            ltY = area.LtY + position.Y;
         }
 
         return (ltX, ltY, rbX - ltX, rbY - ltY);

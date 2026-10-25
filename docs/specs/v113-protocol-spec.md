@@ -1782,3 +1782,15 @@ second 組：SLOW 0x1、MORPH 0x2、SEDUCE 0x80、ZOMBIFY 0x4000、REVERSE_DIREC
 ```
 
 來源：怪物技能 120-126/128/132-137（`getByMobSkill`），只施加在送 MOVE_LIFE 的控制者；同時最多 2 種、不重複；神聖之盾擋 SEDUCE/STUN 以外。到期由 3 秒世界 tick 解除。證據層級：Java source + Adapters focused tests；**unverified**。異常的伺服器端效果（封印擋技能、殭屍化藥水減半、中毒扣血等）尚未移植。
+
+### 地圖霧 `SPAWN_MIST(0x10C)` / `REMOVE_MIST(0x10D)`（P131）
+
+對照 Java `MaplePacketCreator.spawnMist`/`removeMist`：
+
+```text
+SPAWN_MIST:  writeShort(0x10C) writeInt(oid) writeInt(怪物霧 0 | 玩家 isPoisonMist!=0 ? 1 : 2) writeInt(ownerId)
+             writeInt(skillId) writeByte(level) writeShort(skillDelay) writeRect(x, y, x+w, y+h) writeInt(0)
+REMOVE_MIST: writeShort(0x10D) writeInt(oid)
+```
+
+怪物霧（MobSkill 131）：ownerId = 怪物模板 id、範圍以「面向左」計算、持續 x×10 毫秒、伺服器端無週期效果。進場補送現有霧；到期由 1 秒怪物狀態 tick 移除。證據層級：Java source + Adapters focused tests；**unverified**。

@@ -512,6 +512,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             await SendFieldHiredMerchantsAsync(chr.MapId, s, token);
                             await SendFieldMonstersAsync(currentField, s, token);
                             await SendFieldDropsAsync(currentField, s, token);
+                            await SendFieldMistsAsync(currentField, s, token);
                             await V113ReactorHandler.SendFieldReactorsAsync(currentField, s, token);
 
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
@@ -1904,6 +1905,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
     }
 
+    /// <summary>P131：進場時補送現有地圖霧（Java MapleMist.sendSpawnData）。</summary>
+    private static async Task SendFieldMistsAsync(FieldInstance field, MapleSession session, CancellationToken ct)
+    {
+        Mist[] mists;
+        lock (field)
+        {
+            mists = field.Objects.OfType<Mist>().ToArray();
+        }
+
+        foreach (var mist in mists)
+        {
+            await session.SendAsync(V113MistPackets.SpawnMist(mist), ct);
+        }
+    }
+
     private async Task SendFieldDropsAsync(FieldInstance field, MapleSession session, CancellationToken ct)
     {
         List<MapDrop> drops;
@@ -2232,6 +2248,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SendFieldHiredMerchantsAsync(mapId, session, ct);
         await SendFieldMonstersAsync(field, session, ct);
         await SendFieldDropsAsync(field, session, ct);
+        await SendFieldMistsAsync(field, session, ct);
         await V113ReactorHandler.SendFieldReactorsAsync(field, session, ct);
 
         // P085：對照 Java MapleMap.addPlayer 的 SUMMON 分支——跟隨型召喚獸在落地位置重新出生並廣播（含自己）。
@@ -4360,6 +4377,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
 
             await _buffEffects.ApplyAsync(player, field, dispelled, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
+        }
+
+        // P131：Java spawnMist → spawnAndAddRangedMapObject（全圖 SPAWN_MIST）。
+        if (skillUse?.SpawnedMist is { } mist)
+        {
+            await BroadcastPacketToMapAsync(player.Character, session, V113MistPackets.SpawnMist(mist), ct);
         }
 
         // P125：Java heal(…, broadcast=true) → map.broadcastMessage(healMonster)。

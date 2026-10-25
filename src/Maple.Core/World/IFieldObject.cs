@@ -9,6 +9,7 @@ public enum FieldObjectType
     Drop,
     Summon,
     Reactor,
+    Mist,
 }
 
 /// <summary>
