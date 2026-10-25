@@ -29,6 +29,7 @@ public sealed class ReactorScriptContext : IReactorScriptContext
     private readonly List<Mob> _spawnedMobs = new();
     private readonly List<(int ObjectId, byte Animation)> _killedMobs = new();
     private readonly List<string> _music = new();
+    private readonly List<(int MapId, byte State)> _reactorStates = new();
     private readonly List<(bool MapWide, int Type, string Message)> _notices = new();
     private readonly List<InventoryStackGain> _inventoryGains = new();
     private readonly List<InventoryQuantityMutation> _inventoryRemovals = new();
@@ -60,6 +61,15 @@ public sealed class ReactorScriptContext : IReactorScriptContext
 
     /// <summary>P183：killMonster／killAll 移除的怪（呼叫端廣播 KILL_MONSTER）。</summary>
     public IReadOnlyList<(int ObjectId, byte Animation)> KilledMobs => _killedMobs;
+
+    /// <summary>P185：腳本要求的地圖反應堆狀態變更（呼叫端在鎖外套用，可能是別張圖）。</summary>
+    public IReadOnlyList<(int MapId, byte State)> ReactorStateChanges => _reactorStates;
+
+    public void SetMapReactorState(int mapId, byte state)
+    {
+        Record(nameof(SetMapReactorState), mapId, state);
+        _reactorStates.Add((mapId, state));
+    }
 
     /// <summary>P183：changeMusic（全圖 musicChange）。</summary>
     public IReadOnlyList<string> Music => _music;

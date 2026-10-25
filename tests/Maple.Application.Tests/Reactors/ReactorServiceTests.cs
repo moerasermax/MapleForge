@@ -129,6 +129,7 @@ public sealed class ReactorServiceTests
             rm.KillMonster(9300001);
             rm.SpawnMonsterAt(9300001, 2, -50, 30);
             rm.ChangeMusic("Bgm00/Silence");
+            rm.SetMapReactorState(220080000, 1);
         });
         var service = new ReactorService(provider, scripts, combat: combat);
         var field = new FieldInstance(100000000);
@@ -142,6 +143,12 @@ public sealed class ReactorServiceTests
         Assert.Equal([(ctx.SpawnedMobs[0].ObjectId, (byte)1)], ctx.KilledMobs);
         Assert.Equal(4, field.Objects.OfType<Mob>().Count());
         Assert.Equal(["Bgm00/Silence"], ctx.Music);
+        Assert.Equal([(220080000, (byte)1)], ctx.ReactorStateChanges);
+
+        // P185：SetAllReactorStates——Java forceHitReactor 只改狀態。
+        reactor.Destroy();
+        Assert.Empty(ReactorService.SetAllReactorStates(field, 0));
+        Assert.Equal((byte)0, reactor.State);
 
         ctx.KillAll();
         Assert.Empty(field.Objects.OfType<Mob>());

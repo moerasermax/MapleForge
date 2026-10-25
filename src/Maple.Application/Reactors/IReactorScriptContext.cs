@@ -34,5 +34,8 @@ public interface IReactorScriptContext
     void KillMonster(int monsterId);
     void KillAll();
     void ChangeMusic(string song);
+
+    /// <summary>P185：<c>rm.getMap(id).setReactorState(state)</c>／<c>resetReactors()</c>（腳本結束後由呼叫端套用）。</summary>
+    void SetMapReactorState(int mapId, byte state);
     void RecordUnsupported(string name, params object?[] args);
 }

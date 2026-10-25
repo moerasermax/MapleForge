@@ -97,6 +97,26 @@ public sealed class JintEventScriptHostTests : IDisposable
     }
 
     [Fact]
+    public void ResetReactors_OnlyResetsReactorState_NotMonsters()
+    {
+        // P185：Java resetReactors() = setReactorState(0)；setReactorState() = 1（elevator 事件）。
+        var (host, world, _) = Create("""
+            function init() {
+                em.getChannelServer().getMapFactory().getMap(222020100).resetReactors();
+                em.getChannelServer().getMapFactory().getMap(222020100).setReactorState();
+                em.warpAllPlayer(222020210, 222020211);
+            }
+            """);
+        world.OnMap[222020210] = [5];
+
+        host.Start(T0);
+
+        Assert.Equal([(222020100, (byte)0), (222020100, (byte)1)], world.ReactorStates);
+        Assert.Empty(world.Resets);
+        Assert.Equal([(5, 222020211, 0)], world.Warps);
+    }
+
+    [Fact]
     public void ScriptError_IsSwallowed_AndMissingEventIgnored()
     {
         var (host, _, _) = Create("function init() { undefinedThing.call(); }", extraEvents: ["Missing"]);
@@ -464,6 +484,10 @@ public sealed class JintEventScriptHostTests : IDisposable
         public void BroadcastClock(int mapId, int seconds) { }
 
         public void ResetMap(int mapId) => Resets.Add(mapId);
+
+        public List<(int, byte)> ReactorStates { get; } = [];
+
+        public void SetReactorState(int mapId, byte state) => ReactorStates.Add((mapId, state));
 
         public void KillAllMonsters(int mapId, bool animate) => _mobs.Clear();
 

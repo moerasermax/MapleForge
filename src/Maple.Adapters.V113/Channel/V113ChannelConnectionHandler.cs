@@ -77,6 +77,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly Maple.Application.Events.PortalScriptOverrideRegistry _portalOverrides;
     private readonly Maple.Application.Events.IEventScriptHost? _eventScripts;
     private readonly IItemUseCatalog? _itemUseCatalog;
+    private readonly Maple.Application.Events.IEventWorld? _eventWorld;
     private readonly DropServiceOptions? _dropOptions;
 
     /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
@@ -207,12 +208,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         DropServiceOptions? dropOptions = null,
         Maple.Application.Events.PortalScriptOverrideRegistry? portalOverrides = null,
         Maple.Application.Events.IEventScriptHost? eventScripts = null,
-        IItemUseCatalog? itemUseCatalog = null)
+        IItemUseCatalog? itemUseCatalog = null,
+        Maple.Application.Events.IEventWorld? eventWorld = null)
     {
         _partyRegistry = partyRegistry;
         _portalOverrides = portalOverrides ?? new Maple.Application.Events.PortalScriptOverrideRegistry();
         _eventScripts = eventScripts;
         _itemUseCatalog = itemUseCatalog;
+        _eventWorld = eventWorld;
         _dropOptions = dropOptions;
         _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
@@ -3947,6 +3950,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var (objectId, animation) in ctx.KilledMobs)
         {
             await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(objectId, animation), ct);
+        }
+
+        // P185：rm.getMap(id).setReactorState／resetReactors——field 鎖外套用（可能是別張圖）。
+        foreach (var (mapId, state) in ctx.ReactorStateChanges)
+        {
+            RunEventHook(() => _eventWorld?.SetReactorState(mapId, state));
         }
 
         foreach (var song in ctx.Music)

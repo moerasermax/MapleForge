@@ -45,6 +45,9 @@ public interface IEventWorld
 
     void KillAllMonsters(int mapId, bool animate);
 
+    /// <summary>P185：Java <c>map.setReactorState(state)</c>（resetReactors＝0、setReactorState()＝1）。</summary>
+    void SetReactorState(int mapId, byte state);
+
     /// <summary>Java <c>spawnMonsterOnGroundBelow</c>；回傳 objectId，失敗 -1。</summary>
     int SpawnMonster(int mapId, int monsterId, int x, int y);
 

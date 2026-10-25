@@ -556,7 +556,12 @@ public sealed class EventMapApi : IScriptMapRef
 
     public void resetFully() => World.ResetMap(MapId);
 
-    public void resetReactors() => World.ResetMap(MapId);
+    /// <summary>P185：Java resetReactors() = setReactorState(0)（只動反應堆，不清怪）。</summary>
+    public void resetReactors() => World.SetReactorState(MapId, 0);
+
+    public void setReactorState() => World.SetReactorState(MapId, 1);
+
+    public void setReactorState(int state) => World.SetReactorState(MapId, (byte)state);
 
     public void killAllMonsters(bool animate) => World.KillAllMonsters(MapId, animate);
 

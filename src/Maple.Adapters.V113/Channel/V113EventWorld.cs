@@ -108,6 +108,21 @@ public sealed class V113EventWorld : IEventWorld
         }
     }
 
+    public void SetReactorState(int mapId, byte state)
+    {
+        var field = _fields.GetOrCreate(mapId, out _);
+        IReadOnlyList<Reactor> changed;
+        lock (field)
+        {
+            changed = Maple.Application.Reactors.ReactorService.SetAllReactorStates(field, state);
+        }
+
+        foreach (var reactor in changed)
+        {
+            Broadcast(mapId, V113ReactorPackets.TriggerReactor(reactor, 0));
+        }
+    }
+
     public int SpawnMonster(int mapId, int monsterId, int x, int y)
     {
         var field = _fields.GetOrCreate(mapId, out _);

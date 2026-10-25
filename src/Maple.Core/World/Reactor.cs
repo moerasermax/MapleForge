@@ -106,6 +106,9 @@ public sealed class Reactor : IFieldObject
 
     public void Destroy() => IsAlive = false;
 
+    /// <summary>P185：Java <c>forceHitReactor(state)</c>：只改狀態（setTimerActive(false) 尚無計時器），不改存活。</summary>
+    public void ForceHit(byte state) => State = state;
+
     /// <summary>
     /// 套用 Java MapleReactor.hitReactor 的 MVP 狀態機：方向限制、nextState、final/script trigger。
     /// timeout/delayed respawn 只回傳 pending 訊號，由上層 scheduler 後續補齊。

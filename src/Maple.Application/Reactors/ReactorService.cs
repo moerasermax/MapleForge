@@ -257,6 +257,26 @@ public sealed class ReactorService
         return new ReactorStats(states);
     }
 
+    /// <summary>
+    /// P185：Java <c>MapleMap.setReactorState(state)</c>（resetReactors＝0、setReactorState()＝1）：每個反應堆 forceHitReactor。
+    /// 回傳存活者供呼叫端廣播 triggerReactor(stance 0)（已摧毀者客戶端看不到，不送）。呼叫端持有 field 鎖。
+    /// </summary>
+    public static IReadOnlyList<Reactor> SetAllReactorStates(FieldInstance field, byte state)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        var alive = new List<Reactor>();
+        foreach (var reactor in field.Objects.OfType<Reactor>())
+        {
+            reactor.ForceHit(state);
+            if (reactor.IsAlive)
+            {
+                alive.Add(reactor);
+            }
+        }
+
+        return alive;
+    }
+
     private (bool Invoked, ReactorScriptContext? Context) TryAct(FieldInstance field, Player player, Reactor reactor)
     {
         if (_scripts is null)

@@ -113,9 +113,9 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
         public void playerMessage(int type, string message) => _rm.PlayerMessage(type, message);
         public int getMapId() => _rm.MapId;
         public ReactorFacade getReactor() => new(_rm.Reactor);
-        public MapFacade getMap() => new(_rm);
+        public MapFacade getMap() => new(_rm, _rm.MapId);
         /// <summary>P184：Java getMap(mapId)；MapFacade 的查詢以觸發者所在地圖為準（反應堆狀態操作仍為 no-op）。</summary>
-        public MapFacade getMap(int mapId) => new(_rm);
+        public MapFacade getMap(int mapId) => new(_rm, mapId);
         public PlayerFacade getPlayer() => new(_rm, _events);
         public void warp(int mapId) => _rm.Warp(mapId);
         public void warp(int mapId, int portal) => _rm.Warp(mapId, portal);
@@ -160,12 +160,16 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
     private sealed class MapFacade
     {
         private readonly IReactorScriptContext _rm;
+        private readonly int _mapId;
 
-        public MapFacade(IReactorScriptContext rm) => _rm = rm;
+        public MapFacade(IReactorScriptContext rm, int mapId) => (_rm, _mapId) = (rm, mapId);
 
-        public int getId() => _rm.MapId;
+        public int getId() => _mapId;
         public ReactorFacade getReactorByName(string name) => new(_rm.Reactor);
-        public void setReactorState() => _rm.RecordUnsupported("map.setReactorState");
+        /// <summary>P185：Java setReactorState()＝全圖反應堆 forceHitReactor(1)；resetReactors()＝0。</summary>
+        public void setReactorState() => _rm.SetMapReactorState(_mapId, 1);
+        public void setReactorState(int state) => _rm.SetMapReactorState(_mapId, (byte)state);
+        public void resetReactors() => _rm.SetMapReactorState(_mapId, 0);
         public void startSpeedRun() => _rm.RecordUnsupported("map.startSpeedRun");
         public void spawnChaosZakum(int x, int y) => _rm.RecordUnsupported("map.spawnChaosZakum", x, y);
         public void Papfight() => _rm.RecordUnsupported("map.Papfight");
