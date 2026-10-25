@@ -3292,7 +3292,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         if (handled.Cancel?.Status == CancelBuffStatus.ChargeSkill)
         {
-            _log.LogDebug("[Channel] CANCEL_BUFF charge skill cancel broadcast not wired source={SourceId}", handled.SourceId);
+            // P158：Java CancelBuffHandler 蓄力技能分支 → broadcastMessage(chr, skillCancel(chr, sourceid), false)。
+            await BroadcastPacketToOthersAsync(player.Character, V113SkillPackets.CancelSkillEffect(player.Character.Id, handled.SourceId), ct);
         }
     }
 
@@ -5307,6 +5308,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         var flags = reader.ReadByte();
         var speed = reader.ReadByte();
         var unk = reader.ReadByte();
+
+        // P158：Java SkillEffect 只在伺服器技能等級相符且為蓄力技能時記錄按住時間並廣播。
+        if (!_skillService.TryStartChargeSkill(player, skillId, level, DateTimeOffset.UtcNow))
+        {
+            return;
+        }
 
         var w = new PacketWriter();
         w.WriteShort(V113ChannelSendOp.SkillEffect);

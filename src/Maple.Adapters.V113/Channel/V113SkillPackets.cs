@@ -45,6 +45,16 @@ internal static class V113SkillPackets
     public const short CooldownOp = unchecked((short)0xE3); // COOLDOWN（send.properties 0xE3）
 
 
+    /// <summary>P158：Java <c>skillCancel</c>：CANCEL_SKILL_EFFECT [int charId][int skillId]（unverified：未經真機擷取）。</summary>
+    public static byte[] CancelSkillEffect(int characterId, int skillId)
+    {
+        var w = new PacketWriter();
+        w.WriteShort(RemoteCancelSkillEffectOp);
+        w.WriteInt(characterId);
+        w.WriteInt(skillId);
+        return w.ToArray();
+    }
+
     /// <summary>
     /// 對照 Java <c>MaplePacketCreator.MulungEnergy</c> → <c>sendString(1, "energy", value)</c>：
     /// SESSION_VALUE 兩個 MapleAsciiString（unverified：未經真機擷取）。

@@ -1820,3 +1820,13 @@ SPAWN_PLAYER 騎寵區塊: [short 0]{ 騎乘中: [int 道具][int 來源技能] 
 ```
 
 證據層級：Java source（`MaplePacketCreator.giveMount:1679`／`showMonsterRiding:1870`／`spawnPlayerMapobject:938`）＋ focused tests；**unverified**。
+
+### 蓄力技能：`SKILL_EFFECT` 驗證／`CANCEL_SKILL_EFFECT`（P158）
+
+```text
+c2s SKILL_EFFECT(0x57): [int skillId][byte level][byte flags][byte speed][byte unk]
+  → 伺服器技能等級 > 0 且 == level 且 keydown 技能才轉播 0xB6 並記錄按住時間；否則忽略
+c2s CANCEL_BUFF(0x56) 蓄力技能 → s2c CANCEL_SKILL_EFFECT(0xB7): [int cid][int skillId]（廣播給他人，不含自己）
+```
+
+證據層級：Java source（`PlayerHandler.CancelBuffHandler:496`／`SkillEffect:511`、`MaplePacketCreator.skillCancel:3632`）＋ focused tests；**unverified**。

@@ -52,6 +52,25 @@ public sealed class SkillServiceTests
     }
 
     [Fact]
+    public void ChargeSkill_StartRequiresMatchingLevel_CancelClearsKeyDown()
+    {
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(3121004, level: 5, masterLevel: 30);
+        var hurricane = new MapleSkill { Id = 3121004, IsChargeSkill = true, Effects = [new MapleStatEffect { SourceId = 3121004, Level = 1 }] };
+        var service = new SkillService(new InMemorySkillCatalog(new[] { hurricane, MagicGuardSkill() }));
+        var now = new DateTimeOffset(2026, 10, 26, 0, 0, 0, TimeSpan.Zero);
+
+        Assert.False(service.TryStartChargeSkill(player, 3121004, level: 4, now)); // 等級不符
+        Assert.False(service.TryStartChargeSkill(player, 2001002, level: 0, now)); // 未學
+        Assert.Null(player.KeyDownSkillStartedAt);
+        Assert.True(service.TryStartChargeSkill(player, 3121004, level: 5, now));
+        Assert.Equal(now, player.KeyDownSkillStartedAt);
+
+        Assert.Equal(CancelBuffStatus.ChargeSkill, service.CancelBuff(player, 3121004).Status);
+        Assert.Null(player.KeyDownSkillStartedAt);
+    }
+
+    [Fact]
     public void AddAranCombo_AppliesComboBuffAtJavaThreshold()
     {
         var player = MakePlayer(mp: 50, job: 2000);

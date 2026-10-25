@@ -498,6 +498,24 @@ public sealed partial class SkillService
             _ => skillId,
         };
 
+    /// <summary>
+    /// P158：對照 Java <c>PlayerHandler.SkillEffect</c>：伺服器技能等級 &gt; 0、等於封包等級且為蓄力技能（keydown）
+    /// 才記錄按住時間並允許廣播；否則整包忽略。
+    /// </summary>
+    public bool TryStartChargeSkill(Player player, int skillId, int level, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        var serverLevel = player.GetSkillLevel(skillId);
+        if (serverLevel <= 0 || serverLevel != level || _skills.GetSkill(skillId) is not { IsChargeSkill: true })
+        {
+            return false;
+        }
+
+        player.KeyDownSkillStartedAt = now;
+        return true;
+    }
+
     public CancelBuffResult CancelBuff(Player player, int sourceId)
     {
         ArgumentNullException.ThrowIfNull(player);
@@ -510,6 +528,7 @@ public sealed partial class SkillService
 
         if (skill.IsChargeSkill)
         {
+            player.KeyDownSkillStartedAt = null; // Java setKeyDownSkill_Time(0)；呼叫端廣播 skillCancel
             return new CancelBuffResult(CancelBuffStatus.ChargeSkill, sourceId, skill, Array.Empty<PlayerBuffCancellation>());
         }
 

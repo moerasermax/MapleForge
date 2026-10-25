@@ -24,6 +24,13 @@ public sealed class ChannelSkillPacketTests
     }
 
     [Fact]
+    public void CancelSkillEffect_MatchesJavaSkillCancel()
+        // P158：Java skillCancel → CANCEL_SKILL_EFFECT(0xB7) [int charId][int skillId]。
+        => Assert.Equal(
+            new byte[] { 0xB7, 0x00, 0x07, 0x00, 0x00, 0x00, 0x7C, 0x9F, 0x2F, 0x00 },
+            V113SkillPackets.CancelSkillEffect(7, 3121020));
+
+    [Fact]
     public void GiveBuff_MatchesJavaGiveBuffShape()
     {
         var packet = V113SkillPackets.GiveBuff(
