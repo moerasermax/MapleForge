@@ -44,6 +44,8 @@ internal static class V113ChannelRecvOp
     public const short RewardItem = 0x6A;
     public const short ItemMaker = 0x6B;
     public const short UseTreasureChest = 0x6C;
+    /// <summary>P153：recv.properties USE_FISH_MERCHANT = 0x39（精靈小釣手）。</summary>
+    public const short UseFishMerchant = 0x39;
     public const short DistributeAp = 0x51;
     public const short HealOverTime = 0x53;
     public const short DistributeSp = 0x54;

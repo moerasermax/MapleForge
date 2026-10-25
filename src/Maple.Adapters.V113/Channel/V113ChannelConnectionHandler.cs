@@ -66,6 +66,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly MobSkillService? _mobSkills;
     private readonly PlayerMistService? _playerMists;
     private readonly PartyBuffService? _partyBuffs;
+
+    internal const string FishMerchantClosedMessage = "精靈小釣手尚未開放。";
     private readonly INpcScriptFactory _npcScripts;
     private readonly ShopService _shopService;
     private readonly StorageService _storageService;
@@ -881,6 +883,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             player,
                             s,
                             token);
+                        break;
+
+                    case V113ChannelRecvOp.UseFishMerchant:
+                        // P153：對照 Java MapleServerHandler case USE_FISH_MERCHANT → dropMessage(5, "精靈小釣手尚未開放。")。
+                        if (player is null) break;
+                        await s.SendAsync(V113BroadcastPackets.ChatNotice(FishMerchantClosedMessage), token);
                         break;
 
                     case V113ChannelRecvOp.UseTreasureChest:
