@@ -18,7 +18,9 @@ public sealed record ScrollEffect(
     short Acc,
     short Avoid,
     short Speed,
-    short Jump);
+    short Jump,
+    // P154：WZ {scroll}/req（Java scrollReqs：只能用在這些裝備上；null = 不限）。
+    IReadOnlyList<int>? RequiredItems = null);
 
 public interface IScrollCatalog
 {

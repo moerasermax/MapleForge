@@ -68,7 +68,7 @@ public sealed class ChannelScrollPacketTests
     {
         var player = CreatePlayer(
             useItems: [UseItem(2040200, slot: 1)],
-            equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
+            equipItems: [BagEquip(1022000, slot: 1, slots: 7)]);
         var handler = new V113ScrollHandler(new ScrollService(new HardcodedScrollCatalog(), new FixedRandom(99)));
 
         var result = handler.HandleUseUpgradeScroll(Request(scrollSlot: 1, equipSlot: 1, flags: 0, tick: 99), player);
@@ -91,7 +91,7 @@ public sealed class ChannelScrollPacketTests
     {
         var player = CreatePlayer(
             useItems: [UseItem(2040202, slot: 1)],
-            equipItems: [BagEquip(1102000, slot: 1, slots: 7)]);
+            equipItems: [BagEquip(1022000, slot: 1, slots: 7)]);
         var handler = new V113ScrollHandler(new ScrollService(new HardcodedScrollCatalog(), new FixedRandom(99)));
 
         var result = handler.HandleUseUpgradeScroll(Request(scrollSlot: 1, equipSlot: 1, flags: 0, tick: 99), player);

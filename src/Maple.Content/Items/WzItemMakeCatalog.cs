@@ -62,6 +62,9 @@ public sealed class WzItemMakeCatalog : IItemMakeCatalog, IEquipTemplateProvider
     public Equip Create(int itemId)
         => CreateEquip(itemId) ?? new Equip { ItemId = itemId, Quantity = 1 };
 
+    /// <summary>P154：Java <c>isCash</c>——裝備 info/cash 存在。</summary>
+    public bool IsCash(int itemId) => GetInfoNode(itemId)?["cash"] is not null;
+
     public ItemMakeEnhanceStats? GetEnhanceStats(int itemId)
     {
         lock (_itemGate)

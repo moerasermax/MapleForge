@@ -104,7 +104,20 @@ public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog, IScr
             Acc: Inc("ACC"),
             Avoid: Inc("EVA"),
             Speed: Inc("Speed"),
-            Jump: Inc("Jump"));
+            Jump: Inc("Jump"),
+            RequiredItems: GetRequiredItems(GetItemNode(scrollId)?["req"]));
+    }
+
+    /// <summary>P154：卷軸節點的 req/{i}（int 裝備 ID）。</summary>
+    private static IReadOnlyList<int>? GetRequiredItems(IDataNode? req)
+    {
+        if (req is null)
+        {
+            return null;
+        }
+
+        var ids = req.Children.Values.Select(static c => c.Value is int i ? i : 0).Where(static i => i > 0).ToArray();
+        return ids.Length > 0 ? ids : null;
     }
 
     /// <summary>P127：Java <c>loadFromData</c> 的 cure 清單（poison、seal、darkness、weakness、curse 依序）。</summary>

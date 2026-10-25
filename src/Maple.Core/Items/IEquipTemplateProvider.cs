@@ -10,4 +10,7 @@ namespace Maple.Core.Items;
 public interface IEquipTemplateProvider
 {
     Equip Create(int itemId);
+
+    /// <summary>P154：Java <c>MapleItemInformationProvider.isCash</c>（裝備 info/cash 存在）；預設 false。</summary>
+    bool IsCash(int itemId) => false;
 }
