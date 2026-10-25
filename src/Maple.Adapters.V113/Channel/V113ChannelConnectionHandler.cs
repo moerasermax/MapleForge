@@ -2526,7 +2526,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             expRate: _dropOptions?.ExpRate ?? 1,
             squads: _squads,
             strings: _strings,
-            guildPointsOf: guildId => _guildService.GetGuildAsync(guildId).GetAwaiter().GetResult()?.GuildPoints ?? 0);
+            guildPointsOf: guildId => _guildService.GetGuildAsync(guildId).GetAwaiter().GetResult()?.GuildPoints ?? 0,
+            isCash: _equipTemplates is { } cashTemplates ? cashTemplates.IsCash : null,
+            channelNumber: _options.ChannelIndex + 1);
 
     /// <summary>
     /// P176：跨隊員腳本效果——排進該隊員自己的連線序列執行（warp／經驗／道具），結果照一般 cm 送包流程送給對方。
@@ -2541,6 +2543,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (action.Kind == NpcPartyActionKind.Warp)
         {
             _sessionCommands.Warp(action.CharacterId, action.MapId, action.Portal);
+            return Task.CompletedTask;
+        }
+
+        // P199：setPartyBossLog——隊員連線序列內寫入。
+        if (action.Kind == NpcPartyActionKind.BossLog)
+        {
+            _sessionCommands.TryPost(action.CharacterId, _ =>
+            {
+                if (_remotePlayers.TryGetValue(action.CharacterId, out var member) && action.Text is { } bossId)
+                {
+                    member.Player.SetBossLog(bossId, DateTimeOffset.UtcNow);
+                }
+
+                return Task.CompletedTask;
+            });
             return Task.CompletedTask;
         }
 
@@ -4032,6 +4049,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 RunEventHook(() => _eventWorld?.SpawnMonster(mapId, monsterId, x, y));
             }
+        }
+
+        // P199：resetMap（resetFully：清怪重生）。
+        foreach (var resetMapId in ctx.PendingMapResets)
+        {
+            RunEventHook(() => _eventWorld?.ResetMap(resetMapId));
         }
 
         // P196：genericGuildMessage／gainGP（寫入公會，通知線上成員 updateGP）。

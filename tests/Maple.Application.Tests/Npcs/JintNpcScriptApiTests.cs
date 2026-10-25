@@ -542,6 +542,46 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.True(pet.Expiration > DateTimeOffset.UtcNow.AddDays(44).ToUnixTimeMilliseconds());
     }
 
+    [Fact]
+    public async Task Script_MiscApis_RemoveSlotAddHpResetMapPartyBossLog()
+    {
+        // P199：removeSlot、addHP（夾限）、isCash、resetMap、partyMembersInMap、setPartyBossLog（自己直接寫、隊友排動作）、getChannelNumber。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999983.js"), """
+            function start() {
+                cm.removeSlot(4, 1, 2);
+                cm.addHP(-9999);
+                cm.resetMap(280030000);
+                cm.setPartyBossLog("ZAK");
+                cm.sendOk(cm.isCash(5000000) + "/" + cm.isCash(2000000) + "/" + cm.partyMembersInMap() + "/" + cm.getChannelNumber() + "/" + cm.isPlayerInstance());
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var parties = new Maple.Application.Parties.InMemoryPartyRegistry();
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30, MapId = 100000000 }, new Position(0, 0, 0, 0));
+        player.Character.Stats.MaxHp = 500;
+        player.Character.Stats.Hp = 300;
+        player.Inventory.By(InventoryType.Etc).Put(new Item { ItemId = 4000000, Slot = 1, Quantity = 5 });
+        var created = parties.CreateParty(Maple.Core.Parties.PartyMember.FromCharacter(player.Character, channelIndex: 0));
+        parties.JoinParty(created.Party!.Id, Maple.Core.Parties.PartyMember.FromCharacter(new Character { Id = 2, Name = "Mate", MapId = 100000000 }, channelIndex: 0));
+        var ctx = new NpcContext(9999983, player, new QuestService(new EmptyQuestCatalog()), parties: parties, playersOnMap: _ => [1, 2, 3], channelNumber: 3);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        var actions = new List<NpcPartyAction>();
+        IReadOnlyList<int>? resets = null;
+        var convo = new NpcConversation(9999983, factory.TryCreate(9999983, ctx)!, ctx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (_, _) => Task.CompletedTask,
+            sendPartyAction: (a, _) => { actions.Add(a); return Task.CompletedTask; },
+            applyWorldEffects: (c, _) => { resets = c.PendingMapResets.ToArray(); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal("true/false/2/3/false", Assert.Single(dialogs).Text);
+        Assert.Equal((short)3, player.Inventory.By(InventoryType.Etc).Get(1)!.Quantity);
+        Assert.Equal((short)0, player.Character.Stats.Hp);
+        Assert.Equal([280030000], resets);
+        Assert.Equal(1, player.GetBossLog("ZAK", DateTimeOffset.UtcNow));
+        Assert.Equal(new NpcPartyAction(NpcPartyActionKind.BossLog, 2, Text: "ZAK"), Assert.Single(actions));
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

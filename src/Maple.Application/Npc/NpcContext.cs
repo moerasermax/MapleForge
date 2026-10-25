@@ -82,8 +82,12 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         int expRate = 1,
         Maple.Application.Squads.SquadRegistry? squads = null,
         Maple.Application.Text.WzStringCatalog? strings = null,
-        Func<int, int>? guildPointsOf = null)
+        Func<int, int>? guildPointsOf = null,
+        Func<int, bool>? isCash = null,
+        int channelNumber = 1)
     {
+        _isCash = isCash ?? (static id => id / 1_000_000 == 5);
+        _channelNumber = channelNumber;
         _guildPointsOf = guildPointsOf ?? (static _ => 0);
         _strings = strings;
         _squads = squads;
@@ -159,6 +163,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingEnvironmentClock = null;
         _pendingGuildPoints = 0;
         _pendingGuildMessages.Clear();
+        _pendingMapResets.Clear();
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -1123,4 +1128,78 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _player.FlushInventory();
         EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success, gainedItems: [added]));
     }
+
+    // ── P199：雜項 ───────────────────────────────────────────────────────────────────────
+    private readonly Func<int, bool> _isCash;
+    private readonly int _channelNumber;
+    private readonly List<int> _pendingMapResets = new();
+
+    /// <summary>P199：resetMap(mapId)（呼叫端以事件世界 resetFully）。</summary>
+    public IReadOnlyList<int> PendingMapResets => _pendingMapResets;
+
+    /// <summary>Java removeSlot(invType, slot, qty)：removeFromSlot(..., fromDrop: true)。</summary>
+    public void RemoveSlot(int inventoryType, int slot, int quantity)
+    {
+        if (!Maple.Core.Inventory.InventoryTypes.IsValid((byte)inventoryType))
+        {
+            return;
+        }
+
+        var type = (Maple.Core.Inventory.InventoryType)inventoryType;
+        if (_player.Inventory.By(type).Get((short)slot) is not { } item
+            || !_player.TryConsumeInventoryItem(type, (short)slot, item.ItemId, (short)Math.Min(quantity, item.Quantity), out var mutation)
+            || mutation is null)
+        {
+            return;
+        }
+
+        _player.FlushInventory();
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success, inventoryMutations: [QuestService.ToQuestMutation(mutation)]));
+    }
+
+    /// <summary>Java addHP(delta)：HP 夾在 0～最大 HP，送 HP 更新。</summary>
+    public void AddHp(int delta)
+    {
+        var stats = _player.Character.Stats;
+        stats.Hp = (short)Math.Clamp(stats.Hp + delta, 0, _player.MaxHp);
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success)
+        {
+            StatUpdates = [new Maple.Core.World.PlayerStatUpdate(Maple.Core.World.PlayerStatKind.Hp, stats.Hp)],
+        });
+    }
+
+    /// <summary>Java isCash(itemId)：道具 info/cash。</summary>
+    public bool IsCash(int itemId) => _isCash(itemId);
+
+    public void ResetMap(int mapId) => _pendingMapResets.Add(mapId);
+
+    /// <summary>Java partyMembersInMap：本圖與自己同隊的人數（含自己；沒有隊伍時 Java 比對 null==null 會算全圖無隊者，這裡照抄）。</summary>
+    public int PartyMembersInMap()
+    {
+        var myParty = _parties?.GetPartyForCharacter(_player.Character.Id)?.Id;
+        return _playersOnMap(_player.Character.MapId).Count(id => _parties?.GetPartyForCharacter(id)?.Id == myParty);
+    }
+
+    /// <summary>Java setPartyBossLog(bossId)：隊伍中在線者各自 setBossLog（排進各自連線）。</summary>
+    public void SetPartyBossLog(string bossId)
+    {
+        if (_parties?.GetPartyForCharacter(_player.Character.Id) is not { } party)
+        {
+            return;
+        }
+
+        foreach (var member in party.Members.Where(static m => m.IsOnline))
+        {
+            if (member.CharacterId == _player.Character.Id)
+            {
+                SetBossLog(bossId);
+            }
+            else
+            {
+                _pendingPartyActions.Add(new NpcPartyAction(NpcPartyActionKind.BossLog, member.CharacterId, Text: bossId));
+            }
+        }
+    }
+
+    public int GetChannelNumber() => _channelNumber;
 }

@@ -86,9 +86,12 @@ public enum NpcPartyActionKind
     Warp,
     Exp,
     Items,
+
+    /// <summary>P199：setPartyBossLog（Text = bossId）。</summary>
+    BossLog,
 }
 
 /// <summary>
 /// <paramref name="CharacterId"/> 為目標隊員；Warp：(MapId, Portal)；Exp：Amount（已乘倍率）；Items：(ItemId, Quantity, RemoveAll)。
 /// </summary>
-public sealed record NpcPartyAction(NpcPartyActionKind Kind, int CharacterId, int MapId = 0, int Portal = 0, int Amount = 0, int ItemId = 0, int Quantity = 0, bool RemoveAll = false);
+public sealed record NpcPartyAction(NpcPartyActionKind Kind, int CharacterId, int MapId = 0, int Portal = 0, int Amount = 0, int ItemId = 0, int Quantity = 0, bool RemoveAll = false, string? Text = null);

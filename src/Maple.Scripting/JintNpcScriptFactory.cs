@@ -340,6 +340,16 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public string getName() => _cm.GetName();
         public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
 
+        // ── P199：雜項 ─────────────────────────────────────────────────────────────────
+        public void removeSlot(int invType, int slot, int quantity) => _cm.RemoveSlot(invType, slot, quantity);
+        public void addHP(int delta) => _cm.AddHp(delta);
+        public bool isCash(int itemId) => _cm.IsCash(itemId);
+        public void resetMap(int mapId) => _cm.ResetMap(mapId);
+        public int partyMembersInMap() => _cm.PartyMembersInMap();
+        public void setPartyBossLog(string bossId) => _cm.SetPartyBossLog(bossId);
+        public int getChannelNumber() => _cm.GetChannelNumber();
+        public bool isPlayerInstance() => _events?.GetEventInstance(_cm.GetCharacterId()) is not null;
+
         // ── P197 ───────────────────────────────────────────────────────────────────────
         public void gainPet(int itemId, string name, int level, int closeness, int fullness) => _cm.GainPet(itemId, name, level, closeness, fullness);
         public void gainPet(int itemId, string name, int level, int closeness, int fullness, double period) => _cm.GainPet(itemId, name, level, closeness, fullness);

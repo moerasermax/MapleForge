@@ -204,6 +204,15 @@ public interface INpcScriptContext
     void GainExpR(int gain) { }
     int GetMonsterCount(int mapId) => 0;
 
+    // ── P199：雜項 ──────────────────────────────────────────────────────────────────
+    void RemoveSlot(int inventoryType, int slot, int quantity) { }
+    void AddHp(int delta) { }
+    bool IsCash(int itemId) => false;
+    void ResetMap(int mapId) { }
+    int PartyMembersInMap() => 0;
+    void SetPartyBossLog(string bossId) { }
+    int GetChannelNumber() => 1;
+
     // ── P197 ────────────────────────────────────────────────────────────────────────
     void GainPet(int itemId, string name, int level, int closeness, int fullness) { }
 
