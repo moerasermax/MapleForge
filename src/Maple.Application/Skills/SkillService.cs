@@ -14,6 +14,8 @@ public enum SkillCastStatus
     OnCooldown,
     NotEnoughHp,
     NotEnoughMp,
+    /// <summary>未學／等級不符的武陵或金字塔技能在其專屬地圖外施放（P106）。</summary>
+    OutsideEventMap,
 }
 
 public enum CancelBuffStatus
@@ -78,6 +80,8 @@ public sealed class SkillService
 
     /// <summary>拳霸「時間置換」（Java <c>isTimeLeap()</c>：<c>sourceid == 5121010</c>）。</summary>
     public const int TimeLeapSkillId = 5121010;
+    private const int MulungDojoMapGroup = 92502;
+    private const int PyramidMapGroup = 92602;
 
     private readonly ISkillCatalog _skills;
 
@@ -101,18 +105,27 @@ public sealed class SkillService
             return new SkillCastResult(SkillCastStatus.UnknownSkill, skillId, null, null, null);
         }
 
+        // P106：對照 Java PlayerHandler.SpecialMove——未學或等級不符時，只有武陵／金字塔技能可放行，
+        // 但必須在其專屬地圖（武陵道場 92502xxxx、金字塔 92602xxxx）。
         var serverLevel = player.GetSkillLevel(skillId);
-        if (serverLevel <= 0)
+        if (serverLevel <= 0 || serverLevel != clientSkillLevel)
         {
-            return new SkillCastResult(SkillCastStatus.SkillNotLearned, skillId, skill, null, null);
+            if (!IsMulungSkill(skillId) && !IsPyramidSkill(skillId))
+            {
+                var rejected = serverLevel <= 0 ? SkillCastStatus.SkillNotLearned : SkillCastStatus.LevelMismatch;
+                return new SkillCastResult(rejected, skillId, skill, null, null);
+            }
+
+            var requiredMapGroup = IsMulungSkill(skillId) ? MulungDojoMapGroup : PyramidMapGroup;
+            if (player.Character.MapId / 10000 != requiredMapGroup)
+            {
+                return new SkillCastResult(SkillCastStatus.OutsideEventMap, skillId, skill, null, null);
+            }
         }
 
-        if (serverLevel != clientSkillLevel)
-        {
-            return new SkillCastResult(SkillCastStatus.LevelMismatch, skillId, skill, null, null);
-        }
-
-        var effect = skill.GetEffect(serverLevel);
+        // P106：效果等級取 getLinkedSkill 對應後的技能等級（Java skill.getEffect(getSkillLevel(getLinkedSkill(id)))；
+        // 等級 0 時 GetEffect 回第 1 級，與 Java Skill.getEffect 相同）。
+        var effect = skill.GetEffect(player.GetSkillLevel(GetLinkedSkillId(skillId)));
         if (effect is null)
         {
             return new SkillCastResult(SkillCastStatus.NoEffect, skillId, skill, null, null);

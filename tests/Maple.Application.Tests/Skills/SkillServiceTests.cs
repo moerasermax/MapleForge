@@ -226,6 +226,80 @@ public sealed class SkillServiceTests
         Assert.Null(service.TryCheckBerserk(unlearned, DateTimeOffset.UnixEpoch));
     }
 
+    // ── P106：對照 Java PlayerHandler.SpecialMove 的武陵/金字塔免學與 getLinkedSkill 效果等級 ──
+
+    [Theory]
+    [InlineData(1009, 925020100)]      // 武陵技能，武陵道場
+    [InlineData(10001020, 926020000)]  // 金字塔技能，金字塔
+    public void Cast_UnlearnedEventSkill_InsideEventMap_UsesLevelOneEffect(int skillId, int mapId)
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = mapId;
+        var service = new SkillService(new InMemorySkillCatalog(new[] { EventSkill(skillId) }));
+
+        var result = service.Cast(player, skillId, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(SkillCastStatus.Success, result.Status);
+        Assert.Equal((byte)1, result.Effect!.Level);
+    }
+
+    [Theory]
+    [InlineData(1009, 926020000)]      // 武陵技能在金字塔
+    [InlineData(1020, 925020100)]      // 金字塔技能在武陵道場
+    [InlineData(1009, 100000000)]      // 一般地圖
+    public void Cast_UnlearnedEventSkill_OutsideEventMap_IsRejected(int skillId, int mapId)
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = mapId;
+        var service = new SkillService(new InMemorySkillCatalog(new[] { EventSkill(skillId) }));
+
+        var result = service.Cast(player, skillId, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(SkillCastStatus.OutsideEventMap, result.Status);
+        Assert.Null(result.Effect);
+    }
+
+    [Fact]
+    public void Cast_UnlearnedNormalSkill_InsideEventMap_StillRejected()
+    {
+        var player = MakePlayer(mp: 50);
+        player.Character.MapId = 925020100;
+        var service = new SkillService(new InMemorySkillCatalog(new[] { MagicGuardSkill() }));
+
+        var result = service.Cast(player, 2001002, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(SkillCastStatus.SkillNotLearned, result.Status);
+    }
+
+    [Fact]
+    public void Cast_LinkedSkill_EffectLevelFollowsBaseSkill()
+    {
+        // 4321001 → getLinkedSkill → 4321000：等級驗證用 4321001 本身，效果等級取 4321000 的等級。
+        var player = MakePlayer(mp: 50);
+        player.ChangeSkillLevel(4321001, level: 1, masterLevel: 0);
+        player.ChangeSkillLevel(4321000, level: 3, masterLevel: 0);
+        var skill = new MapleSkill
+        {
+            Id = 4321001,
+            Effects = Enumerable.Range(1, 3)
+                .Select(level => new MapleStatEffect { SourceId = 4321001, Level = (byte)level })
+                .ToArray(),
+        };
+        var service = new SkillService(new InMemorySkillCatalog(new[] { skill }));
+
+        var result = service.Cast(player, 4321001, clientSkillLevel: 1, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(SkillCastStatus.Success, result.Status);
+        Assert.Equal((byte)3, result.Effect!.Level);
+    }
+
+    private static MapleSkill EventSkill(int skillId)
+        => new()
+        {
+            Id = skillId,
+            Effects = new[] { new MapleStatEffect { SourceId = skillId, Level = 1 } },
+        };
+
     private static MapleSkill AttackCooldownSkill(int skillId, int seconds)
         => new()
         {
