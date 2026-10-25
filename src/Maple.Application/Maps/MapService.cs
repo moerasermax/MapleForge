@@ -138,7 +138,8 @@ public sealed class MapService
             OnlyNormalAttack: GetInt(info, "onlyNormalAttack", 0) > 0,
             Eva: GetInt(info, "eva", 0),
             MagicDefense: GetInt(info, "MDDamage", 0),
-            Undead: GetInt(info, "undead", 0) > 0 || monsterId is 9700004 or 9700009 or 9700010 or 9700011);
+            Undead: GetInt(info, "undead", 0) > 0 || monsterId is 9700004 or 9700009 or 9700010 or 9700011,
+            Revives: LoadRevives(info["revive"]));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -322,6 +323,27 @@ public sealed class MapService
         }
 
         return footholds;
+    }
+
+    /// <summary>P148：對照 Java <c>MapleLifeFactory:169-176</c>：info/revive 每個子節點的 int（依子節點序號排序）。</summary>
+    private static IReadOnlyList<int>? LoadRevives(IDataNode? revive)
+    {
+        if (revive is null)
+        {
+            return null;
+        }
+
+        var ids = revive.Children
+            .OrderBy(static c => int.TryParse(c.Key, out var index) ? index : int.MaxValue)
+            .Select(static c => c.Value.Value switch
+            {
+                int i => i,
+                string text when int.TryParse(text, out var parsed) => parsed,
+                _ => 0,
+            })
+            .Where(static id => id > 0)
+            .ToArray();
+        return ids.Length > 0 ? ids : null;
     }
 
     /// <summary>P130：對照 Java <c>MapleLifeFactory:161-166</c>：banMsg、banMap/0/field（預設 -1）、banMap/0/portal（預設 sp）。</summary>

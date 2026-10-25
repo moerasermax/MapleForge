@@ -1,5 +1,6 @@
 using Maple.Application.Maps;
 using Maple.Application.Drops;
+using Maple.Core.Maps;
 using Maple.Core.Skills;
 using Maple.Core.World;
 
@@ -43,7 +44,9 @@ public sealed record CombatMobHit(
     // P143：吸魔成功時的被動技能 ID（呼叫端送 showOwnBuffEffect／showBuffeffect）；0 = 未觸發。
     int MpEaterSkillId = 0,
     // P144：偷錢掉出的楓幣（呼叫端廣播 DROP_ITEM_FROM_MAPOBJECT）。
-    IReadOnlyList<MapDrop>? PickPocketDrops = null);
+    IReadOnlyList<MapDrop>? PickPocketDrops = null,
+    // P148：死亡後生成的 revive 怪物（呼叫端廣播 SPAWN_MONSTER(link = 本怪 oid) 並把控制權交給攻擊者）。
+    IReadOnlyList<Mob>? Revived = null);
 
 /// <summary>
 /// 怪物血條顯示所需快照（在戰鬥鎖內擷取）：顯示類型、血量、王血條顏色、最近攻擊者。
@@ -70,7 +73,8 @@ public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits, bool A
     public bool AnyKilled => Hits.Any(static h => h.Killed);
 }
 
-public sealed record CombatMobKillResult(int ObjectId, int MonsterId, byte Animation, bool Killed);
+/// <param name="Revived">P148：死亡後生成的 revive 怪物（呼叫端廣播 SPAWN_MONSTER，link = 死亡怪物 oid）。</param>
+public sealed record CombatMobKillResult(int ObjectId, int MonsterId, byte Animation, bool Killed, IReadOnlyList<Mob>? Revived = null);
 
 /// <summary>戰鬥用例：建立場上怪物、套用攻擊傷害、處理怪物死亡生命週期。</summary>
 public sealed class CombatService
@@ -317,7 +321,8 @@ public sealed class CombatService
                 appliedStatuses,
                 ApplyReflect(mob, attacker, attack.IsMagic, totalDamage),
                 mpEaterSkillId,
-                pickPocketDrops));
+                pickPocketDrops,
+                result.Killed ? SpawnRevives(field, mob, attacker.Character.Id) : null));
 
             if (totalDamage > 0 && !attack.IsMagic && !attack.FromSummon)
             {
@@ -606,7 +611,7 @@ public sealed class CombatService
     private bool MakeChanceResult(int prop) => prop == 100 || _random.Next(99) < prop;
 
     /// <summary>Kill a mob without EXP/drop rewards. Used by Java MonsterBomb self-destruction path.</summary>
-    public CombatMobKillResult KillMobWithoutRewards(FieldInstance field, int mobObjectId, byte animation)
+    public CombatMobKillResult KillMobWithoutRewards(FieldInstance field, int mobObjectId, byte animation, int controllerId = 0)
     {
         ArgumentNullException.ThrowIfNull(field);
 
@@ -617,7 +622,55 @@ public sealed class CombatService
 
         field.Remove(mob.ObjectId);
         NotifySpawnPointKilled(field, mob);
-        return new CombatMobKillResult(mob.ObjectId, mob.Definition.MonsterId, animation, Killed: true);
+        return new CombatMobKillResult(mob.ObjectId, mob.Definition.MonsterId, animation, Killed: true, SpawnRevives(field, mob, controllerId));
+    }
+
+    /// <summary>
+    /// P148：對照 Java <c>MapleMonster.spawnRevives</c> 的 default 分支 → <c>map.spawnRevives(mob, oid)</c>：在死亡位置依序生成
+    /// <c>info/revive</c> 的怪物（link = 死亡怪物 oid），控制者交給 <paramref name="controllerId"/>（Java updateMonsterController）。
+    /// 暗黑龍王／皮卡啾的海綿怪分支（8810118~8810121、8810026、8810130、8820008~8820013）尚未移植，不生成。
+    /// 無 revive 回 null。呼叫端持有 field 鎖。
+    /// </summary>
+    public IReadOnlyList<Mob>? SpawnRevives(FieldInstance field, Mob dead, int controllerId)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(dead);
+
+        if (dead.Stats.Revives is not { Count: > 0 } revives
+            || dead.Definition.MonsterId is >= 8810118 and <= 8810121 or 8810026 or 8810130 or >= 8820008 and <= 8820013)
+        {
+            return null;
+        }
+
+        var spawned = new List<Mob>(revives.Count);
+        foreach (var monsterId in revives)
+        {
+            if (_maps.LoadMobStats(monsterId) is not { } stats)
+            {
+                continue;
+            }
+
+            var mob = new Mob(
+                new MapMonster
+                {
+                    MonsterId = monsterId,
+                    X = dead.Position.X,
+                    Y = dead.Position.Y,
+                    Cy = dead.Position.Y,
+                    Fh = dead.Position.Foothold,
+                    Team = -1,
+                },
+                stats,
+                AllocateNextMobObjectId(field))
+            {
+                ControllerId = controllerId,
+                LinkObjectId = dead.ObjectId,
+            };
+            field.Add(mob);
+            spawned.Add(mob);
+        }
+
+        return spawned.Count > 0 ? spawned : null;
     }
 
     /// <summary>

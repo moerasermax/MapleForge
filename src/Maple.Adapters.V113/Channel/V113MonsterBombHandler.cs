@@ -47,17 +47,23 @@ internal static class V113MonsterBombHandler
                 return EnableActionsOnly(request);
             }
 
-            var killed = combat.KillMobWithoutRewards(field, request.MobObjectId, (byte)mob.Stats.SelfDestructAnimation);
+            var killed = combat.KillMobWithoutRewards(field, request.MobObjectId, (byte)mob.Stats.SelfDestructAnimation, player.Character.Id);
             if (!killed.Killed)
             {
                 return EnableActionsOnly(request);
             }
 
+            // P148：Java killMonster → killBy → spawnRevives（全圖 SPAWN_MONSTER link=死亡 oid；控制者收 CONTROL）。
+            var revived = killed.Revived ?? [];
             return new V113MonsterBombResult(
                 request,
                 Killed: true,
-                SelfPackets: Array.Empty<byte[]>(),
-                MapPackets: [V113CombatPackets.KillMonster(killed.ObjectId, killed.Animation)]);
+                SelfPackets: [.. revived.Select(static r => V113CombatPackets.SpawnMonsterControl(r, newSpawn: true, aggro: false))],
+                MapPackets:
+                [
+                    V113CombatPackets.KillMonster(killed.ObjectId, killed.Animation),
+                    .. revived.Select(static r => V113CombatPackets.SpawnMonster(r, spawnType: -2, link: r.LinkObjectId)),
+                ]);
         }
     }
 

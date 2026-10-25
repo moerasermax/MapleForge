@@ -38,7 +38,9 @@ public sealed record MobStats(
     int Eva = 0,
     int MagicDefense = 0,
     // P146：WZ info/undead（Java setUndead：undead &gt; 0 或 9700004、9700009~9700011）。
-    bool Undead = false)
+    bool Undead = false,
+    // P148：WZ info/revive（死亡後生成的怪物模板 id，Java MapleMonsterStats.getRevives）。
+    IReadOnlyList<int>? Revives = null)
 {
     /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
     public ElementalEffectiveness GetEffectiveness(Element element)
@@ -361,6 +363,9 @@ public sealed class Mob : IFieldObject
 
     /// <summary>P122：扣怪物 MP（Java <c>setMp(getMp() - mpCon)</c>，負值夾 0）。</summary>
     public void ConsumeMp(int amount) => Mp = Math.Max(0, Mp - amount);
+
+    /// <summary>P148：Java <c>setLinkOid</c>（revive 生成時 = 死亡怪物 oid；SPAWN_MONSTER 的 link 欄）。</summary>
+    public int LinkObjectId { get; init; }
 
     /// <summary>P143：Java <c>lastAbsorbMP</c>（吸魔時間）。</summary>
     public DateTimeOffset? LastAbsorbMpAt { get; private set; }

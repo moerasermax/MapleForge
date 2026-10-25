@@ -4125,6 +4125,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(hit.ObjectId), ct);
                 await NotifyControllerStoppedAsync(hit.ControllerId, hit.ObjectId, player, session, ct);
 
+                // P148：spawnRevives → 全圖 SPAWN_MONSTER(-2, link = 死亡 oid)，攻擊者接手控制。
+                foreach (var revived in hit.Revived ?? [])
+                {
+                    await BroadcastPacketToMapAsync(
+                        player.Character,
+                        session,
+                        V113CombatPackets.SpawnMonster(revived, spawnType: -2, link: revived.LinkObjectId),
+                        ct);
+                    await session.SendAsync(V113CombatPackets.SpawnMonsterControl(revived, newSpawn: true, aggro: false), ct);
+                }
+
                 if (hit.Rewards is { } rewards)
                 {
                     await SendMobKillRewardsAsync(player, session, rewards, ct);
