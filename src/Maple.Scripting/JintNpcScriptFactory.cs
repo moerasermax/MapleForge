@@ -340,6 +340,13 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public string getName() => _cm.GetName();
         public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
 
+        // ── P200 ───────────────────────────────────────────────────────────────────────
+        public void useItem(int itemId) => _cm.UseItem(itemId);
+        public void cancelItem(int itemId) => _cm.CancelItem(itemId);
+        public int getMorphState() => _cm.GetMorphState();
+        public bool isAllReactorState(int reactorId, int state) => _cm.IsAllReactorState(reactorId, state);
+        public PartyMemberList? getPartyMembers() => _cm.GetOnlinePartyMembers() is { } members ? new(members.Select(static m => new PartyMemberFacade(m)).ToArray()) : null;
+
         // ── P199：雜項 ─────────────────────────────────────────────────────────────────
         public void removeSlot(int invType, int slot, int quantity) => _cm.RemoveSlot(invType, slot, quantity);
         public void addHP(int delta) => _cm.AddHp(delta);

@@ -2286,6 +2286,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 NpcUiEffectKind.EvanTutorial => session.SendAsync(V113UiPackets.EvanTutorial(effect.Text), c),
                 NpcUiEffectKind.IntroDisableUi => session.SendAsync(V113UiPackets.IntroDisableUi(effect.A != 0), c),
                 NpcUiEffectKind.IntroLock => session.SendAsync(V113UiPackets.IntroLock(effect.A != 0), c),
+                NpcUiEffectKind.StatusMessage => session.SendAsync(V113UiPackets.StatusMessage(effect.A), c),
                 _ => BroadcastPacketToMapAsync(player.Character, session, V113BroadcastPackets.ServerNotice(effect.A, effect.Text), c),
             });
 
@@ -2528,7 +2529,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             strings: _strings,
             guildPointsOf: guildId => _guildService.GetGuildAsync(guildId).GetAwaiter().GetResult()?.GuildPoints ?? 0,
             isCash: _equipTemplates is { } cashTemplates ? cashTemplates.IsCash : null,
-            channelNumber: _options.ChannelIndex + 1);
+            channelNumber: _options.ChannelIndex + 1,
+            reactorsOf: FieldReactorStates);
 
     /// <summary>
     /// P176：跨隊員腳本效果——排進該隊員自己的連線序列執行（warp／經驗／道具），結果照一般 cm 送包流程送給對方。
@@ -2613,6 +2615,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     }
 
     /// <summary>P175：腳本查詢反應堆狀態（名稱不分大小寫，同 Java equalsIgnoreCase）；找不到回 -1。</summary>
+    /// <summary>P200：本圖所有反應堆（ID、狀態）。</summary>
+    private IReadOnlyList<(int ReactorId, byte State)> FieldReactorStates(int mapId)
+    {
+        var field = _fieldRegistry.GetOrCreate(mapId, out _);
+        lock (field)
+        {
+            return field.Objects.OfType<Reactor>().Select(static r => (r.ReactorId, r.State)).ToArray();
+        }
+    }
+
     private int FieldReactorState(int mapId, string name)
     {
         var field = _fieldRegistry.GetOrCreate(mapId, out _);
@@ -4048,6 +4060,20 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             for (var i = 0; i < quantity; i++)
             {
                 RunEventHook(() => _eventWorld?.SpawnMonster(mapId, monsterId, x, y));
+            }
+        }
+
+        // P200：cancelItem——CANCEL_BUFF 與連帶效果。
+        if (ctx.PendingBuffCancellations.Count > 0 && _onlinePlayers.FindById(player.Character.Id) is { } canceller)
+        {
+            foreach (var cancellation in ctx.PendingBuffCancellations)
+            {
+                await canceller.SendPacket(V113SkillPackets.CancelBuff(cancellation.Stats), ct);
+            }
+
+            if (_remotePlayers.TryGetValue(player.Character.Id, out var cancellerEntry) && _fieldRegistry.GetOrCreate(player.Character.MapId, out _) is { } cancelField)
+            {
+                await ApplyBuffCancellationSideEffectsAsync(player, cancelField, ctx.PendingBuffCancellations, cancellerEntry.Session, ct);
             }
         }
 

@@ -67,6 +67,16 @@ public static class V113UiPackets
         return w.ToArray();
     }
 
+    /// <summary>P200：UIPacket.getStatusMsg(itemId)：SHOW_STATUS_INFO(0x25) [7][int itemId]。</summary>
+    public static byte[] StatusMessage(int itemId)
+    {
+        var w = new PacketWriter(7);
+        w.WriteShort(0x25);
+        w.WriteByte(7);
+        w.WriteInt(itemId);
+        return w.ToArray();
+    }
+
     public static byte[] IntroLock(bool enable) => Flag(CygnusIntroLockOp, enable);
 
     public static byte[] IntroDisableUi(bool enable) => Flag(CygnusIntroDisableUiOp, enable);

@@ -582,6 +582,44 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal(new NpcPartyAction(NpcPartyActionKind.BossLog, 2, Text: "ZAK"), Assert.Single(actions));
     }
 
+    [Fact]
+    public async Task Script_UseCancelItem_MorphReactorStateAndPartyMembers()
+    {
+        // P200：useItem（BuffItemId＋getStatusMsg）、cancelItem（來源 −itemId）、getMorphState、isAllReactorState、getPartyMembers。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999982.js"), """
+            function start() {
+                cm.useItem(2022109);
+                var morph = cm.getMorphState();
+                cm.cancelItem(2210000);
+                var members = cm.getPartyMembers();
+                cm.sendOk(morph + "/" + cm.getMorphState() + "/" + cm.isAllReactorState(2001000, 1) + "/" + cm.isAllReactorState(2001000, 0) + "/" + (members == null ? "none" : members.size()));
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30, MapId = 100000000 }, new Position(0, 0, 0, 0));
+        var now = DateTimeOffset.UtcNow;
+        player.ApplyBuffStats(new Maple.Core.Skills.MapleStatEffect { SourceId = -2210000, IsOverTime = true, DurationMilliseconds = 60000, Statups = [new Maple.Core.Skills.BuffStatValue(Maple.Core.Skills.MapleBuffStat.MORPH, 1000)] }, now);
+        var ctx = new NpcContext(9999982, player, new QuestService(new EmptyQuestCatalog()), reactorsOf: _ => [(2001000, 0), (2001000, 1)]);
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var dialogs = new List<NpcDialog>();
+        var effects = new List<NpcUiEffect>();
+        int? buffItem = null;
+        var cancelled = 0;
+        var convo = new NpcConversation(9999982, factory.TryCreate(9999982, ctx)!, ctx, (d, _) => { dialogs.Add(d); return Task.CompletedTask; }, (_, _) => Task.CompletedTask,
+            sendQuestResult: (r, _) => { buffItem ??= r.BuffItemId; return Task.CompletedTask; },
+            sendUiEffect: (e, _) => { effects.Add(e); return Task.CompletedTask; },
+            applyWorldEffects: (c, _) => { cancelled = c.PendingBuffCancellations.Count; return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        // 取消前是道具 ID、取消後 −1；isAllReactorState 取最後一個同 ID 反應堆。
+        Assert.Equal("2210000/-1/true/false/none", Assert.Single(dialogs).Text);
+        Assert.Equal(2022109, buffItem);
+        Assert.Equal(new NpcUiEffect(NpcUiEffectKind.StatusMessage, string.Empty, 2022109), Assert.Single(effects));
+        Assert.Equal(1, cancelled);
+        Assert.Null(player.GetBuffValue(Maple.Core.Skills.MapleBuffStat.MORPH));
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

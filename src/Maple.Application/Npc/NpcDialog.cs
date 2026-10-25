@@ -76,6 +76,9 @@ public enum NpcUiEffectKind
 
     /// <summary>P194：UIPacket.IntroLock(A != 0)。</summary>
     IntroLock,
+
+    /// <summary>P200：UIPacket.getStatusMsg(A = itemId)（SHOW_STATUS_INFO 7）。</summary>
+    StatusMessage,
 }
 
 public sealed record NpcUiEffect(NpcUiEffectKind Kind, string Text, int A = 0, int B = 0);

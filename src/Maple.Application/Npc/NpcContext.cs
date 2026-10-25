@@ -84,8 +84,10 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Maple.Application.Text.WzStringCatalog? strings = null,
         Func<int, int>? guildPointsOf = null,
         Func<int, bool>? isCash = null,
-        int channelNumber = 1)
+        int channelNumber = 1,
+        Func<int, IReadOnlyList<(int ReactorId, byte State)>>? reactorsOf = null)
     {
+        _reactorsOf = reactorsOf ?? (static _ => []);
         _isCash = isCash ?? (static id => id / 1_000_000 == 5);
         _channelNumber = channelNumber;
         _guildPointsOf = guildPointsOf ?? (static _ => 0);
@@ -164,6 +166,7 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         _pendingGuildPoints = 0;
         _pendingGuildMessages.Clear();
         _pendingMapResets.Clear();
+        _pendingBuffCancellations.Clear();
         _pendingWorldMessages.Clear();
         _pendingUiEffects.Clear();
     }
@@ -1202,4 +1205,44 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     }
 
     public int GetChannelNumber() => _channelNumber;
+
+    // ── P200 ───────────────────────────────────────────────────────────────────────────
+    private readonly Func<int, IReadOnlyList<(int ReactorId, byte State)>> _reactorsOf;
+    private readonly List<Maple.Core.Skills.PlayerBuffCancellation> _pendingBuffCancellations = new();
+
+    /// <summary>P200：cancelItem 取消的 buff（呼叫端送 CancelBuff 與連帶效果）。</summary>
+    public IReadOnlyList<Maple.Core.Skills.PlayerBuffCancellation> PendingBuffCancellations => _pendingBuffCancellations;
+
+    /// <summary>Java useItem(id)：getItemEffect(id).applyTo(chr)（不消耗）＋ getStatusMsg(id)。走任務結果的 BuffItemId 管道（P164）。</summary>
+    public void UseItem(int itemId)
+    {
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success) { BuffItemId = itemId });
+        _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.StatusMessage, string.Empty, itemId));
+    }
+
+    /// <summary>Java cancelItem(id)：cancelEffect(getItemEffect(id))——道具 buff 的來源 ID 為 −itemId（P164）。</summary>
+    public void CancelItem(int itemId) => _pendingBuffCancellations.AddRange(_player.CancelBuffBySource(-itemId));
+
+    /// <summary>Java getMorphState：生效中的變身效果來源 ID（道具為道具 ID），否則 −1。</summary>
+    public int GetMorphState()
+        => _player.ActiveBuffs.FirstOrDefault(static b => b.Stat == Maple.Core.Skills.MapleBuffStat.MORPH) is { } morph ? Math.Abs(morph.SourceId) : -1;
+
+    /// <summary>Java isAllReactorState(id, state)：本圖最後一個該 ID 反應堆的狀態是否等於 state（Java 迴圈覆寫 ret，照抄）。</summary>
+    public bool IsAllReactorState(int reactorId, int state)
+    {
+        var result = false;
+        foreach (var (id, current) in _reactorsOf(_player.Character.MapId))
+        {
+            if (id == reactorId)
+            {
+                result = current == state;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Java getPartyMembers：沒有隊伍 null，否則在線隊員。</summary>
+    public IReadOnlyList<Maple.Core.Parties.PartyMember>? GetOnlinePartyMembers()
+        => _parties?.GetPartyForCharacter(_player.Character.Id) is { } party ? party.Members.Where(static m => m.IsOnline).ToArray() : null;
 }

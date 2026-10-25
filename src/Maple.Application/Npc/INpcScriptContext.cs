@@ -204,6 +204,13 @@ public interface INpcScriptContext
     void GainExpR(int gain) { }
     int GetMonsterCount(int mapId) => 0;
 
+    // ── P200 ────────────────────────────────────────────────────────────────────────
+    void UseItem(int itemId) { }
+    void CancelItem(int itemId) { }
+    int GetMorphState() => -1;
+    bool IsAllReactorState(int reactorId, int state) => false;
+    IReadOnlyList<Maple.Core.Parties.PartyMember>? GetOnlinePartyMembers() => null;
+
     // ── P199：雜項 ──────────────────────────────────────────────────────────────────
     void RemoveSlot(int inventoryType, int slot, int quantity) { }
     void AddHp(int delta) { }
