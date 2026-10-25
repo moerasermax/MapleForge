@@ -146,6 +146,16 @@ public sealed partial class SkillService
     /// 變身（MORPH，Java 改用 Selfstat 註冊）、海盜衝刺類（giveForeignPirate）、騎寵（showMonsterRiding）另議，回 null。
     /// </summary>
     public static IReadOnlyList<BuffStatValue>? GetForeignBuffStats(MapleStatEffect effect)
+        => GetForeignBuffStatsCore(effect);
+
+    /// <summary>
+    /// P147：Java <c>applyBuffEffect</c> 走 givePirate／giveForeignPirate 的技能：極速領域 5121009／15111005、
+    /// 衝刺 5001005／15001003、龍捲風 4321000（僅技能）。
+    /// </summary>
+    public static bool IsPirateBuff(MapleStatEffect effect)
+        => effect.IsSkill && effect.SourceId is 5121009 or 15111005 or 5001005 or 4321000 or 15001003;
+
+    private static IReadOnlyList<BuffStatValue>? GetForeignBuffStatsCore(MapleStatEffect effect)
     {
         ArgumentNullException.ThrowIfNull(effect);
 

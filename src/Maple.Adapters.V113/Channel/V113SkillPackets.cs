@@ -103,6 +103,61 @@ internal static class V113SkillPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// P147：對照 Java <c>MaplePacketCreator.givePirate(statups, duration秒, skillid)</c>（衝刺／極速領域／龍捲風）：
+    /// <c>[GIVE_BUFF][mask][short 0]</c>，每個 stat <c>[int 值][long 技能][極速領域 6／其他 1 個 0][short 秒]</c>，
+    /// 結尾 <c>[short 極速領域 600／其他 0]</c>，非極速領域再加 <c>[byte 1]</c>。
+    /// </summary>
+    public static byte[] GivePirate(IReadOnlyList<BuffStatValue> statups, int durationSeconds, int skillId)
+    {
+        var infusion = IsSpeedInfusion(skillId);
+        var w = new PacketWriter(32 + statups.Count * 20);
+        w.WriteShort(GiveBuffOp);
+        WriteBuffMask(w, statups.Select(static s => s.Stat));
+        w.WriteShort(0);
+        foreach (var statup in statups)
+        {
+            w.WriteInt(statup.Value);
+            w.WriteLong(skillId);
+            w.WriteZeroBytes(infusion ? 6 : 1);
+            w.WriteShort((short)durationSeconds);
+        }
+
+        w.WriteShort((short)(infusion ? 600 : 0));
+        if (!infusion)
+        {
+            w.WriteByte(1);
+        }
+
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// P147：對照 Java <c>giveForeignPirate(statups, duration秒, cid, skillid)</c>：<c>[GIVE_FOREIGN_BUFF][int cid][mask][short 0]</c>，
+    /// 每個 stat <c>[int 值][long 技能][極速領域 7／其他 1 個 0][short 秒]</c>，結尾 <c>[short 極速領域 600／其他 0]</c>。
+    /// </summary>
+    public static byte[] GiveForeignPirate(IReadOnlyList<BuffStatValue> statups, int durationSeconds, int characterId, int skillId)
+    {
+        var infusion = IsSpeedInfusion(skillId);
+        var w = new PacketWriter(36 + statups.Count * 20);
+        w.WriteShort(GiveForeignBuffOp);
+        w.WriteInt(characterId);
+        WriteBuffMask(w, statups.Select(static s => s.Stat));
+        w.WriteShort(0);
+        foreach (var statup in statups)
+        {
+            w.WriteInt(statup.Value);
+            w.WriteLong(skillId);
+            w.WriteZeroBytes(infusion ? 7 : 1);
+            w.WriteShort((short)durationSeconds);
+        }
+
+        w.WriteShort((short)(infusion ? 600 : 0));
+        return w.ToArray();
+    }
+
+    private static bool IsSpeedInfusion(int skillId) => skillId is 5121009 or 15111005;
+
     public static byte[] CancelBuff(IReadOnlyList<MapleBuffStat> stats)
     {
         var w = new PacketWriter(24);
@@ -237,7 +292,7 @@ internal static class V113SkillMoveHandler
         var mpBefore = player.Mp;
         var result = skillService.Cast(player, request.SkillId, request.SkillLevel, now);
         var packet = result.Status == SkillCastStatus.Success && result.AppliedBuff is not null && result.Effect is not null
-            ? V113SkillPackets.GiveBuff(request.SkillId, result.AppliedBuff.DurationMilliseconds, result.AppliedBuff.Stats, result.Effect)
+            ? BuildGiveBuff(request.SkillId, result.AppliedBuff, result.Effect)
             : null;
 
         // 對照 Java PlayerHandler.SpecialMove：冷卻中被拒回 enableActions 解鎖客戶端；
@@ -266,6 +321,12 @@ internal static class V113SkillMoveHandler
 
         return new V113SkillHandleResult(request.SkillId, packet, result, null, cooldownPacket, statsPacket, request, resetPackets, mulungPacket);
     }
+
+    /// <summary>P147：海盜衝刺類用 givePirate（秒數 = localDuration / 1000），其餘一般 giveBuff。</summary>
+    internal static byte[] BuildGiveBuff(int skillId, PlayerBuffChange buff, MapleStatEffect effect)
+        => SkillService.IsPirateBuff(effect)
+            ? V113SkillPackets.GivePirate(buff.Stats, buff.DurationMilliseconds / 1000, skillId)
+            : V113SkillPackets.GiveBuff(skillId, buff.DurationMilliseconds, buff.Stats, effect);
 
     private static IEnumerable<PlayerStatUpdate> BuildCastStatUpdates(Player player, short mpBefore)
     {

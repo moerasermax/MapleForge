@@ -3130,14 +3130,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(handled.Packet, ct);
         }
 
-        // P139：Java applyBuffEffect 的 giveForeignBuff（同圖其他人看得到隱身／鬥氣／影分身等外觀）。
-        if (handled.Cast is { Status: SkillCastStatus.Success, AppliedBuff: not null, Effect: { } buffEffect }
-            && SkillService.GetForeignBuffStats(buffEffect) is { } foreignStats)
+        // P139：Java applyBuffEffect 的 giveForeignBuff（同圖其他人看得到隱身／鬥氣／影分身等外觀）；
+        // P147：海盜衝刺類改送 giveForeignPirate。
+        if (handled.Cast is { Status: SkillCastStatus.Success, AppliedBuff: { } appliedBuff, Effect: { } buffEffect }
+            && ForeignBuffPacket(player.Character.Id, buffEffect, appliedBuff) is { } foreignPacket)
         {
-            await BroadcastPacketToOthersAsync(
-                player.Character,
-                V113BuffItemPackets.GiveForeignBuff(player.Character.Id, foreignStats, isMorph: false),
-                ct);
+            await BroadcastPacketToOthersAsync(player.Character, foreignPacket, ct);
         }
 
         foreach (var resetPacket in handled.CooldownResetPackets ?? Array.Empty<byte[]>())
@@ -3879,13 +3877,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
             if (application.Buff is { } buff)
             {
-                await SendBestEffortAsync(entry, V113SkillPackets.GiveBuff(effect.SourceId, buff.DurationMilliseconds, buff.Stats, effect), ct);
-                if (SkillService.GetForeignBuffStats(effect) is { } foreign)
+                await SendBestEffortAsync(entry, V113SkillMoveHandler.BuildGiveBuff(effect.SourceId, buff, effect), ct);
+                if (ForeignBuffPacket(target.Character.Id, effect, buff) is { } foreignPacket)
                 {
-                    await SendAllBestEffortAsync(
-                        others,
-                        V113BuffItemPackets.GiveForeignBuff(target.Character.Id, foreign, isMorph: false),
-                        ct);
+                    await SendAllBestEffortAsync(others, foreignPacket, ct);
                 }
             }
 
@@ -3906,6 +3901,14 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await _partyHpSync.BroadcastIfChangedAsync(target, application.HpBefore, ct);
         }
     }
+
+    /// <summary>P139/P147：他人可見的 buff 封包——海盜衝刺類 giveForeignPirate，其餘依 <see cref="SkillService.GetForeignBuffStats"/>。</summary>
+    private static byte[]? ForeignBuffPacket(int characterId, MapleStatEffect effect, PlayerBuffChange buff)
+        => SkillService.IsPirateBuff(effect)
+            ? V113SkillPackets.GiveForeignPirate(buff.Stats, buff.DurationMilliseconds / 1000, characterId, effect.SourceId)
+            : SkillService.GetForeignBuffStats(effect) is { } foreign
+                ? V113BuffItemPackets.GiveForeignBuff(characterId, foreign, isMorph: false)
+                : null;
 
     private static async Task SendBestEffortAsync(MapPlayerEntry entry, byte[] packet, CancellationToken ct)
     {

@@ -1799,3 +1799,14 @@ REMOVE_MIST: writeShort(0x10D) writeInt(oid)
 - 技能 2111003／12111005（魔法攻擊尾段 applyTo，位置＝玩家）、14111006（遠程攻擊尾段，位置＝attack.position）、4221006／22161003（SPECIAL_MOVE，位置＝封包座標或玩家）。
 - SPAWN_MIST：type 欄＝`isPoisonMist != 0 ? 1 : 2`（煙霧彈 0 → 2；恢復光環 2 → 1）、ownerId＝角色 id、level＝擁有者技能等級、skillDelay＝8；範圍為技能 lt/rb 的 `calculateBoundingBox`。
 - 伺服器週期（首跳 2 秒、每 2.5 秒）：上毒霧對範圍內未中毒怪物擲 prop → APPLY_MONSTER_STATUS（POISON，持續＝霧總時間）；恢復光環對範圍內玩家擲 prop → 回 `x% × 目前最大 MP`，對該玩家 UPDATE_STATS(MP)。證據層級：Java source + focused tests；**unverified**。
+
+### 海盜衝刺類 buff：`GIVE_BUFF(0x1E)` 的 givePirate 變體／`GIVE_FOREIGN_BUFF(0xC0)` 的 giveForeignPirate（P147）
+
+技能 5001005／15001003（衝刺）、5121009／15111005（極速領域，infusion）、4321000 不用一般 giveBuff：
+
+```text
+givePirate:        [0x1E][mask 16B][short 0]{ [int 值][long 技能][infusion ? 6 : 1 個 0][short 秒] }×N [short infusion ? 600 : 0] [非 infusion：byte 1]
+giveForeignPirate: [0xC0][int cid][mask 16B][short 0]{ [int 值][long 技能][infusion ? 7 : 1 個 0][short 秒] }×N [short infusion ? 600 : 0]
+```
+
+證據層級：Java source（`MaplePacketCreator.givePirate:1697`／`giveForeignPirate:1716`）＋ Adapters focused tests；**unverified**。
