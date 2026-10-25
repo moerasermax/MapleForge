@@ -160,7 +160,56 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
                 Point: function (x, y) { this.x = x; this.y = y; this.getX = function () { return this.x; }; this.getY = function () { return this.y; }; },
                 Rectangle: function (x, y, w, h) { this.x = x; this.y = y; this.width = w; this.height = h; }
             },
-            util: {}
+            util: {},
+            sql: {}
+        };
+        // P201：java.util.Calendar（getInstance／get／set／getTimeInMillis；欄位常數同 Java；MONTH 0 起、DAY_OF_WEEK 1=週日、HOUR 為 12 小時制）
+        // 與 java.sql.Timestamp.valueOf("yyyy-MM-dd HH:mm:ss[.f]")。時區為伺服器本地時間（同 Java 預設時區）。
+        java.util.Calendar = {
+            ERA: 0, YEAR: 1, MONTH: 2, DATE: 5, DAY_OF_MONTH: 5, DAY_OF_YEAR: 6, DAY_OF_WEEK: 7, AM_PM: 9, HOUR: 10, HOUR_OF_DAY: 11, MINUTE: 12, SECOND: 13, MILLISECOND: 14,
+            getInstance: function () {
+                var d = new Date();
+                return {
+                    get: function (f) {
+                        switch (f) {
+                            case 1: return d.getFullYear();
+                            case 2: return d.getMonth();
+                            case 5: return d.getDate();
+                            case 7: return d.getDay() + 1;
+                            case 9: return d.getHours() >= 12 ? 1 : 0;
+                            case 10: return d.getHours() % 12;
+                            case 11: return d.getHours();
+                            case 12: return d.getMinutes();
+                            case 13: return d.getSeconds();
+                            case 14: return d.getMilliseconds();
+                        }
+                        return 0;
+                    },
+                    set: function (f, v) {
+                        switch (f) {
+                            case 1: d.setFullYear(v); break;
+                            case 2: d.setMonth(v); break;
+                            case 5: d.setDate(v); break;
+                            case 10: d.setHours((d.getHours() >= 12 ? 12 : 0) + v); break;
+                            case 11: d.setHours(v); break;
+                            case 12: d.setMinutes(v); break;
+                            case 13: d.setSeconds(v); break;
+                            case 14: d.setMilliseconds(v); break;
+                        }
+                    },
+                    add: function (f, v) { this.set(f, this.get(f) + v); },
+                    getTimeInMillis: function () { return d.getTime(); },
+                    setTimeInMillis: function (ms) { d = new Date(ms); },
+                    getTime: function () { return d; }
+                };
+            }
+        };
+        java.sql.Timestamp = {
+            valueOf: function (s) {
+                var m = /^(\d+)-(\d+)-(\d+) (\d+):(\d+):(\d+)/.exec(String(s));
+                var d = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : new Date(NaN);
+                return { getTime: function () { return d.getTime(); } };
+            }
         };
         if (!String.prototype.equals) { String.prototype.equals = function (o) { return this == String(o); }; }
         if (!String.prototype.equalsIgnoreCase) { String.prototype.equalsIgnoreCase = function (o) { return this.toLowerCase() == String(o).toLowerCase(); }; }

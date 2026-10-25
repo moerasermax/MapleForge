@@ -117,6 +117,68 @@ public sealed class JintEventScriptHostTests : IDisposable
     }
 
     [Fact]
+    public void CalendarAndTimestampShim_LikeAutomatedEvent()
+    {
+        // P201：AutomatedEvent.init 用 java.util.Calendar 算下一個整點，scheduleSystemEvent 未移植回 false。
+        var (host, _, _) = Create("""
+            function init() {
+                var cal = java.util.Calendar.getInstance();
+                cal.set(java.util.Calendar.HOUR_OF_DAY, 4);
+                cal.set(java.util.Calendar.MINUTE, 0);
+                cal.set(java.util.Calendar.SECOND, 0);
+                var next = cal.getTimeInMillis();
+                var ts = java.sql.Timestamp.valueOf("2026-10-25 16:30:00.0").getTime();
+                var d = new Date(ts);
+                em.setProperty("result", cal.get(java.util.Calendar.HOUR_OF_DAY) + "/" + cal.get(java.util.Calendar.MINUTE)
+                    + "/" + d.getHours() + ":" + d.getMinutes() + "/" + (next > 0) + "/" + em.scheduleSystemEvent()
+                    + "/" + (cal.get(java.util.Calendar.DAY_OF_WEEK) >= 1 && cal.get(java.util.Calendar.DAY_OF_WEEK) <= 7));
+            }
+            """);
+
+        host.Start(T0);
+
+        Assert.Equal("4/0/16:30/true/false/true", Api(host).getProperty("result"));
+    }
+
+    [Fact]
+    public void RealAutomatedEventScript_InitsWithoutError()
+    {
+        const string path = "/home/user/yc_maplestroy_tsm113/scripts/event/AutomatedEvent.js";
+        if (!File.Exists(path))
+        {
+            return; // 雲端以外沒有舊伺服器腳本：略過
+        }
+
+        Directory.CreateDirectory(Path.Combine(_dir, "event"));
+        File.WriteAllText(Path.Combine(_dir, "event", "AutomatedEvent.js"), File.ReadAllText(path));
+        var log = new WarningLog();
+        var host = new JintEventScriptHost(new EventScriptOptions { ScriptsDirectory = _dir, Events = ["AutomatedEvent"] }, new FakeWorld(), new PortalScriptOverrideRegistry(), log, new ManualTime(T0));
+
+        host.Start(T0);
+        host.Tick(T0.AddHours(5)); // 到點跑 setup（scheduleSystemEvent → false）
+
+        Assert.True(host.HasEvent("AutomatedEvent"));
+        Assert.Empty(log.Warnings);
+    }
+
+    private sealed class WarningLog : Microsoft.Extensions.Logging.ILogger<JintEventScriptHost>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
+        }
+    }
+
+    [Fact]
     public void ScriptError_IsSwallowed_AndMissingEventIgnored()
     {
         var (host, _, _) = Create("function init() { undefinedThing.call(); }", extraEvents: ["Missing"]);

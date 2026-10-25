@@ -359,6 +359,18 @@ public sealed class EventManagerApi
 
     public OverrideMonsterStatsShim newMonsterStats() => new();
 
+    /// <summary>
+    /// P201：Java scheduleSystemEvent()：逐一嘗試開 GM 系統活動（MapleEvent：椰子、雪球、OX…）。MapleForge 尚未移植 MapleEvent，
+    /// 沒有可開的活動 → false（Java 在所有活動都在進行或頻道不存在時同樣回 false）。
+    /// </summary>
+    public bool scheduleSystemEvent()
+    {
+        _runtime.Host.Log.LogInformation("[EventScript] {Name}.scheduleSystemEvent：GM 系統活動尚未移植，略過", _runtime.Name);
+        return false;
+    }
+
+    public bool scheduleSystemEvent(string type) => scheduleSystemEvent();
+
     // ── P178：事件實例 ───────────────────────────────────────────────────────────────
     public EventInstanceApi newInstance(string name)
     {
