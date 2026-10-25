@@ -132,7 +132,9 @@ public sealed class ChannelScrollPacketTests
             character.Equips.Add(equipped);
         }
 
-        return new Player(character, new Position(0, 0, 0, 0));
+        var player = new Player(character, new Position(0, 0, 0, 0));
+        player.ChangeSkillLevel(1003, 1, 1); // P155：背包上卷需傳說精神
+        return player;
     }
 
     private static ItemRecord UseItem(int itemId, short slot, short quantity = 1) => new()

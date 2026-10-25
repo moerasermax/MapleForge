@@ -63,6 +63,14 @@ public sealed class ScrollService
         => itemId is >= 1010000 and < 1040000 or >= 1122000 and < 1153000 or >= 1112000 and < 1113000;
 
     /// <summary>
+    /// P155：Java UseUpgradeScroll——對背包（dst ≥ 0）裡的裝備上卷需學過傳說精神（1003、10001003、20001003、20011003、30001003），
+    /// 否則 return false（Java 另記 autoban 點數，MapleForge 只拒絕）。
+    /// </summary>
+    public static bool HasLegendarySpirit(Player player)
+        => player.GetSkillLevel(1003) > 0 || player.GetSkillLevel(10001003) > 0 || player.GetSkillLevel(20001003) > 0
+            || player.GetSkillLevel(20011003) > 0 || player.GetSkillLevel(30001003) > 0;
+
+    /// <summary>
     /// P154：對照 Java <c>InventoryHandler.UseUpgradeScroll</c> 的使用判斷（全部在消耗卷軸之前，失敗不消耗）。
     /// 裝備強化卷軸（20493xx）、潛能卷軸（20494xx）、平板（2047xxx）需要強化次數／潛能／耐久欄位，MapleForge 尚無，一律拒絕。
     /// </summary>
@@ -130,7 +138,7 @@ public sealed class ScrollService
         }
 
         var target = ResolveTarget(player, equipSlot);
-        if (target.Equip is null || !CanUse(scroll, target.Equip))
+        if (target.Equip is null || !CanUse(scroll, target.Equip) || (equipSlot >= 0 && !HasLegendarySpirit(player)))
         {
             return NotApplied(scroll.ScrollId, scrollSlot, equipSlot);
         }

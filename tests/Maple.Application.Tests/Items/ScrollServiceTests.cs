@@ -156,7 +156,9 @@ public sealed class ScrollServiceTests
             character.Equips.Add(equipped);
         }
 
-        return new Player(character, new Position(0, 0, 0, 0));
+        var player = new Player(character, new Position(0, 0, 0, 0));
+        player.ChangeSkillLevel(1003, 1, 1); // P155：背包上卷需傳說精神
+        return player;
     }
 
     private static ItemRecord UseItem(int itemId, short slot, short quantity = 1) => new()
@@ -309,6 +311,22 @@ public sealed class ScrollServiceTests
         var service = new ScrollService(new FixedScrollCatalog(Scroll(2040023, req: [1002728])), new SequenceRandom([0]));
 
         Assert.False(service.UseScroll(player, 1, 1, whiteScroll: false).Applied);
+    }
+
+    [Fact]
+    public void BagScroll_WithoutLegendarySpirit_IsRejected()
+    {
+        var character = new Character
+        {
+            Id = 2,
+            Name = "NoSpirit",
+            Items = [UseItem(2043000, slot: 1), BagEquipWith(1302000, 5, 0)],
+        };
+        var player = new Player(character, new Position(0, 0, 0, 0));
+        var service = new ScrollService(new FixedScrollCatalog(Scroll(2043000)), new SequenceRandom([0]));
+
+        Assert.False(service.UseScroll(player, 1, 1, whiteScroll: false).Applied);
+        Assert.NotNull(player.Inventory.By(InventoryType.Use).Get(1));
     }
 
     private sealed class Templates(byte tuc, bool cash = false) : Maple.Core.Items.IEquipTemplateProvider
