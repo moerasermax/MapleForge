@@ -1,3 +1,4 @@
+using Maple.Application.Combat;
 using Maple.Application.Maps;
 using Maple.Core.IO;
 using Maple.Core.World;
@@ -42,13 +43,26 @@ internal static class V113SummonHandler
         await BroadcastToOthersAsync(player, mapRegistry, packet, ct);
     }
 
+    /// <summary>
+    /// 對照 Java <c>SummonHandler.SummonAttack</c>：驗證召喚獸 → 廣播攻擊動畫 → 逐一 <c>mob.damage</c>
+    /// （P109：原本只廣播不扣血）；單發 ≥ 120000 視為異常不套用（Java autoban 分支，MapleForge 無 GM 豁免）；
+    /// 海鷗（5211002）攻擊後移除並取消 buff。
+    /// </summary>
     public static async Task HandleSummonAttackAsync(
         PacketReader reader,
         Player player,
         FieldInstance field,
+        MapleSession session,
         IMapSessionRegistry mapRegistry,
+        CombatService combatService,
+        Func<IReadOnlyList<CombatMobHit>, CancellationToken, Task> sendHits,
         CancellationToken ct)
     {
+        if (!player.IsAlive)
+        {
+            return;
+        }
+
         V113SummonAttackRequest request;
         try
         {
@@ -60,6 +74,9 @@ internal static class V113SummonHandler
         }
 
         byte[]? packet;
+        CombatAttackResult result;
+        byte[]? removePacket = null;
+        byte[]? cancelBuffPacket = null;
         lock (field)
         {
             if (field.Get(request.SummonObjectId) is not Summon summon ||
@@ -75,10 +92,44 @@ internal static class V113SummonHandler
                 request.Animation,
                 request.Targets,
                 player.Character.Level);
+
+            result = combatService.ApplyAttack(field, player, ToCombatAttack(request.Targets));
+
+            if (summon.SkillId == GaviotaSkillId)
+            {
+                field.Remove(summon.ObjectId);
+                removePacket = V113SummonPackets.RemoveSummon(summon, animated: true);
+                var stats = player.CancelBuffBySource(summon.SkillId).SelectMany(static c => c.Stats).Distinct().ToArray();
+                if (stats.Length > 0)
+                {
+                    cancelBuffPacket = V113SkillPackets.CancelBuff(stats);
+                }
+            }
         }
 
         await BroadcastToOthersAsync(player, mapRegistry, packet, ct);
+        await sendHits(result.Hits, ct);
+
+        if (removePacket is not null)
+        {
+            await BroadcastToMapAsync(player, session, mapRegistry, removePacket, ct);
+        }
+
+        if (cancelBuffPacket is not null)
+        {
+            await session.SendAsync(cancelBuffPacket, ct);
+        }
     }
+
+    internal const int GaviotaSkillId = 5211002;
+    internal const int MaxSummonHitDamage = 120_000;
+
+    /// <summary>Java <c>chr.isGM() || toDamage &lt; 120000</c> 才 <c>mob.damage</c>；MapleForge 無 GM 概念，一律套上限。</summary>
+    internal static CombatAttack ToCombatAttack(IReadOnlyList<V113SummonAttackTarget> targets)
+        => new(targets
+            .Where(static t => t.Damage < MaxSummonHitDamage)
+            .Select(static t => new CombatAttackTarget(t.ObjectId, [t.Damage]))
+            .ToList());
 
     public static async Task HandleDamageSummonAsync(
         PacketReader reader,

@@ -1439,7 +1439,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.SummonAttack:
                         if (player is null || currentField is null) break;
-                        await V113SummonHandler.HandleSummonAttackAsync(reader, player, currentField, _mapRegistry, token);
+                        await V113SummonHandler.HandleSummonAttackAsync(
+                            reader,
+                            player,
+                            currentField,
+                            s,
+                            _mapRegistry,
+                            _combatService,
+                            (hits, tkn) => SendCombatHitsAsync(hits, player, s, tkn),
+                            token);
                         break;
 
                     case V113ChannelRecvOp.DamageSummon:
