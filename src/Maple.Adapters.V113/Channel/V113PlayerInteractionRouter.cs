@@ -3,6 +3,7 @@ using Maple.Application.Trades;
 using Maple.Core.Inventory;
 using Maple.Core.IO;
 using Maple.Core.PlayerShops;
+using Maple.Core.Trade;
 using Maple.Core.World;
 
 namespace Maple.Adapters.V113.Channel;
@@ -182,7 +183,44 @@ public sealed class V113PlayerInteractionRouter
                 continue;
             }
 
+            if (notice.Kind == TradeNoticeKind.Completion)
+            {
+                // P202：Java CompleteTrade 先 addFromDrop（背包封包）、gainMeso（楓幣更新），最後才送完成訊息。
+                foreach (var packetBefore in TradeCompletionInventoryPackets(notice))
+                {
+                    await send(packetBefore, ct);
+                }
+            }
+
             await send(packet, ct);
+        }
+    }
+
+    /// <summary>P202：交易完成時收到方的背包合併／新增封包與楓幣更新。</summary>
+    public static IEnumerable<byte[]> TradeCompletionInventoryPackets(TradeNotice notice)
+    {
+        var initiatorSide = notice.RecipientSide == TradeSide.Initiator;
+        var received = initiatorSide ? notice.Trade.InitiatorReceived : notice.Trade.InviteeReceived;
+        foreach (var (type, gain) in received)
+        {
+            foreach (var merged in gain.Merged)
+            {
+                yield return V113ItemUsePackets.ModifyInventoryQuantity(merged);
+            }
+
+            foreach (var added in gain.Added)
+            {
+                yield return V113ShopPackets.ModifyInventoryAdd(type, added);
+            }
+        }
+
+        if ((initiatorSide ? notice.Trade.InitiatorReceivedMeso : notice.Trade.InviteeReceivedMeso) > 0)
+        {
+            var receiver = initiatorSide ? notice.Trade.Initiator : notice.Trade.Invitee;
+            if (receiver is not null)
+            {
+                yield return V113ShopPackets.UpdateMeso(receiver.Character.Meso, itemReaction: true);
+            }
         }
     }
 
@@ -523,8 +561,24 @@ public sealed class V113PlayerInteractionRouter
             return false;
         }
 
-        await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(result.InventoryType.Value, result.GainedItem), ct)
-            .ConfigureAwait(false);
+        if (result.GainedStack is { } stack)
+        {
+            foreach (var merged in stack.Merged)
+            {
+                await SendAsync(sendSelf, V113ItemUsePackets.ModifyInventoryQuantity(merged), ct).ConfigureAwait(false);
+            }
+
+            foreach (var added in stack.Added)
+            {
+                await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(result.InventoryType.Value, added), ct).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await SendAsync(sendSelf, V113ShopPackets.ModifyInventoryAdd(result.InventoryType.Value, result.GainedItem), ct)
+                .ConfigureAwait(false);
+        }
+
         await SendAsync(sendSelf, V113ShopPackets.UpdateMeso(player.Character.Meso, itemReaction: true), ct)
             .ConfigureAwait(false);
         RegisterMerchantSession(player, storeId, sendSelf);

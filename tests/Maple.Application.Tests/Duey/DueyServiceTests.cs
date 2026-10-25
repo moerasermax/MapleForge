@@ -76,6 +76,45 @@ public sealed class DueyServiceTests
     }
 
     [Fact]
+    public async Task ReceivePackage_FullBag_StacksIntoExistingStack()
+    {
+        // P202：Java checkSpace + addFromDrop——背包滿但可疊進既有堆疊時照樣領取。
+        var characters = new InMemoryCharacterRepository();
+        var packages = new InMemoryDueyPackageRepository();
+        var service = new DueyService(packages, characters, new FixedTimeProvider(1_000_000));
+        var sender = new Player(
+            new Character
+            {
+                Id = 1,
+                AccountId = 10,
+                Name = "Sender",
+                Meso = 100_000,
+                Items = [new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2_000_000, Slot = 1, Quantity = 10 }],
+            },
+            new Position(0, 0, 0, 0));
+        var recipientCharacter = new Character { Id = 2, AccountId = 20, Name = "Receiver" };
+        characters.AddSeed(sender.Character);
+        characters.AddSeed(recipientCharacter);
+        await service.SendAsync(sender, new DueySendRequest(InventoryType.Use, 1, 4, 0, "Receiver", false, ""));
+        var package = Assert.Single(await packages.GetInboxAsync(2, 1_000_000, CancellationToken.None));
+
+        var recipient = new Player(recipientCharacter, new Position(0, 0, 0, 0));
+        var bag = recipient.Inventory.By(InventoryType.Use);
+        bag.Put(new Item { ItemId = 2_000_000, Quantity = 10, Slot = 1 });
+        for (short slot = 2; slot <= bag.SlotLimit; slot++)
+        {
+            bag.Put(new Item { ItemId = 2_010_000 + slot, Quantity = 1, Slot = slot });
+        }
+
+        var receive = await service.ReceiveAsync(recipient, package.Id);
+
+        Assert.Equal(DueyResultStatus.Success, receive.Status);
+        Assert.Equal((short)14, bag.Get(1)!.Quantity);
+        Assert.Empty(receive.GainedStack!.Added);
+        Assert.Equal((short)1, Assert.Single(receive.GainedStack.Merged).Slot);
+    }
+
+    [Fact]
     public async Task SendPackage_RejectsMissingRecipientAndSameAccount()
     {
         var characters = new InMemoryCharacterRepository();

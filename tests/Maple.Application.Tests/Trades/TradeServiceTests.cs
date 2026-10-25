@@ -58,6 +58,49 @@ public sealed class TradeServiceTests
     }
 
     [Fact]
+    public void CompleteTrade_StacksIntoExistingStack_AndRecordsReceived()
+    {
+        // P202：Java CompleteTrade → addFromDrop，疊進收方同 ID 的既有堆疊。
+        var registry = new FakeOnlinePlayerRegistry();
+        var service = new TradeService(registry);
+        var alice = NewPlayer(1, "Alice", meso: 1000, new ItemRecord
+        {
+            Type = (byte)InventoryType.Use,
+            ItemId = 2000000,
+            Slot = 1,
+            Quantity = 3,
+        });
+        var bob = NewPlayer(2, "Bob", meso: 0, new ItemRecord
+        {
+            Type = (byte)InventoryType.Use,
+            ItemId = 2000000,
+            Slot = 4,
+            Quantity = 10,
+        });
+        Register(service, registry, alice);
+        Register(service, registry, bob);
+
+        Assert.True(service.StartTrade(alice).Success);
+        Assert.True(service.InviteTrade(alice, bob.Character.Id).Success);
+        Assert.True(service.VisitTrade(bob).Success);
+        Assert.True(service.OfferItem(alice, InventoryType.Use, 1, 3, -1).Success);
+        Assert.True(service.OfferMeso(alice, 100).Success);
+        var trade = alice.Trade!;
+        service.ConfirmTrade(alice);
+        service.ConfirmTrade(bob);
+
+        var bag = bob.Inventory.By(InventoryType.Use);
+        Assert.Equal(13, Assert.Single(bag.Items).Quantity);
+        var (type, gain) = Assert.Single(trade.InviteeReceived);
+        Assert.Equal(InventoryType.Use, type);
+        Assert.Empty(gain.Added);
+        var merged = Assert.Single(gain.Merged);
+        Assert.Equal((short)4, merged.Slot);
+        Assert.True(trade.InviteeReceivedMeso > 0);
+        Assert.Empty(trade.InitiatorReceived);
+    }
+
+    [Fact]
     public void CancelTrade_RestoresOfferedItemsAndMeso()
     {
         var registry = new FakeOnlinePlayerRegistry();

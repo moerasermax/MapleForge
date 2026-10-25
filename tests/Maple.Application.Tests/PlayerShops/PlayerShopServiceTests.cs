@@ -64,6 +64,26 @@ public sealed class PlayerShopServiceTests
     }
 
     [Fact]
+    public async Task Buy_StacksIntoBuyersExistingStack()
+    {
+        // P202：Java HiredMerchant.buy → addFromDrop。
+        var repo = new InMemoryHiredMerchantRepository();
+        var service = new PlayerShopService(repo);
+        var merchant = NewOpenMerchant();
+        merchant.TryAddListing(InventoryType.Etc, new Item { ItemId = 4000000, Quantity = 6 }, 3, 2, 100);
+        await repo.AddAsync(merchant);
+        var buyer = NewPlayer(2, "Buyer", 20, meso: 1_000, new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4000000, Slot = 3, Quantity = 1 });
+
+        var result = await service.BuyAsync(merchant.StoreId, buyer, listingIndex: 0, bundleCount: 2, _now);
+
+        Assert.Equal(PlayerShopServiceStatus.Success, result.Status);
+        var only = Assert.Single(buyer.Inventory.By(InventoryType.Etc).Items);
+        Assert.Equal((short)5, only.Quantity);
+        Assert.Empty(result.GainedStack!.Added);
+        Assert.Equal((short)3, Assert.Single(result.GainedStack.Merged).Slot);
+    }
+
+    [Fact]
     public async Task TakeListing_ReturnsRemainingItemToOwnerAndExposesReturnedItem()
     {
         var repo = new InMemoryHiredMerchantRepository();

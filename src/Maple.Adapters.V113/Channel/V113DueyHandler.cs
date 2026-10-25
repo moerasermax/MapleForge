@@ -106,9 +106,17 @@ public sealed class V113DueyHandler
             return;
         }
 
-        if (result.GainedItemType is { } type && result.GainedItem is { } item)
+        if (result.GainedItemType is { } type && result.GainedStack is { } stack)
         {
-            await session.SendAsync(V113DueyPackets.ModifyInventoryAdd(type, item), ct);
+            foreach (var merged in stack.Merged)
+            {
+                await session.SendAsync(V113ItemUsePackets.ModifyInventoryQuantity(merged), ct);
+            }
+
+            foreach (var added in stack.Added)
+            {
+                await session.SendAsync(V113DueyPackets.ModifyInventoryAdd(type, added), ct);
+            }
         }
 
         await session.SendAsync(V113DueyPackets.UpdateMeso(result.Meso), ct);

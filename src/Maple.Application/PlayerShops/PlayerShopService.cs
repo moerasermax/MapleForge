@@ -43,7 +43,8 @@ public sealed record PlayerShopPurchaseUseCaseResult(
     Item? GainedItem = null,
     int TotalPrice = 0,
     int BuyerMeso = 0,
-    int MerchantMesos = 0);
+    int MerchantMesos = 0,
+    InventoryStackGain? GainedStack = null);
 
 public sealed record PlayerShopVisitUseCaseResult(
     PlayerShopServiceStatus Status,
@@ -334,7 +335,10 @@ public sealed class PlayerShopService
 
         var listing = listingIndex >= 0 && listingIndex < merchant.Items.Count ? merchant.Items[listingIndex] : null;
         var type = listing is null ? (InventoryType?)null : (InventoryType)listing.InventoryType;
-        var canHold = type is { } inventoryType && buyer.CanGainItem(inventoryType);
+        // Java canHold（有空格）；P202 另以 checkSpace 擋掉疊加後仍放不下的部分取得（Java 那條路會部分入包卻不扣款）。
+        var canHold = type is { } inventoryType
+            && buyer.CanGainItem(inventoryType)
+            && buyer.HasSpaceFor(listing!.Item.ItemId, listing.Item.IsEquip ? 1 : listing.BundleQuantity * Math.Max((short)1, bundleCount), listing.Item.Owner ?? string.Empty);
 
         var bought = merchant.TryBuy(
             listingIndex,
@@ -354,11 +358,14 @@ public sealed class PlayerShopService
             return new PlayerShopPurchaseUseCaseResult(MapPurchaseStatus(bought.Status), merchant);
         }
 
-        var gained = buyer.Inventory.By(bought.InventoryType!.Value).Gain(bought.Item!);
-        if (gained is null)
+        // P202：Java addFromDrop——疊加到同擁有者、同期限的堆疊。
+        var stack = buyer.GainDropItemStacking(bought.Item!);
+        if (!stack.AnyChange)
         {
             return new PlayerShopPurchaseUseCaseResult(PlayerShopServiceStatus.InventoryFull, merchant);
         }
+
+        var gained = stack.Added.Count > 0 ? stack.Added[0] : bought.Item!;
 
         buyer.GainMeso(-bought.TotalPrice);
         buyer.FlushInventory();
@@ -370,7 +377,8 @@ public sealed class PlayerShopService
             gained,
             bought.TotalPrice,
             buyer.Character.Meso,
-            merchant.Mesos);
+            merchant.Mesos,
+            stack);
     }
 
     public async Task<PlayerShopListingResult> TakeListingAsync(

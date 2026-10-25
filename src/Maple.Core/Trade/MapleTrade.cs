@@ -142,6 +142,18 @@ public sealed class MapleTrade
 
     public TradeOffer InitiatorOffer => _initiatorOffer;
 
+    /// <summary>P202：完成時發起方收到的疊加結果（呼叫端送背包封包）。</summary>
+    public IReadOnlyList<(InventoryType Type, InventoryStackGain Gain)> InitiatorReceived { get; private set; } = [];
+
+    /// <summary>P202：完成時受邀方收到的疊加結果。</summary>
+    public IReadOnlyList<(InventoryType Type, InventoryStackGain Gain)> InviteeReceived { get; private set; } = [];
+
+    /// <summary>P202：完成時發起方實收楓幣（扣稅後）。</summary>
+    public int InitiatorReceivedMeso { get; private set; }
+
+    /// <summary>P202：完成時受邀方實收楓幣（扣稅後）。</summary>
+    public int InviteeReceivedMeso { get; private set; }
+
     public TradeOffer? InviteeOffer => _inviteeOffer;
 
     public bool HasBothParticipants => Invitee is not null && _inviteeOffer is not null;
@@ -364,8 +376,8 @@ public sealed class MapleTrade
         var invitee = Invitee ?? throw new InvalidOperationException("Cannot complete a trade without invitee.");
         var inviteeOffer = _inviteeOffer ?? throw new InvalidOperationException("Cannot complete a trade without invitee offer.");
 
-        TransferOffer(_initiatorOffer, invitee);
-        TransferOffer(inviteeOffer, Initiator);
+        (InviteeReceived, InviteeReceivedMeso) = TransferOffer(_initiatorOffer, invitee);
+        (InitiatorReceived, InitiatorReceivedMeso) = TransferOffer(inviteeOffer, Initiator);
 
         Initiator.FlushInventory();
         invitee.FlushInventory();
@@ -410,17 +422,25 @@ public sealed class MapleTrade
         return true;
     }
 
-    private static void TransferOffer(TradeOffer offer, Player receiver)
+    /// <summary>
+    /// Java <c>CompleteTrade</c>：逐件清除 karma 旗標後 <c>addFromDrop</c>（P202 起疊加到同擁有者、同期限的堆疊）；
+    /// 預檢「空格數 ≥ 件數」保證放得下。楓幣扣稅入帳。
+    /// </summary>
+    private static (IReadOnlyList<(InventoryType, InventoryStackGain)>, int) TransferOffer(TradeOffer offer, Player receiver)
     {
+        var received = new List<(InventoryType, InventoryStackGain)>(offer.Items.Count);
         foreach (var offerItem in offer.Items)
         {
             var item = offerItem.Item.Copy();
             item.Slot = 0;
             TradeItemFlags.ClearKarmaFlags(item);
-            if (receiver.Inventory.By(offerItem.InventoryType).Gain(item) is null)
+            var gain = receiver.GainDropItemStacking(item);
+            if (!gain.Complete)
             {
                 throw new InvalidOperationException("Trade receive precheck failed.");
             }
+
+            received.Add((offerItem.InventoryType, gain));
         }
 
         var mesoGain = TradeTax.GetNetMeso(offer.Meso);
@@ -430,6 +450,7 @@ public sealed class MapleTrade
         }
 
         offer.Clear();
+        return (received, Math.Max(0, mesoGain));
     }
 
     private static void RestoreOffer(TradeOffer offer)

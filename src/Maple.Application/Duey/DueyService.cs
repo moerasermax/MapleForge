@@ -41,7 +41,8 @@ public sealed record DueyReceiveResult(
     int PackageId,
     int Meso,
     InventoryType? GainedItemType = null,
-    Item? GainedItem = null)
+    Item? GainedItem = null,
+    InventoryStackGain? GainedStack = null)
 {
     public static DueyReceiveResult Fail(DueyResultStatus status, int packageId, int meso)
         => new(status, packageId, meso);
@@ -192,7 +193,8 @@ public sealed class DueyService
             }
 
             itemType = (InventoryType)package.Item.Type;
-            if (!recipient.CanReceiveDueyItem(itemType.Value))
+            // P202：Java checkSpace(itemId, quantity, owner)——可疊進既有堆疊時滿背包也能領。
+            if (!recipient.HasSpaceFor(package.Item.ItemId, package.Item.Quantity, package.Item.Owner ?? string.Empty))
             {
                 return DueyReceiveResult.Fail(DueyResultStatus.InventoryFull, packageId, recipient.Character.Meso);
             }
@@ -210,15 +212,18 @@ public sealed class DueyService
         }
 
         Item? gained = null;
+        InventoryStackGain? stack = null;
         if (package.Item is not null && itemType is not null)
         {
             var item = package.Item.ToItem();
             item.Slot = 0;
-            gained = recipient.TryReceiveDueyItem(itemType.Value, item);
-            if (gained is null)
+            stack = recipient.TryReceiveDueyItem(item);
+            if (!stack.AnyChange)
             {
                 return DueyReceiveResult.Fail(DueyResultStatus.InventoryFull, packageId, recipient.Character.Meso);
             }
+
+            gained = stack.Added.Count > 0 ? stack.Added[0] : null;
         }
 
         if (package.Meso != 0)
@@ -234,7 +239,8 @@ public sealed class DueyService
             packageId,
             recipient.Character.Meso,
             itemType,
-            gained);
+            gained,
+            stack);
     }
 
     public async Task<DueyReturnResult> ReturnAsync(

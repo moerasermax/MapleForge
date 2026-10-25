@@ -70,16 +70,8 @@ public sealed partial class Player
         return TryTakeDueyItem(type, candidate.Slot, quantity, out _, out mutation);
     }
 
-    public Item? TryReceiveDueyItem(InventoryType type, Item item)
-    {
-        var gained = Inventory.By(type).Gain(item);
-        if (gained is not null)
-        {
-            FlushInventory();
-        }
-
-        return gained;
-    }
+    /// <summary>P202：Java DueyHandler 領取 <c>addFromDrop</c>——合併到同擁有者、同期限的堆疊。</summary>
+    public InventoryStackGain TryReceiveDueyItem(Item item) => GainDropItemStacking(item);
 
     public void RestoreDueyItem(InventoryType type, short originalSlot, Item item)
     {
