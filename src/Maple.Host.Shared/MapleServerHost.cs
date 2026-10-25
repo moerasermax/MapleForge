@@ -181,7 +181,9 @@ public static class MapleServerHost
         builder.Services.AddSingleton<UseItemService>();
         builder.Services.AddSingleton<IItemUseCatalog, WzItemUseCatalog>();
         builder.Services.AddSingleton<ItemUseService>();
-        builder.Services.AddSingleton<IItemMakeCatalog, WzItemMakeCatalog>();
+        builder.Services.AddSingleton<WzItemMakeCatalog>();
+        builder.Services.AddSingleton<IItemMakeCatalog>(sp => sp.GetRequiredService<WzItemMakeCatalog>());
+        builder.Services.AddSingleton<IEquipTemplateProvider>(sp => sp.GetRequiredService<WzItemMakeCatalog>());
         builder.Services.AddSingleton<IItemMakerRandomSource, ItemMakerRandomSource>();
         builder.Services.AddSingleton<ItemMakerService>();
         builder.Services.AddSingleton<RandomRewardsCatalog>();

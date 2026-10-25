@@ -1,5 +1,6 @@
 using Maple.Application.Parties;
 using Maple.Core.Inventory;
+using Maple.Core.Items;
 using Maple.Core.World;
 
 namespace Maple.Application.Drops;
@@ -64,17 +65,20 @@ public sealed class DropService : IMobKillHandler
     private readonly DropServiceOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly IPartyRegistry? _parties;
+    private readonly IEquipTemplateProvider? _equipTemplates;
 
     public DropService(
         IMonsterDropCatalog catalog,
         DropServiceOptions? options = null,
         TimeProvider? timeProvider = null,
-        IPartyRegistry? parties = null)
+        IPartyRegistry? parties = null,
+        IEquipTemplateProvider? equipTemplates = null)
     {
         _catalog = catalog;
         _options = options ?? new DropServiceOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _parties = parties;
+        _equipTemplates = equipTemplates;
     }
 
     public MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob)
@@ -351,12 +355,13 @@ public sealed class DropService : IMobKillHandler
         return ownerParty is not null && ownerParty.GetMember(player.Character.Id) is not null;
     }
 
-    private static Item CreateItem(MonsterDropEntry entry)
+    private Item CreateItem(MonsterDropEntry entry)
     {
         var quantity = GetQuantity(entry);
         if (Player.InventoryTypeOf(entry.ItemId) == InventoryType.Equip)
         {
-            return new Equip { ItemId = entry.ItemId, Quantity = 1 };
+            // 對照 Java getEquipById：帶 WZ 預設數值（Java 此處另有 randomizeStats ±10%，留待 P103）。
+            return _equipTemplates?.Create(entry.ItemId) ?? new Equip { ItemId = entry.ItemId, Quantity = 1 };
         }
 
         return new Item { ItemId = entry.ItemId, Quantity = quantity };

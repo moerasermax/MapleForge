@@ -2,6 +2,7 @@ using Maple.Content.Items;
 using Maple.Content.Wz;
 using Maple.Core.Data;
 using Maple.Core.Inventory;
+using Maple.Core.Items;
 
 namespace Maple.Content.Tests.Items;
 
@@ -86,6 +87,15 @@ public sealed class WzItemMakeCatalogTests
         Assert.Equal(3, equip.Str);
         Assert.Equal(22, equip.Watk);
         Assert.Equal(7, equip.UpgradeSlots);
+
+        // P102：IEquipTemplateProvider.Create 有 WZ 資料時帶數值，查不到時退回只有 ItemId 的空裝備。
+        IEquipTemplateProvider templates = catalog;
+        Assert.Equal(22, templates.Create(1302000).Watk);
+        var missing = templates.Create(1302999);
+        Assert.Equal(1302999, missing.ItemId);
+        Assert.Equal(1, missing.Quantity);
+        Assert.Equal(0, missing.Watk);
+
         Assert.Equal(30, catalog.GetRequiredLevel(1302000));
         Assert.True(catalog.IsAccountShared(1302000));
 
@@ -95,6 +105,19 @@ public sealed class WzItemMakeCatalogTests
         Assert.Equal(1, enhance.RandomStat);
         Assert.Equal(65, catalog.GetItemMakeLevel(4000000));
         Assert.True(catalog.IsDropRestricted(4000000));
+    }
+
+    [Fact]
+    public void RealCharacterWz_Create_LoadsAxeDefaultStats()
+    {
+        // P101 真機實測值：斧頭 1312004 的 WZ 為 Watk 17、tuc 7；修正前建角/掉落/給予/商城都拿到 0。
+        using var provider = new WzDataProvider(WzDir);
+        IEquipTemplateProvider templates = new WzItemMakeCatalog(provider);
+
+        var axe = templates.Create(1312004);
+
+        Assert.Equal(17, axe.Watk);
+        Assert.Equal(7, axe.UpgradeSlots);
     }
 
     [Fact]

@@ -27,6 +27,7 @@ using Maple.Core.Characters;
 using Maple.Core.Guilds;
 using Maple.Core.Guilds.Bbs;
 using Maple.Core.IO;
+using Maple.Core.Items;
 using Maple.Core.Maps;
 using Maple.Core.Quests;
 using Maple.Core.Skills;
@@ -60,6 +61,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly IMapSessionRegistry _mapRegistry;
     private readonly IFieldInstanceRegistry _fieldRegistry;
     private readonly MapService _mapService;
+    private readonly IEquipTemplateProvider? _equipTemplates;
     private readonly INpcScriptFactory _npcScripts;
     private readonly ShopService _shopService;
     private readonly StorageService _storageService;
@@ -168,9 +170,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         SummonService summonService,
         DoorService doorService,
         V113BuffCancellationEffects buffEffects,
-        V113PartyHpSync partyHpSync)
+        V113PartyHpSync partyHpSync,
+        IEquipTemplateProvider? equipTemplates = null)
     {
         _log = log;
+        _equipTemplates = equipTemplates;
         _partyHpSync = partyHpSync;
         _buffEffects = buffEffects;
         _doorService = doorService;
@@ -420,7 +424,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                             // 執行期玩家（持有位置）
                             // P084：對照 Java loadCharFromDB 的 getPortal(initialSpawnPoint) ?? getPortal(0) → setPosition。
-                            player = new Player(chr, _mapService.GetLandingPosition(chr.MapId, chr.SpawnPoint) ?? new Position(0, 0, 0, 0));
+                            player = new Player(chr, _mapService.GetLandingPosition(chr.MapId, chr.SpawnPoint) ?? new Position(0, 0, 0, 0), _equipTemplates);
                             if (account is not null)
                             {
                                 player.AttachStorage(account);

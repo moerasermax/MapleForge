@@ -27,13 +27,10 @@ public sealed partial class Player
 
         if (type == InventoryType.Equip)
         {
-            return new Equip
-            {
-                ItemId = cashItem.ItemId,
-                Quantity = 1,
-                Expiration = expiration,
-                UniqueId = uniqueId,
-            };
+            var equip = NewEquip(cashItem.ItemId);
+            equip.Expiration = expiration;
+            equip.UniqueId = uniqueId;
+            return equip;
         }
 
         return new Item

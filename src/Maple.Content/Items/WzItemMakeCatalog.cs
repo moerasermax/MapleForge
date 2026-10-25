@@ -5,7 +5,7 @@ using Maple.Core.Items;
 
 namespace Maple.Content.Items;
 
-public sealed class WzItemMakeCatalog : IItemMakeCatalog
+public sealed class WzItemMakeCatalog : IItemMakeCatalog, IEquipTemplateProvider
 {
     private readonly IDataProvider _data;
     private readonly object _recipeGate = new();
@@ -57,6 +57,10 @@ public sealed class WzItemMakeCatalog : IItemMakeCatalog
             return cached?.Copy() as Equip;
         }
     }
+
+    /// <summary>對照 Java getEquipById：WZ 查不到時退回只有 ItemId 的空裝備。</summary>
+    public Equip Create(int itemId)
+        => CreateEquip(itemId) ?? new Equip { ItemId = itemId, Quantity = 1 };
 
     public ItemMakeEnhanceStats? GetEnhanceStats(int itemId)
     {

@@ -1,4 +1,5 @@
 using Maple.Core.Characters;
+using Maple.Core.Items;
 
 namespace Maple.Application.Characters;
 
@@ -9,8 +10,13 @@ namespace Maple.Application.Characters;
 public sealed class CharacterService
 {
     private readonly ICharacterRepository _repo;
+    private readonly IEquipTemplateProvider? _equipTemplates;
 
-    public CharacterService(ICharacterRepository repo) => _repo = repo;
+    public CharacterService(ICharacterRepository repo, IEquipTemplateProvider? equipTemplates = null)
+    {
+        _repo = repo;
+        _equipTemplates = equipTemplates;
+    }
 
     /// <summary>取得帳號下的角色清單。</summary>
     public Task<IReadOnlyList<Character>> GetCharactersAsync(int accountId, CancellationToken ct = default)
@@ -52,6 +58,8 @@ public sealed class CharacterService
         if (!IsValidName(name)) return null;
         if (await _repo.FindByNameAsync(name, ct) is not null) return null;
 
+        ApplyEquipTemplates(startEquips);
+
         var (startMap, job) = jobType switch
         {
             0 => (130030000, (short)1000),  // 皇家騎士團
@@ -78,6 +86,14 @@ public sealed class CharacterService
 
         await _repo.AddAsync(chr, ct);
         return chr;
+    }
+
+    // 初始裝備帶 WZ 預設數值（對照 Java CharLoginHandler：ii.getEquipById(i)）；位置維持呼叫端指定。
+    private void ApplyEquipTemplates(List<EquipEntry> equips)
+    {
+        if (_equipTemplates is null) return;
+        foreach (var entry in equips)
+            entry.CopyFrom(_equipTemplates.Create(entry.ItemId));
     }
 
     // 名稱驗證規則（對照舊 MapleCharacterUtil.isEligibleCharName）

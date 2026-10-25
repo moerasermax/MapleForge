@@ -1,5 +1,6 @@
 using Maple.Core.Characters;
 using Maple.Core.Inventory;
+using Maple.Core.Items;
 
 namespace Maple.Core.World;
 
@@ -33,12 +34,22 @@ public sealed partial class Player : IFieldObject
     /// <summary>目前黑板文字；空字串 = 未顯示。此為 session runtime 狀態，不持久化到 Character。</summary>
     public string ChalkboardMessage { get; private set; } = string.Empty;
 
-    public Player(Character character, Position spawn)
+    private readonly IEquipTemplateProvider? _equipTemplates;
+
+    public Player(Character character, Position spawn, IEquipTemplateProvider? equipTemplates = null)
     {
         Character = character;
         Position = spawn;
         Inventory = Inventories.Hydrate(character.Items);
+        _equipTemplates = equipTemplates;
     }
+
+    /// <summary>
+    /// 產生新裝備（對照 Java getEquipById）：有模板來源時帶資料檔預設數值，否則只有 ItemId 的空裝備。
+    /// 每次回傳全新實例，呼叫端可自由改 Owner/Expiration 等。
+    /// </summary>
+    private Equip NewEquip(int itemId)
+        => _equipTemplates?.Create(itemId) ?? new Equip { ItemId = itemId, Quantity = 1 };
 
     /// <summary>套用移動最終位置（由 Application 用例在解析客戶端移動後呼叫）。</summary>
     public void MoveTo(Position position) => Position = position;
@@ -60,7 +71,7 @@ public sealed partial class Player : IFieldObject
     {
         var isEquip = type == InventoryType.Equip;
         Item item = isEquip
-            ? new Equip { ItemId = itemId, Quantity = 1 }
+            ? NewEquip(itemId)
             : new Item { ItemId = itemId, Quantity = quantity };
         return Inventory.By(type).Gain(item);
     }
