@@ -991,4 +991,50 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     /// <summary>Java warpMap(mapId, portalName)：目前地圖所有角色 changeMap(map, map.getPortal(portal))。</summary>
     public void WarpMap(int mapId, string portal)
         => _pendingMapWarp = (mapId, int.TryParse(portal, out var portalId) ? portalId : Math.Max(0, GetMapPortalId(mapId, portal)));
+
+    // ── P194：教學 UI ─────────────────────────────────────────────────────────────────
+    /// <summary>Java summonMsg(msg／type)：尚未開提示時先 playerSummonHint(true)。</summary>
+    public void SummonMessage(string message)
+    {
+        EnsureSummonHint();
+        _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.SummonMessageText, message));
+    }
+
+    public void SummonMessage(int type)
+    {
+        EnsureSummonHint();
+        _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.SummonMessageType, string.Empty, type));
+    }
+
+    /// <summary>Java playerSummonHint(summon)：setHasSummon ＋ summonHelper。</summary>
+    public void PlayerSummonHint(bool summon)
+    {
+        _player.HasSummonHint = summon;
+        _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.SummonHelper, string.Empty, summon ? 1 : 0));
+    }
+
+    public void AranTutorialBalloon(string data) => _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.AranBalloon, data));
+
+    public void EvanTutorial(string data) => _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.EvanTutorial, data));
+
+    /// <summary>Java MovieClipIntroUI(enabled)：IntroDisableUI 再 IntroLock。</summary>
+    public void MovieClipIntroUi(bool enabled)
+    {
+        _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.IntroDisableUi, string.Empty, enabled ? 1 : 0));
+        _pendingUiEffects.Add(new NpcUiEffect(NpcUiEffectKind.IntroLock, string.Empty, enabled ? 1 : 0));
+    }
+
+    /// <summary>Java showMapEffect(path) = environmentChange(path, 3) 給自己。</summary>
+    public void ShowMapEffect(string path) => _pendingEnvironment.Add((false, 3, path));
+
+    /// <summary>Java cm.environmentChange(broadcast, env)：mode 2。</summary>
+    public void EnvironmentChange(bool broadcast, string env) => _pendingEnvironment.Add((broadcast, 2, env));
+
+    private void EnsureSummonHint()
+    {
+        if (!_player.HasSummonHint)
+        {
+            PlayerSummonHint(true);
+        }
+    }
 }

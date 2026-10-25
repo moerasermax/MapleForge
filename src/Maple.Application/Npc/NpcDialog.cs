@@ -55,6 +55,27 @@ public enum NpcUiEffectKind
 
     /// <summary>Java <c>mapMessage(type, msg)</c>：全地圖 broadcastMessage。</summary>
     MapMessage,
+
+    /// <summary>P194：UIPacket.summonHelper(A != 0)（SUMMON_HINT）。</summary>
+    SummonHelper,
+
+    /// <summary>P194：UIPacket.summonMessage(Text)（SUMMON_HINT_MSG 文字版）。</summary>
+    SummonMessageText,
+
+    /// <summary>P194：UIPacket.summonMessage(A)（SUMMON_HINT_MSG 編號版）。</summary>
+    SummonMessageType,
+
+    /// <summary>P194：UIPacket.AranTutInstructionalBalloon(Text)。</summary>
+    AranBalloon,
+
+    /// <summary>P194：MaplePacketCreator.getEvanTutorial(Text)。</summary>
+    EvanTutorial,
+
+    /// <summary>P194：UIPacket.IntroDisableUI(A != 0)。</summary>
+    IntroDisableUi,
+
+    /// <summary>P194：UIPacket.IntroLock(A != 0)。</summary>
+    IntroLock,
 }
 
 public sealed record NpcUiEffect(NpcUiEffectKind Kind, string Text, int A = 0, int B = 0);

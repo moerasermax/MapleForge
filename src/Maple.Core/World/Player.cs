@@ -103,6 +103,9 @@ public sealed partial class Player : IFieldObject
         return bag.SlotLimit;
     }
 
+    /// <summary>P194：Java <c>hasSummon</c>（召喚精靈教學提示開著；不持久化）。</summary>
+    public bool HasSummonHint { get; set; }
+
     /// <summary>P191：Java getBossLog：該 bossId 在過去 24 小時（subtime(now, '1 0:0:0')）內的筆數。</summary>
     public int GetBossLog(string bossId, DateTimeOffset now)
     {

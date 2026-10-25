@@ -340,6 +340,16 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public string getName() => _cm.GetName();
         public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
 
+        // ── P194：教學 UI ─────────────────────────────────────────────────────────────
+        public void summonMsg(string message) => _cm.SummonMessage(message);
+        public void summonMsg(int type) => _cm.SummonMessage(type);
+        public void playerSummonHint(bool summon) => _cm.PlayerSummonHint(summon);
+        public void AranTutInstructionalBubble(string data) => _cm.AranTutorialBalloon(data);
+        public void evanTutorial(string data, int v1) => _cm.EvanTutorial(data);
+        public void MovieClipIntroUI(bool enabled) => _cm.MovieClipIntroUi(enabled);
+        public void showMapEffect(string path) => _cm.ShowMapEffect(path);
+        public void environmentChange(bool broadcast, string env) => _cm.EnvironmentChange(broadcast, env);
+
         // ── P193 ───────────────────────────────────────────────────────────────────────
         public int gainGachaponItem(int itemId, int quantity) => _cm.GainGachaponItem(itemId, quantity, null);
         public int gainGachaponItem(int itemId, int quantity, string message) => _cm.GainGachaponItem(itemId, quantity, message);

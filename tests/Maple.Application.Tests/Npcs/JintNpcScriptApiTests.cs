@@ -428,6 +428,40 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal(1, player.Inventory.By(InventoryType.Use).CountById(2022217));
     }
 
+    [Fact]
+    public async Task Script_TutorialUi_SummonHintOnce_IntroAndEnvironment()
+    {
+        // P194：summonMsg 首次先 playerSummonHint(true)；MovieClipIntroUI = DisableUI＋Lock；showMapEffect／environmentChange。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999987.js"), """
+            function start() {
+                cm.summonMsg("嗨");
+                cm.summonMsg(3);
+                cm.MovieClipIntroUI(true);
+                cm.AranTutInstructionalBubble("Effect/OnUserEff.img/guideEffect/aranTutorial/legendBalloon1");
+                cm.showMapEffect("maplemap/enter/100000000");
+                cm.environmentChange(true, "gate");
+                cm.dispose();
+            }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 10 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(9999987, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var effects = new List<NpcUiEffect>();
+        var environment = new List<(bool, int, string)>();
+        var convo = new NpcConversation(9999987, factory.TryCreate(9999987, ctx)!, ctx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask,
+            sendEnvironment: (b, m, n, _) => { environment.Add((b, m, n)); return Task.CompletedTask; },
+            sendUiEffect: (e, _) => { effects.Add(e); return Task.CompletedTask; });
+
+        await convo.StartAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [NpcUiEffectKind.SummonHelper, NpcUiEffectKind.SummonMessageText, NpcUiEffectKind.SummonMessageType, NpcUiEffectKind.IntroDisableUi, NpcUiEffectKind.IntroLock, NpcUiEffectKind.AranBalloon],
+            effects.Select(static e => e.Kind));
+        Assert.True(player.HasSummonHint);
+        Assert.Equal([(false, 3, "maplemap/enter/100000000"), (true, 2, "gate")], environment);
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;

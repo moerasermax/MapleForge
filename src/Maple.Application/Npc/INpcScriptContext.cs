@@ -204,6 +204,16 @@ public interface INpcScriptContext
     void GainExpR(int gain) { }
     int GetMonsterCount(int mapId) => 0;
 
+    // ── P194：教學 UI ────────────────────────────────────────────────────────────────
+    void SummonMessage(string message) { }
+    void SummonMessage(int type) { }
+    void PlayerSummonHint(bool summon) { }
+    void AranTutorialBalloon(string data) { }
+    void EvanTutorial(string data) { }
+    void MovieClipIntroUi(bool enabled) { }
+    void ShowMapEffect(string path) { }
+    void EnvironmentChange(bool broadcast, string env) { }
+
     // ── P193 ────────────────────────────────────────────────────────────────────────
     int GainGachaponItem(int itemId, int quantity, string? message) => -1;
     string? GetItemName(int itemId) => null;
