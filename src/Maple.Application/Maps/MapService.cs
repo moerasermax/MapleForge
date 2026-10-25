@@ -129,7 +129,8 @@ public sealed class MapService
             ExplosiveReward: explosiveReward,
             FfaLoot: ffaLoot,
             TagColor: tagColor,
-            TagBgColor: tagBgColor);
+            TagBgColor: tagBgColor,
+            NoDoom: GetInt(info, "noDoom", 0) > 0);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

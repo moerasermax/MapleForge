@@ -22,7 +22,9 @@ public sealed record MobStats(
     bool FfaLoot = false,
     // P107：王血條顏色（WZ info/hpTagColor、hpTagBgcolor；僅王且未隱藏血條時有值）。
     byte TagColor = 0,
-    byte TagBgColor = 0);
+    byte TagBgColor = 0,
+    // P110：WZ info/noDoom（Java MapleMonsterStats.isNoDoom）。
+    bool NoDoom = false);
 
 /// <summary>單次怪物傷害套用結果。</summary>
 public sealed record MobDamageResult(
@@ -45,6 +47,7 @@ public sealed class Mob : IFieldObject
     public static readonly TimeSpan RecentAttackerWindow = TimeSpan.FromSeconds(4);
 
     private readonly Dictionary<int, DateTimeOffset> _lastAttackTimes = new();
+    private readonly Dictionary<MonsterStatus, MonsterStatusEffect> _statuses = new();
 
     public MapMonster Definition { get; }
 
@@ -115,6 +118,93 @@ public sealed class Mob : IFieldObject
             .Where(e => e.Value >= now - RecentAttackerWindow)
             .Select(static e => e.Key)
             .ToArray();
+
+    /// <summary>生效中的異常狀態（P110）。</summary>
+    public IReadOnlyDictionary<MonsterStatus, MonsterStatusEffect> Statuses => _statuses;
+
+    /// <summary>
+    /// 套用異常狀態（P110，對照 Java <c>MapleMonster.applyStatus</c> 的免疫判斷，依原順序）：
+    /// 已死 → MobDead；noDoom 擋 Doom；9400253/9400254 擋 Freeze；王只接受 Speed/NinjaAmbush/Watk（Stun 明確擋）；
+    /// 友方怪擋 Stun/Speed/Poison/VenomousWeapon；毒類需有來源技能效果；同狀態已在 → AlreadyActive。
+    /// 屬性抗性（Java <c>getEffectiveness</c>）由呼叫端先判斷。
+    /// </summary>
+    public MonsterStatusApplyResult TryApplyStatus(MonsterStatusEffect effect, bool hasSourceEffect = true)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+
+        if (!IsAlive)
+        {
+            return MonsterStatusApplyResult.MobDead;
+        }
+
+        if (IsImmuneTo(effect.Status, hasSourceEffect))
+        {
+            return MonsterStatusApplyResult.Immune;
+        }
+
+        if (_statuses.ContainsKey(effect.Status))
+        {
+            return MonsterStatusApplyResult.AlreadyActive;
+        }
+
+        _statuses[effect.Status] = effect;
+        return MonsterStatusApplyResult.Applied;
+    }
+
+    /// <summary>解除異常狀態（對照 Java <c>cancelStatus</c>：Summon 不可解除、已死不處理）。回傳是否真的解除。</summary>
+    public bool CancelStatus(MonsterStatus status)
+    {
+        if (status == MonsterStatus.Summon || !IsAlive)
+        {
+            return false;
+        }
+
+        return _statuses.Remove(status);
+    }
+
+    /// <summary>移除到期的異常狀態並回傳（供世界 tick 廣播解除）。</summary>
+    public IReadOnlyList<MonsterStatusEffect> ExpireStatuses(DateTimeOffset now)
+    {
+        if (!IsAlive || _statuses.Count == 0)
+        {
+            return Array.Empty<MonsterStatusEffect>();
+        }
+
+        var expired = _statuses.Values
+            .Where(e => e.Status != MonsterStatus.Summon && e.ShouldCancel(now))
+            .ToArray();
+        foreach (var effect in expired)
+        {
+            _statuses.Remove(effect.Status);
+        }
+
+        return expired;
+    }
+
+    private bool IsImmuneTo(MonsterStatus status, bool hasSourceEffect)
+    {
+        if (Stats.NoDoom && status == MonsterStatus.Doom)
+        {
+            return true;
+        }
+
+        if (status == MonsterStatus.Freeze && Definition.MonsterId is 9400253 or 9400254)
+        {
+            return true;
+        }
+
+        if (Stats.Boss && status is not (MonsterStatus.Speed or MonsterStatus.NinjaAmbush or MonsterStatus.Watk))
+        {
+            return true;
+        }
+
+        if (Stats.Friendly && status is MonsterStatus.Stun or MonsterStatus.Speed or MonsterStatus.Poison or MonsterStatus.VenomousWeapon)
+        {
+            return true;
+        }
+
+        return status is MonsterStatus.Poison or MonsterStatus.VenomousWeapon && !hasSourceEffect;
+    }
 
     /// <summary>套用怪物移動最終位置（MONSTER_MOVE 後續接線用）。</summary>
     public void MoveTo(Position position) => Position = position;

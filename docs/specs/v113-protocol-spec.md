@@ -1738,3 +1738,20 @@ writeShort(0x54) writeMapleAsciiString("energy") writeMapleAsciiString(<能量�
 ```
 
 送出時機（每次 `mulungEnergyModify` 都送）：命中 HPDisplayType -1/2 且存活的怪 +100（上限 10000）；近戰/遠程武陵技能（需能量滿且在 92502xxxx）與魔法武陵技能（只需在道場）施放前歸零；`SPECIAL_MOVE` 未學武陵技能在道場施放時歸零。能量為執行期狀態不持久化。證據層級：Java source + Adapters focused tests；**unverified**。未實作：地圖腳本 `dojang_1st` 進場補送能量（MapleForge 尚無 onFirstUserEnter 腳本）。
+
+### 怪物異常狀態 `APPLY_MONSTER_STATUS(0xEB)` / `CANCEL_MONSTER_STATUS(0xEC)` 與出生封包狀態區（P110）
+
+對照 Java `MonsterStatus`（i → bit=`1<<(i%32)`、pos=`3-floor(i/32)`、order 預設=pos 或建構子覆寫、只有 EMPTY 是 default）與 `MobPacket.writeMaskFromList`/`EncodeTemporary`/`ProcessStatSet`/`cancelMonsterStatus`：
+
+```text
+mask: writeInt × 4（mask[pos] |= bit）
+EncodeTemporary: mask，再依 order（同值依列舉序）逐一：
+  DAMAGED_ELEM_ATTR → 略過；EMPTY → writeInt(0)
+  其他 → writeShort(x) + [mobSkill: writeShort(id) writeShort(level) | skill>0: writeInt(skill)] + writeShort(isDefault?0:1)
+  尾端：含 WEAPON_DAMAGE_REFLECT → writeInt(0)；含 MAGIC_DAMAGE_REFLECT → writeInt(0)；含 WEAPON_DAMAGE_REFLECT → 再 writeInt(0)；含 SUMMON → writeByte(0)×2
+APPLY:  writeShort(0xEB) writeInt(oid) EncodeTemporary writeShort(2) writeByte(1) writeByte(1)
+CANCEL: writeShort(0xEC) writeInt(oid) mask writeInt(0)
+SPAWN_MONSTER 狀態區：EncodeTemporary(生效狀態 + EMPTY)（無狀態時即原本的 0,0,0,0x08000000,0）
+```
+
+證據層級：Java source + Adapters focused tests；**unverified**。P110 只有模型與編碼，尚無技能套用來源（P111 起）。

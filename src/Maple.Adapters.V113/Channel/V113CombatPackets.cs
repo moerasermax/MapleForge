@@ -231,7 +231,7 @@ internal static class V113CombatPackets
         w.WriteInt(mob.ObjectId);
         w.WriteByte(1); // 1 = Control normal, 5 = Control none
         w.WriteInt(mob.Definition.MonsterId);
-        WriteEmptyMonsterStatus(w);
+        V113MonsterStatusCodec.WriteSpawnStatus(w, mob);
         w.WriteShort(mob.Position.X);
         w.WriteShort(mob.Position.Y);
         w.WriteByte(mob.Position.Stance);
@@ -254,15 +254,6 @@ internal static class V113CombatPackets
 
         w.WriteByte(mob.CarnivalTeam);
         w.WriteInt(0);
-    }
-
-    private static void WriteEmptyMonsterStatus(PacketWriter w)
-    {
-        w.WriteInt(0);
-        w.WriteInt(0);
-        w.WriteInt(0);
-        w.WriteInt(0x08000000); // MonsterStatus.EMPTY
-        w.WriteInt(0);          // EMPTY payload count
     }
 
     private static bool RequiresCharge(int skill)
