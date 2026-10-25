@@ -264,9 +264,16 @@ public sealed class V113ItemUseHandler
         var gainIntents = new List<V113ItemUseGainIntent>();
         if (rewardItemId > 0)
         {
+            // P188：Java addById(c, id, 1) 疊加。
             var type = Player.InventoryTypeOf(rewardItemId);
-            var item = player.GainItem(type, rewardItemId, 1);
-            if (item is not null)
+            var stack = player.GainItemStacking(rewardItemId, 1);
+            foreach (var merged in stack.Merged)
+            {
+                gainIntents.Add(new V113ItemUseGainIntent(type, rewardItemId, merged.NewQuantity, merged.Slot));
+                selfPackets.Add(V113ItemUsePackets.ModifyInventoryQuantity(merged));
+            }
+
+            foreach (var item in stack.Added)
             {
                 gainIntents.Add(new V113ItemUseGainIntent(type, rewardItemId, item.Quantity, item.Slot));
                 selfPackets.Add(V113ItemUsePackets.ModifyInventoryAdd(type, item));

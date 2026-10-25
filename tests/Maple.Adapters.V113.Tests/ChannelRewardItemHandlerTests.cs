@@ -74,6 +74,23 @@ public sealed class ChannelRewardItemHandlerTests
     }
 
     [Fact]
+    public void RewardItem_MergesIntoExistingStack()
+    {
+        // P188：Java addById——先補既有堆疊（送數量更新，不開新格）。
+        var player = PlayerWithItems(
+            new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2022336, Slot = 1, Quantity = 1 },
+            new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2000000, Slot = 2, Quantity = 10 });
+        var catalog = new RewardCatalog(new RewardItemTable(1, [new RewardItemEntry(2000000, 1, 5, 0, string.Empty, null)]));
+
+        var result = V113RewardItemHandler.HandleRewardItem(
+            Reader(w => w.WriteShort(1).WriteInt(2022336)), player, catalog, new FixedIndexRandom(0), DateTimeOffset.UnixEpoch);
+
+        Assert.True(result.CharacterMutated);
+        Assert.Equal((short)15, player.Inventory.By(InventoryType.Use).Get(2)!.Quantity);
+        Assert.Equal(new byte[] { 0x1B, 0x00, 0, 1, 1, 2, 2, 0, 15, 0 }, result.SelfPackets[2]); // mode 1 數量更新
+    }
+
+    [Fact]
     public void RewardItem_EquipReward_GetsJavaPeriodExpiration()
     {
         var player = PlayerWithItems(new ItemRecord { Type = (byte)InventoryType.Use, ItemId = 2022336, Slot = 1, Quantity = 1 });

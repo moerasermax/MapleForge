@@ -89,9 +89,10 @@ internal static class V113RewardItemHandler
             return EnableActionsOnly(request);
         }
 
+        // P188：非裝備走 Java addById 疊加；裝備 addbyItem 一格並帶 period。
         var rewardType = Player.InventoryTypeOf(reward.ItemId);
-        var rewardItem = player.GainItem(rewardType, reward.ItemId, Math.Max((short)1, reward.Quantity));
-        if (rewardItem is null)
+        var stack = player.GainItemStacking(reward.ItemId, Math.Max((short)1, reward.Quantity));
+        if (!stack.AnyChange)
         {
             player.FlushInventory();
             return new V113RewardItemResult(true, true, request, [V113StatsPackets.EnableActions(), V113ItemUsePackets.ModifyInventoryQuantity(sourceMutation)], []);
@@ -99,7 +100,7 @@ internal static class V113RewardItemHandler
 
         if (rewardType == InventoryType.Equip && reward.Period > 0)
         {
-            rewardItem.Expiration = now.ToUnixTimeMilliseconds() + (reward.Period * 60L * 60 * 10);
+            stack.Added[0].Expiration = now.ToUnixTimeMilliseconds() + (reward.Period * 60L * 60 * 10);
         }
 
         player.FlushInventory();
@@ -111,11 +112,16 @@ internal static class V113RewardItemHandler
             [
                 V113StatsPackets.EnableActions(),
                 V113ItemUsePackets.ModifyInventoryQuantity(sourceMutation),
-                V113ItemUsePackets.ModifyInventoryAdd(rewardType, rewardItem),
+                .. StackPackets(rewardType, stack),
                 ShowRewardItemAnimation(reward.ItemId, reward.Effect),
             ],
             BroadcastPackets: [ShowRewardItemAnimation(reward.ItemId, reward.Effect, player.Character.Id)]);
     }
+
+    /// <summary>P188：疊加結果的背包封包（合併 → 數量更新、新格 → 新增）。</summary>
+    private static IEnumerable<byte[]> StackPackets(InventoryType type, InventoryStackGain stack)
+        => stack.Merged.Select(V113ItemUsePackets.ModifyInventoryQuantity)
+            .Concat(stack.Added.Select(item => V113ItemUsePackets.ModifyInventoryAdd(type, item)));
 
     private static V113RewardItemResult Notice(V113RewardItemRequest request, string message)
         => new(true, false, request, [V113StatsPackets.EnableActions(), V113BroadcastPackets.ServerNotice(6, message)], []);
@@ -206,13 +212,15 @@ internal static class V113RewardItemHandler
             return EnableActionsOnly(request);
         }
 
+        // P188：Java addbyId_Gachapon——先補既有堆疊再開新格。
         var rewardType = Player.InventoryTypeOf(rewardItemId);
-        var rewardItem = player.GainItem(rewardType, rewardItemId, rewardQuantity);
-        if (rewardItem is null)
+        var stack = player.GainItemStacking(rewardItemId, rewardQuantity);
+        if (!stack.AnyChange)
         {
             return EnableActionsOnly(request);
         }
 
+        var rewardItem = stack.Added.FirstOrDefault() ?? player.Inventory.By(rewardType).Get(stack.Merged[0].Slot)!;
         player.FlushInventory();
 
         var selfPackets = new List<byte[]>(5)
@@ -225,7 +233,7 @@ internal static class V113RewardItemHandler
             selfPackets.AddRange(extraMutations);
         }
 
-        selfPackets.Add(V113ItemUsePackets.ModifyInventoryAdd(rewardType, rewardItem));
+        selfPackets.AddRange(StackPackets(rewardType, stack));
         selfPackets.Add(ShowRewardItemAnimation(rewardItemId, effect));
         selfPackets.Add(V113StatsPackets.EnableActions());
 
