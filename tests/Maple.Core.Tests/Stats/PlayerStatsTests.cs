@@ -100,6 +100,20 @@ public sealed class PlayerStatsTests
     }
 
     [Fact]
+    public void GainExperience_LevelUpBonus_AddsSkillHpAndTotalIntMp()
+    {
+        // P165：Java levelUp：maxhp += 強化 HP x；maxmp += getTotalInt() / 10（含裝備）。
+        var player = MakePlayer(level: 10, exp: 1700, job: 100);
+
+        Assert.True(player.WouldLevelUp(16));
+        Assert.False(player.WouldLevelUp(1));
+        player.GainExperience(16, RollMax, new LevelUpBonus(Hp: 10, Mp: 0, TotalInt: 45));
+
+        Assert.Equal((short)88, player.MaxHp); // 50 + 28 + 10
+        Assert.Equal((short)15, player.MaxMp); // 5 + 6 + 45/10
+    }
+
+    [Fact]
     public void RecoverOverTime_HealsHpMpThroughSameVitalsAndRateLimits()
     {
         var player = MakePlayer(hp: 20, maxHp: 50, mp: 1, maxMp: 5);

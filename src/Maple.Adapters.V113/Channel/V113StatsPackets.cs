@@ -78,6 +78,16 @@ internal static class V113StatsPackets
         return w.ToArray();
     }
 
+    /// <summary>P165：Java <c>showForeignEffect(cid, effect)</c>：<c>[0xBF][int cid][byte effect]</c>（0 = 升級、8 = 轉職）。</summary>
+    public static byte[] ShowForeignEffect(int characterId, byte effect)
+    {
+        var w = new PacketWriter(7);
+        w.WriteShort(V113ChannelSendOp.ShowForeignEffect);
+        w.WriteInt(characterId);
+        w.WriteByte(effect);
+        return w.ToArray();
+    }
+
     /// <summary>P092：對照 Java <c>MaplePacketCreator.showHpHealed(cid, amount)</c>：<c>SHOW_FOREIGN_EFFECT(0xBF)</c> + cid + 6 + int。</summary>
     public static byte[] ShowHpHealed(int characterId, int amount)
     {

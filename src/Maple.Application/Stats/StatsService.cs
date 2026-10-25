@@ -19,6 +19,15 @@ public sealed class StatsService
         _rollInclusive = rollInclusive;
     }
 
+    /// <summary>P165：DI 用——帶升級加成計算器。</summary>
+    public StatsService(Maple.Application.Combat.PlayerLocalStatsCalculator localStats)
+        : this(TimeProvider.System, RollInclusive)
+    {
+        _localStats = localStats;
+    }
+
+    private readonly Maple.Application.Combat.PlayerLocalStatsCalculator? _localStats;
+
     public PlayerStatsMutation DistributeAbilityPoint(Player player, AbilityPointTarget target)
     {
         ArgumentNullException.ThrowIfNull(player);
@@ -34,7 +43,8 @@ public sealed class StatsService
     public PlayerStatsMutation GainExperience(Player player, int amount)
     {
         ArgumentNullException.ThrowIfNull(player);
-        return player.GainExperience(amount, _rollInclusive);
+        var bonus = _localStats is not null && player.WouldLevelUp(amount) ? _localStats.ComputeLevelUpBonus(player) : default;
+        return player.GainExperience(amount, _rollInclusive, bonus);
     }
 
     public PlayerStatsMutation RecoverOverTime(Player player, int requestedHp, int requestedMp)

@@ -51,7 +51,10 @@ public sealed class V113PartyOperationHandler
     /// P161：Java <c>silentPartyUpdate()</c>（開門後、取消時空門後）：<c>updateParty(SILENT_UPDATE, new MaplePartyCharacter(this))</c>
     /// 廣播給全隊（含自己）。頻道沿用隊伍快照裡的頻道。
     /// </summary>
-    public async Task NotifyDoorChangedAsync(Player player, CancellationToken ct)
+    public Task NotifyDoorChangedAsync(Player player, CancellationToken ct) => NotifySilentUpdateAsync(player, ct);
+
+    /// <summary>P165：Java <c>silentPartyUpdate()</c>（升級、開關門等）。</summary>
+    public async Task NotifySilentUpdateAsync(Player player, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(player);
 

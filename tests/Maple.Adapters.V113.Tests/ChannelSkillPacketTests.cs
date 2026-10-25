@@ -31,6 +31,11 @@ public sealed class ChannelSkillPacketTests
             V113SkillPackets.CancelSkillEffect(7, 3121020));
 
     [Fact]
+    public void ShowForeignEffect_LevelUp_MatchesJava()
+        // P165：showForeignEffect(cid, 0)：[0xBF][int cid][byte 0]。
+        => Assert.Equal(new byte[] { 0xBF, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00 }, V113StatsPackets.ShowForeignEffect(7, 0));
+
+    [Fact]
     public void HomingPackets_MatchJava()
     {
         // P159：giveHoming：mask(HOMING_BEACON=80 → mask[1] bit16)、short 0、int 1、long 技能、byte 0、int 怪物、short 0。

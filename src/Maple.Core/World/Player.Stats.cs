@@ -55,6 +55,12 @@ public enum PlayerStatsFailure
 
 public readonly record struct PlayerStatUpdate(PlayerStatKind Kind, int Value);
 
+/// <summary>
+/// P165：Java <c>levelUp</c> 依技能與裝備的加成——強化最大 HP/MP 技能的 x（法師/烈焰巫師 MP ×2，呼叫端算好）與
+/// <c>stats.getTotalInt()</c>（含裝備/buff；null 時退回基礎 INT）。
+/// </summary>
+public readonly record struct LevelUpBonus(int Hp, int Mp, int? TotalInt);
+
 public sealed record PlayerStatsMutation(
     PlayerStatsFailure Failure,
     IReadOnlyList<PlayerStatUpdate> Updates,
@@ -353,7 +359,11 @@ public sealed partial class Player
         Character.Stats.Mp = (short)Math.Min(MaxMp, Character.Stats.Mp + amount);
     }
 
-    public PlayerStatsMutation GainExperience(int amount, Func<int, int, int>? rollInclusive = null)
+    /// <summary>P165：這次 <see cref="GainExperience"/> 會不會升級（呼叫端只在升級時才計算 <see cref="LevelUpBonus"/>）。</summary>
+    public bool WouldLevelUp(int amount)
+        => amount > 0 && !IsAtLevelCap() && (long)Character.Exp + amount >= GetExpNeededForLevel(Character.Level);
+
+    public PlayerStatsMutation GainExperience(int amount, Func<int, int, int>? rollInclusive = null, LevelUpBonus bonus = default)
     {
         if (amount == 0)
         {
@@ -376,7 +386,7 @@ public sealed partial class Player
         {
             Character.Exp = (int)nextExp;
             var updates = new List<PlayerStatUpdate>(10);
-            ApplyLevelUp(rollInclusive ?? RollInclusive, updates);
+            ApplyLevelUp(rollInclusive ?? RollInclusive, updates, bonus);
 
             var newNeeded = GetExpNeededForLevel(Character.Level);
             if (Character.Exp > newNeeded)
@@ -395,7 +405,7 @@ public sealed partial class Player
         });
     }
 
-    public PlayerStatsMutation LevelUp(Func<int, int, int>? rollInclusive = null)
+    public PlayerStatsMutation LevelUp(Func<int, int, int>? rollInclusive = null, LevelUpBonus bonus = default)
     {
         if (IsAtLevelCap())
         {
@@ -403,12 +413,12 @@ public sealed partial class Player
         }
 
         var updates = new List<PlayerStatUpdate>(10);
-        ApplyLevelUp(rollInclusive ?? RollInclusive, updates);
+        ApplyLevelUp(rollInclusive ?? RollInclusive, updates, bonus);
         updates.Add(new PlayerStatUpdate(PlayerStatKind.Exp, Character.Exp));
         return new PlayerStatsMutation(PlayerStatsFailure.None, updates);
     }
 
-    private void ApplyLevelUp(Func<int, int, int> rollInclusive, List<PlayerStatUpdate> updates)
+    private void ApplyLevelUp(Func<int, int, int> rollInclusive, List<PlayerStatUpdate> updates, LevelUpBonus bonus)
     {
         var oldLevel = Character.Level;
         var oldNeeded = GetExpNeededForLevel(oldLevel);
@@ -418,7 +428,8 @@ public sealed partial class Player
         var maxHp = Character.Stats.MaxHp;
         var maxMp = Character.Stats.MaxMp;
         AddLevelUpVitals(Character.Job, rollInclusive, ref maxHp, ref maxMp);
-        maxMp = ClampVital(maxMp + (Character.Stats.Int / 10));
+        maxHp = ClampVital(maxHp + bonus.Hp);
+        maxMp = ClampVital(maxMp + bonus.Mp + ((bonus.TotalInt ?? Character.Stats.Int) / 10));
 
         Character.Exp -= oldNeeded;
         if (Character.Exp < 0)

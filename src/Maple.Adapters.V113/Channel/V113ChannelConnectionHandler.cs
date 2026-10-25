@@ -2441,7 +2441,18 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await _guildOperationHandler.SyncMemberLevelJobAsync(
                 player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
+            await OnLeveledUpAsync(player, ct);
         }
+    }
+
+    /// <summary>
+    /// P165：Java <c>levelUp</c> 尾段：<c>map.broadcastMessage(this, showForeignEffect(id, 0), false)</c>（他人看到升級特效）→
+    /// <c>silentPartyUpdate()</c>（隊伍狀態的等級）。公會同步由呼叫端處理。
+    /// </summary>
+    private async Task OnLeveledUpAsync(Player player, CancellationToken ct)
+    {
+        await BroadcastPacketToOthersAsync(player.Character, V113StatsPackets.ShowForeignEffect(player.Character.Id, 0), ct);
+        await _partyOperationHandler.NotifySilentUpdateAsync(player, ct);
     }
 
     private async Task SendHiredMerchantResultAsync(
@@ -3037,6 +3048,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (result.ExpGained != 0)
         {
             await session.SendAsync(V113BuffItemPackets.GainExpOthers(result.ExpGained, inChat: true, white: true), ct);
+        }
+
+        if (result.StatUpdates.Any(static u => u.Kind == PlayerStatKind.Level))
+        {
+            await _guildOperationHandler.SyncMemberLevelJobAsync(player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
+            await OnLeveledUpAsync(player, ct);
         }
 
         if (result.FameGained != 0)
@@ -4391,6 +4408,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 await _guildOperationHandler.SyncMemberLevelJobAsync(
                     player, (pkt, tkn) => session.SendAsync(pkt, tkn), ct);
+                await OnLeveledUpAsync(player, ct);
             }
         }
         else if (rewards.ExpGained > 0)
@@ -4418,6 +4436,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 if (otherMutation.Updates.Any(static u => u.Kind == PlayerStatKind.Level))
                 {
                     await _guildOperationHandler.SyncMemberLevelJobAsync(award.Receiver, entry.SendPacket, ct);
+                    await OnLeveledUpAsync(award.Receiver, ct);
                 }
             }
             else

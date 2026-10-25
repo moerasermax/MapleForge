@@ -43,6 +43,32 @@ public sealed class PlayerLocalStatsCalculator
         _skills = skills;
     }
 
+    /// <summary>
+    /// P165：Java <c>levelUp</c> 的技能加成：劍士 100~132 加 1000001 x、法師 200~232 MP 加 2000001 x×2、海盜 500~522 加 5100000 x、
+    /// 聖魂劍士 1100~1111 加 11000000 x、烈焰巫師 1200~1212 MP 加 12000000 x×2、閃雷悍將 1500~1512 加 15100000 x；
+    /// MP 另加 <c>getTotalInt() / 10</c>（本計算器的總 INT）。
+    /// </summary>
+    public LevelUpBonus ComputeLevelUpBonus(Player player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        int X(int skillId)
+            => player.GetSkillLevel(skillId) is var level and > 0 && _skills.GetSkill(skillId)?.GetEffect(level) is { } effect ? effect.X : 0;
+
+        var job = player.Character.Job;
+        var (hp, mp) = job switch
+        {
+            >= 100 and <= 132 => (X(1000001), 0),
+            >= 200 and <= 232 => (0, X(2000001) * 2),
+            >= 500 and <= 522 => (X(5100000), 0),
+            >= 1100 and <= 1111 => (X(11000000), 0),
+            >= 1200 and <= 1212 => (0, X(12000000) * 2),
+            >= 1500 and <= 1512 => (X(15100000), 0),
+            _ => (0, 0),
+        };
+        return new LevelUpBonus(hp, mp, Calculate(player).Int);
+    }
+
     public PlayerLocalStats Calculate(Player player)
     {
         ArgumentNullException.ThrowIfNull(player);

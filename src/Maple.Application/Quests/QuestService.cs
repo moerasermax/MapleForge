@@ -93,8 +93,11 @@ public sealed class QuestService
 {
     private readonly IQuestCatalog _catalog;
 
-    public QuestService(IQuestCatalog catalog)
+    private readonly Maple.Application.Combat.PlayerLocalStatsCalculator? _localStats;
+
+    public QuestService(IQuestCatalog catalog, Maple.Application.Combat.PlayerLocalStatsCalculator? localStats = null)
     {
+        _localStats = localStats;
         _catalog = catalog;
     }
 
@@ -338,7 +341,7 @@ public sealed class QuestService
         return QuestTransactionStatus.Success;
     }
 
-    private static QuestTransactionResult ApplyActions(Player player, IReadOnlyList<QuestAction> actions, int? selection, bool skipRewards = false)
+    private QuestTransactionResult ApplyActions(Player player, IReadOnlyList<QuestAction> actions, int? selection, bool skipRewards = false)
     {
         var statUpdates = new List<PlayerStatUpdate>();
         var skillChanges = new List<(int SkillId, byte Level, byte MasterLevel)>();
@@ -398,7 +401,8 @@ public sealed class QuestService
 
                 case QuestActionKind.Exp when !skipRewards && action.IntValue != 0:
                     // P163：Java gainExp(intStore * getExpRate_Quest(level)=1, show, inChat, white)。
-                    statUpdates.AddRange(player.GainExperience(action.IntValue).Updates);
+                    var bonus = _localStats is not null && player.WouldLevelUp(action.IntValue) ? _localStats.ComputeLevelUpBonus(player) : default;
+                    statUpdates.AddRange(player.GainExperience(action.IntValue, bonus: bonus).Updates);
                     expGained += action.IntValue;
                     break;
 

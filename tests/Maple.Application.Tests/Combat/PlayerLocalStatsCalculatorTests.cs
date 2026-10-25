@@ -188,6 +188,22 @@ public sealed class PlayerLocalStatsCalculatorTests
 
     private const short WeaponSlot = PlayerLocalStatsCalculator.WeaponSlot;
 
+    [Theory]
+    [InlineData(110, 1000001, 12, 0)]
+    [InlineData(210, 2000001, 0, 24)] // 法師 MP x×2
+    [InlineData(1210, 12000001, 0, 0)] // 非強化技能
+    public void ComputeLevelUpBonus_MatchesJavaLevelUp(int job, int skillId, int hp, int mp)
+    {
+        // P165：Java levelUp 的強化最大 HP/MP 技能加成。
+        var catalog = new InMemorySkillCatalog([new MapleSkill { Id = skillId, Effects = [new MapleStatEffect { SourceId = skillId, Level = 1, X = 12 }] }]);
+        var player = MakePlayer(job: job, intel: 30);
+        player.ChangeSkillLevel(skillId, 1, 10);
+
+        var bonus = new PlayerLocalStatsCalculator(catalog).ComputeLevelUpBonus(player);
+
+        Assert.Equal(new LevelUpBonus(hp, mp, 30), bonus);
+    }
+
     private static PlayerLocalStatsCalculator Calculator() => new(new InMemorySkillCatalog([]));
 
     private static void Buff(Player player, int sourceId, MapleBuffStat stat, int value)

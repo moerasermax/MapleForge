@@ -95,6 +95,11 @@ public sealed class DropService : IMobKillHandler
     private readonly IEquipTemplateProvider? _equipTemplates;
     private readonly Random _random;
     private readonly MapService? _maps;
+    private readonly Maple.Application.Combat.PlayerLocalStatsCalculator? _localStats;
+
+    /// <summary>P165：只在會升級時計算 Java levelUp 的技能／總 INT 加成。</summary>
+    private LevelUpBonus LevelUpBonusFor(Player player, int amount)
+        => _localStats is not null && player.WouldLevelUp(amount) ? _localStats.ComputeLevelUpBonus(player) : default;
 
     public DropService(
         IMonsterDropCatalog catalog,
@@ -103,9 +108,11 @@ public sealed class DropService : IMobKillHandler
         IPartyRegistry? parties = null,
         IEquipTemplateProvider? equipTemplates = null,
         Random? random = null,
-        MapService? maps = null)
+        MapService? maps = null,
+        Maple.Application.Combat.PlayerLocalStatsCalculator? localStats = null)
     {
         _maps = maps;
+        _localStats = localStats;
         _catalog = catalog;
         _options = options ?? new DropServiceOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -218,7 +225,7 @@ public sealed class DropService : IMobKillHandler
                     receiver,
                     gain.Total,
                     highest,
-                    receiver.GainExperience(gain.Total),
+                    receiver.GainExperience(gain.Total, bonus: LevelUpBonusFor(receiver, gain.Total)),
                     gain.Shown,
                     gain.PartyExp,
                     gain.PartyBonusExp));
