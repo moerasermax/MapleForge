@@ -83,6 +83,40 @@ public sealed class PetServiceTests
         Assert.Equal(5000001, service.GetActivePet(player)?.ItemId);
     }
 
+    [Fact]
+    public void SpawnPet_UsesStoredStats_AndWritesBackGrowth_ThroughPersistence()
+    {
+        // P197：寵物數值存在現金欄道具上，經 ItemRecord 存檔／讀回後召喚沿用，成長寫回。
+        var stored = new Item { Slot = 1, ItemId = 5000000, Quantity = 1, Owner = "小白", UniqueId = 777, PetLevel = 12, PetCloseness = 345, PetFullness = 60 };
+        var record = ItemRecord.From(InventoryType.Cash, stored);
+        var player = NewPlayer(hp: 50);
+        player.Inventory.By(InventoryType.Cash).Put(record.ToItem());
+        var service = new PetService();
+
+        var spawned = service.SpawnPet(player, cashSlot: 1, lead: false);
+
+        Assert.Equal(("小白", (byte)12, (short)345, (byte)60), (spawned.Pet!.Name, spawned.Pet.Level, spawned.Pet.Closeness, spawned.Pet.Fullness));
+
+        spawned.Pet.Fullness = 20;
+        service.FeedActivePetToFull(player, closenessGain: 1);
+        var item = player.Inventory.By(InventoryType.Cash).Get(1)!;
+        Assert.Equal(100, item.PetFullness);
+        Assert.Equal(spawned.Pet.Closeness, item.PetCloseness);
+    }
+
+    [Fact]
+    public void SpawnPet_WithoutStoredStats_StartsFreshAndPersists()
+    {
+        var player = NewPlayer(hp: 50);
+        player.Inventory.By(InventoryType.Cash).Put(new Item { Slot = 2, ItemId = 5000001, Quantity = 1 });
+        var service = new PetService();
+
+        var spawned = service.SpawnPet(player, cashSlot: 2, lead: false);
+
+        Assert.Equal((byte)1, spawned.Pet!.Level);
+        Assert.Equal((byte)1, player.Inventory.By(InventoryType.Cash).Get(2)!.PetLevel);
+    }
+
     private static Player NewPlayer(short hp)
 
         => new(

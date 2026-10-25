@@ -340,6 +340,11 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public string getName() => _cm.GetName();
         public int getMonsterCount(int mapId) => _cm.GetMonsterCount(mapId);
 
+        // ── P197 ───────────────────────────────────────────────────────────────────────
+        public void gainPet(int itemId, string name, int level, int closeness, int fullness) => _cm.GainPet(itemId, name, level, closeness, fullness);
+        public void gainPet(int itemId, string name, int level, int closeness, int fullness, double period) => _cm.GainPet(itemId, name, level, closeness, fullness);
+        public void gainPet(int itemId, string name, int level, int closeness, int fullness, double period, int flags) => _cm.GainPet(itemId, name, level, closeness, fullness);
+
         // ── P196：公會 ─────────────────────────────────────────────────────────────────
         public GuildRef? getGuild() => _cm.GetGuildId() > 0 ? new(_cm.GetGuildId(), _cm) : null;
         public void gainGP(int gp) => _cm.GainGuildPoints(gp);

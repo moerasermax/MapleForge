@@ -204,6 +204,9 @@ public interface INpcScriptContext
     void GainExpR(int gain) { }
     int GetMonsterCount(int mapId) => 0;
 
+    // ── P197 ────────────────────────────────────────────────────────────────────────
+    void GainPet(int itemId, string name, int level, int closeness, int fullness) { }
+
     // ── P196：公會 GP ──────────────────────────────────────────────────────────────────
     int GetGuildId() => 0;
     void GainGuildPoints(int amount) { }

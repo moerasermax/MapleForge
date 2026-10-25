@@ -17,6 +17,11 @@ public sealed class ItemRecord
     public short Flag { get; set; }
     public long UniqueId { get; set; }
 
+    /// <summary>P197：寵物數值（等級 0 = 無）。</summary>
+    public byte PetLevel { get; set; }
+    public short PetCloseness { get; set; }
+    public byte PetFullness { get; set; }
+
     // equip 專屬（IsEquip=true 時有效）
     public byte UpgradeSlots { get; set; }
     public byte ViciousHammer { get; set; }
@@ -43,7 +48,7 @@ public sealed class ItemRecord
     {
         var owner = Owner ?? string.Empty;
         if (!IsEquip)
-            return new Item { ItemId = ItemId, Slot = Slot, Quantity = Quantity, Owner = owner, Expiration = Expiration, Flag = Flag, UniqueId = UniqueId };
+            return new Item { ItemId = ItemId, Slot = Slot, Quantity = Quantity, Owner = owner, Expiration = Expiration, Flag = Flag, UniqueId = UniqueId, PetLevel = PetLevel, PetCloseness = PetCloseness, PetFullness = PetFullness };
 
         return new Equip
         {
@@ -60,6 +65,7 @@ public sealed class ItemRecord
         {
             Type = (byte)type, IsEquip = it.IsEquip, ItemId = it.ItemId, Slot = it.Slot,
             Quantity = it.Quantity, Owner = it.Owner ?? string.Empty, Expiration = it.Expiration, Flag = it.Flag, UniqueId = it.UniqueId,
+            PetLevel = it.PetLevel, PetCloseness = it.PetCloseness, PetFullness = it.PetFullness,
         };
         if (it is Equip e)
         {

@@ -121,15 +121,17 @@ public sealed class PetService
             }
         }
 
+        // P197：道具上存過寵物數值就沿用（Java MaplePet.loadFromDb），否則新寵物（等級 1、親密 0、飽食 100）。
         var pet = new Pet(
             petId,
             cashItem.ItemId,
             string.IsNullOrWhiteSpace(cashItem.Owner) ? "Pet" : cashItem.Owner,
-            level: 1,
-            closeness: 0,
-            fullness: 100,
+            level: cashItem.HasPetStats ? cashItem.PetLevel : (byte)1,
+            closeness: cashItem.HasPetStats ? cashItem.PetCloseness : (short)0,
+            fullness: cashItem.HasPetStats ? cashItem.PetFullness : (byte)100,
             flags: cashItem.Flag,
             position: player.Position);
+        WriteBack(player, pet, cashSlot);
 
         lock (_gate)
         {
@@ -150,7 +152,21 @@ public sealed class PetService
                 return new PetSpawnResult(PetActionStatus.NoActivePet, null, ActivePetSlot, 0, Despawned: true);
             }
 
+            WriteBack(player, state.Pet, state.CashSlot);
             return new PetSpawnResult(PetActionStatus.Success, state.Pet, ActivePetSlot, state.CashSlot, Despawned: true);
+        }
+    }
+
+    /// <summary>P197：把寵物目前數值寫回現金欄道具（Java MaplePet.saveToDb；隨角色存檔持久化）。</summary>
+    private static void WriteBack(Player player, Pet pet, short cashSlot)
+    {
+        if (player.Inventory.By(InventoryType.Cash).Get(cashSlot) is { } cashItem && cashItem.ItemId == pet.ItemId)
+        {
+            cashItem.Owner = pet.Name;
+            cashItem.PetLevel = pet.Level;
+            cashItem.PetCloseness = pet.Closeness;
+            cashItem.PetFullness = pet.Fullness;
+            cashItem.Flag = (short)pet.Flags;
         }
     }
 
@@ -238,6 +254,7 @@ public sealed class PetService
         }
 
         var growth = state.Pet.FeedToFull(closenessGain);
+        WriteBack(player, state.Pet, state.CashSlot);
         return new PetMutationResult(PetActionStatus.Success, state.Pet, ActivePetSlot, state.CashSlot, growth);
     }
 
@@ -261,6 +278,7 @@ public sealed class PetService
         }
 
         var growth = pet.Feed(gainCloseness);
+        WriteBack(player, pet, state.CashSlot);
         player.FlushInventory();
         return new PetFeedResult(PetActionStatus.Success, pet, ActivePetSlot, state.CashSlot, growth, mutation);
     }
@@ -283,6 +301,7 @@ public sealed class PetService
         }
 
         var growth = pet.ExecuteCommand(DefaultCommandProbability, DefaultCommandIncrease, roll);
+        WriteBack(player, pet, state.CashSlot);
         return new PetCommandResult(PetActionStatus.Success, pet, ActivePetSlot, state.CashSlot, command, growth);
     }
 

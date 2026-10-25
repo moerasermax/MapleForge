@@ -13,6 +13,15 @@ public class Item
     public short Flag { get; set; }
     public long UniqueId { get; set; }
 
+    /// <summary>P197：寵物道具的等級（0 = 尚未存過寵物數值；名字沿用 <see cref="Owner"/>、旗標沿用 <see cref="Flag"/>）。</summary>
+    public byte PetLevel { get; set; }
+
+    public short PetCloseness { get; set; }
+
+    public byte PetFullness { get; set; }
+
+    public bool HasPetStats => PetLevel > 0;
+
     public virtual bool IsEquip => false;
 
     public virtual Item Copy() => new()
@@ -24,6 +33,9 @@ public class Item
         Expiration = Expiration,
         Flag = Flag,
         UniqueId = UniqueId,
+        PetLevel = PetLevel,
+        PetCloseness = PetCloseness,
+        PetFullness = PetFullness,
     };
 }
 

@@ -1091,4 +1091,36 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     public int GetGuildPoints() => _player.Character.GuildId <= 0 ? 0 : Math.Max(0, _guildPointsOf(_player.Character.GuildId) + _pendingGuildPoints);
 
     public void GenericGuildMessage(int code) => _pendingGuildMessages.Add((byte)code);
+
+    // ── P197：寵物 ─────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Java gainPet(id, name, level, closeness, fullness[, period, flags])：ID 不在 5000000～5010000 改 5000000、等級 ≤ 30、
+    /// 親密 ≤ 30000、飽食 ≤ 100；addById(..., pet, 45) → 現金欄新增一隻（期限 45 天）。
+    /// </summary>
+    public void GainPet(int itemId, string name, int level, int closeness, int fullness)
+    {
+        if (itemId is > 5010000 or < 5000000)
+        {
+            itemId = 5000000;
+        }
+
+        var pet = new Maple.Core.Inventory.Item
+        {
+            ItemId = itemId,
+            Quantity = 1,
+            Owner = name,
+            UniqueId = Random.Shared.NextInt64(1, int.MaxValue),
+            PetLevel = (byte)Math.Clamp(level, 1, 30),
+            PetCloseness = (short)Math.Clamp(closeness, 0, 30000),
+            PetFullness = (byte)Math.Clamp(fullness, 0, 100),
+            Expiration = DateTimeOffset.UtcNow.AddDays(45).ToUnixTimeMilliseconds(),
+        };
+        if (_player.Inventory.By(Maple.Core.Inventory.InventoryType.Cash).Gain(pet) is not { } added)
+        {
+            return;
+        }
+
+        _player.FlushInventory();
+        EnqueueQuestResult(new QuestTransactionResult(QuestTransactionStatus.Success, gainedItems: [added]));
+    }
 }

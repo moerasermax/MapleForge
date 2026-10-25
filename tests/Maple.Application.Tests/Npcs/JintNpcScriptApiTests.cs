@@ -521,6 +521,27 @@ public sealed class JintNpcScriptApiTests : IDisposable
         Assert.Equal(new byte[] { 0x1C }, pending.Value.Item2);
     }
 
+    [Fact]
+    public async Task Script_GainPet_ClampsLikeJava()
+    {
+        // P197：gainPet——ID 範圍外改 5000000、等級 ≤ 30、親密 ≤ 30000、飽食 ≤ 100。
+        File.WriteAllText(Path.Combine(_root, "npc", "9999984.js"), """
+            function start() { cm.gainPet(5999999, "龍", 99, 99999, 500, 45); cm.dispose(); }
+            function action(mode, type, selection) { cm.dispose(); }
+            """);
+        var player = new Player(new Character { Id = 1, Name = "Js", Level = 30 }, new Position(0, 0, 0, 0));
+        var ctx = new NpcContext(9999984, player, new QuestService(new EmptyQuestCatalog()));
+        var factory = new JintNpcScriptFactory(new NpcScriptOptions { ScriptsDirectory = _root }, NullLogger<JintNpcScriptFactory>.Instance);
+        var convo = new NpcConversation(9999984, factory.TryCreate(9999984, ctx)!, ctx, (_, _) => Task.CompletedTask, (_, _) => Task.CompletedTask);
+
+        await convo.StartAsync(CancellationToken.None);
+
+        var pet = Assert.Single(player.Inventory.By(InventoryType.Cash).Items);
+        Assert.Equal((5000000, "龍", (byte)30, (short)30000, (byte)100), (pet.ItemId, pet.Owner, pet.PetLevel, pet.PetCloseness, pet.PetFullness));
+        Assert.True(pet.UniqueId > 0);
+        Assert.True(pet.Expiration > DateTimeOffset.UtcNow.AddDays(44).ToUnixTimeMilliseconds());
+    }
+
     private sealed class EmptyQuestCatalog : IQuestCatalog
     {
         public QuestDefinition? GetQuest(int questId) => null;
