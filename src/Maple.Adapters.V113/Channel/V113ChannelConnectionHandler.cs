@@ -3948,6 +3948,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             result = _dropService.TryPickup(field, player, req.ObjectId);
         }
 
+        if (result.Status == DropPickupStatus.PickupRestricted)
+        {
+            await session.SendAsync(V113DropPackets.InventoryFull(), ct);
+            await session.SendAsync(V113DropPackets.ShowItemUnavailable(), ct);
+            return;
+        }
+
         if (!result.Success || result.Drop is null)
         {
             // P181：背包滿只撿一部分（Java addFromDrop 已送的堆疊更新／新格），掉落物留在地上。

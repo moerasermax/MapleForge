@@ -95,6 +95,50 @@ public sealed class DropServiceTests
     }
 
     [Fact]
+    public void TryPickup_UniqueItemAlreadyOwned_IsRefused()
+    {
+        // P214：Java addFromDrop——isPickupRestricted && haveItem(id, 1, true, false)（剛好 1 個）→ 不撿。
+        var service = new DropService(
+            new InMemoryMonsterDropCatalog(new Dictionary<int, IReadOnlyList<MonsterDropEntry>>()),
+            items: new UniqueItemCatalog(4030003));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        player.GainItem(InventoryType.Etc, 4030003, 1);
+        var drop = MapDrop.ForItem(
+            1_000_000,
+            new Item { ItemId = 4030003, Quantity = 1 },
+            new Position(10, 20, 0, 7),
+            new Position(10, 20, 0, 7),
+            100001,
+            player.Character.Id,
+            dropType: 0,
+            spawnedAt: DateTimeOffset.UtcNow);
+        field.Add(player);
+        field.Add(drop);
+
+        var result = service.TryPickup(field, player, drop.ObjectId);
+
+        Assert.Equal(DropPickupStatus.PickupRestricted, result.Status);
+        Assert.Equal(1, player.Inventory.By(InventoryType.Etc).CountById(4030003));
+        Assert.Same(drop, field.Get(drop.ObjectId));
+    }
+
+    private sealed class UniqueItemCatalog(int uniqueId) : Maple.Core.Items.IItemMakeCatalog
+    {
+        public Maple.Core.Items.ItemMakeGemRecipe? GetGemRecipe(int itemId) => null;
+        public Maple.Core.Items.ItemMakeCreateRecipe? GetCreateRecipe(int itemId) => null;
+        public int GetItemMakeLevel(int itemId) => 0;
+        public int GetRequiredLevel(int itemId) => 0;
+        public bool IsDropRestricted(int itemId) => false;
+        public bool IsAccountShared(int itemId) => false;
+        public bool IsPickupRestricted(int itemId) => itemId == uniqueId;
+        public Equip? CreateEquip(int itemId) => null;
+        public Maple.Core.Items.ItemMakeEnhanceStats? GetEnhanceStats(int itemId) => null;
+        public int GemRecipeCount => 0;
+        public int CreateRecipeCount => 0;
+    }
+
+    [Fact]
     public void TryPickup_Item_AddsToInventoryAndRemovesDrop()
     {
         var service = MakeDropService();

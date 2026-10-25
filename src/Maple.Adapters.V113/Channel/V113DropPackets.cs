@@ -84,6 +84,28 @@ internal static class V113DropPackets
         return w.ToArray();
     }
 
+    /// <summary>P214：Java <c>getInventoryFull()</c>：MODIFY_INVENTORY_ITEM [1][0]。</summary>
+    public static byte[] InventoryFull()
+    {
+        var w = new PacketWriter(4);
+        w.WriteShort(V113ChannelSendOp.ModifyInventoryItem);
+        w.WriteByte(1);
+        w.WriteByte(0);
+        return w.ToArray();
+    }
+
+    /// <summary>P214：Java <c>showItemUnavailable()</c> = getShowInventoryStatus(0xFE)：SHOW_STATUS_INFO [0][0xFE][int 0][int 0]。</summary>
+    public static byte[] ShowItemUnavailable()
+    {
+        var w = new PacketWriter(12);
+        w.WriteShort(SendShowStatusInfo);
+        w.WriteByte(0);
+        w.WriteByte(0xFE);
+        w.WriteInt(0);
+        w.WriteInt(0);
+        return w.ToArray();
+    }
+
     /// <summary>
     /// 對照 Java <c>GainEXP_Monster(gain, white, Event, Wedding, Party_EXP, Party_Bonus_EXP, Equipment, Premium)</c>：
     /// <c>[3][white][int gain][0][int 活動][0][0][int 結婚][int 組隊][0][int 組隊額外][int 裝備][int 網咖]</c>。

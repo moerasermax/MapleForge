@@ -72,6 +72,14 @@ public sealed class ChannelDeathPacketsTests
     }
 
     [Fact]
+    public void PickupRestrictedPackets_MatchJavaShapes()
+    {
+        // P214：getInventoryFull = MODIFY_INVENTORY_ITEM [1][0]；showItemUnavailable = SHOW_STATUS_INFO [0][FE][0][0]。
+        Assert.Equal(new byte[] { 0x1B, 0x00, 0x01, 0x00 }, V113DropPackets.InventoryFull());
+        Assert.Equal(new byte[] { 0x25, 0x00, 0x00, 0xFE, 0, 0, 0, 0, 0, 0, 0, 0 }, V113DropPackets.ShowItemUnavailable());
+    }
+
+    [Fact]
     public void SoulStone_RevivesAtXPercent_SkipsPenaltyAndBuffCancel()
     {
         // P205：Java playerDead 開頭的 SOUL_STONE 分支。

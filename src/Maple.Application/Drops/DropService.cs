@@ -61,6 +61,8 @@ public enum DropPickupStatus
     NotAllowed,
     InventoryFull,
     Success,
+    /// <summary>P214：唯一道具且已持有（Java addFromDrop → getInventoryFull + showItemUnavailable）。</summary>
+    PickupRestricted,
 }
 
 /// <param name="Stack">P181：疊加結果（補到既有堆疊的格與新格）；背包滿而只撿一部分時也帶，呼叫端照樣送更新。</param>
@@ -116,8 +118,10 @@ public sealed class DropService : IMobKillHandler
         IEquipTemplateProvider? equipTemplates = null,
         Random? random = null,
         MapService? maps = null,
-        Maple.Application.Combat.PlayerLocalStatsCalculator? localStats = null)
+        Maple.Application.Combat.PlayerLocalStatsCalculator? localStats = null,
+        Maple.Core.Items.IItemMakeCatalog? items = null)
     {
+        _items = items;
         _maps = maps;
         _localStats = localStats;
         _catalog = catalog;
@@ -127,6 +131,8 @@ public sealed class DropService : IMobKillHandler
         _equipTemplates = equipTemplates;
         _random = random ?? Random.Shared;
     }
+
+    private readonly Maple.Core.Items.IItemMakeCatalog? _items;
 
     public MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob)
     {
@@ -420,6 +426,12 @@ public sealed class DropService : IMobKillHandler
         if (drop.Item is null)
         {
             return new DropPickupResult(DropPickupStatus.NotFound);
+        }
+
+        // P214：Java addFromDrop 開頭——唯一道具且已持有（== 1）→ 不撿。
+        if (_items?.IsPickupRestricted(drop.Item.ItemId) == true && player.HasExactlyOneIncludingEquipped(drop.Item.ItemId))
+        {
+            return new DropPickupResult(DropPickupStatus.PickupRestricted, drop);
         }
 
         // P181：Java addFromDrop——先補既有堆疊再開新格；背包滿時掉落物數量改成剩餘、留在地上（已撿的保留）。
