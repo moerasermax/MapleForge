@@ -55,6 +55,17 @@ public sealed class V113PlayerTickHandler
                 await SendBestEffortAsync(entry, V113SkillPackets.SkillCooldown(skillId, 0), ct).ConfigureAwait(false);
             }
 
+            // P126：Java handleCooldowns 的異常到期 → dispelDebuff（自己 cancelDebuff、他人 cancelForeignDebuff）。
+            foreach (var ended in entry.Player.ExpireDiseases(now))
+            {
+                await SendBestEffortAsync(entry, V113DiseasePackets.CancelDebuff(ended.Disease), ct).ConfigureAwait(false);
+                var foreign = V113DiseasePackets.CancelForeignDebuff(entry.CharId, ended.Disease);
+                foreach (var other in entries.Where(e => e.CharId != entry.CharId))
+                {
+                    await SendBestEffortAsync(other, foreign, ct).ConfigureAwait(false);
+                }
+            }
+
             var cancellations = _skills.CancelExpiredBuffs(entry.Player, now);
             foreach (var cancellation in cancellations)
             {

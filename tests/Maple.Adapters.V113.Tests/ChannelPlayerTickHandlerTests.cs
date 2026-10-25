@@ -182,6 +182,22 @@ public sealed class ChannelPlayerTickHandlerTests
     }
 
     [Fact]
+    public async Task TickPlayersAsync_ExpiredDisease_CancelsToSelfAndOthers()
+    {
+        var (handler, registry, field) = Build();
+        var victim = NewPlayer(1, "Victim");
+        var watcher = NewPlayer(2, "Watcher");
+        victim.TryGiveDisease(PlayerDisease.Seal, 1, 1000, 120, 1, Now.AddSeconds(-5));
+        var received = Register(registry, field, victim, watcher);
+
+        await handler.TickPlayersAsync(field, Now, CancellationToken.None);
+
+        Assert.Contains(received, r => r.CharId == 1 && r.Packet.SequenceEqual(V113DiseasePackets.CancelDebuff(PlayerDisease.Seal)));
+        Assert.Contains(received, r => r.CharId == 2 && r.Packet.SequenceEqual(V113DiseasePackets.CancelForeignDebuff(1, PlayerDisease.Seal)));
+        Assert.False(victim.HasDisease(PlayerDisease.Seal));
+    }
+
+    [Fact]
     public void HealPackets_MatchJavaLayouts()
     {
         Assert.Equal(new byte[] { 0xC7, 0x00, 6, 10, 0, 0, 0 }, V113StatsPackets.ShowOwnHpHealed(10));

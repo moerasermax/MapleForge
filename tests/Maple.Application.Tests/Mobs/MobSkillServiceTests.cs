@@ -210,6 +210,35 @@ public sealed class MobSkillServiceTests
         Assert.Equal(100, mob.Hp);
     }
 
+    // ── P126：玩家異常（只施加在控制者身上）──
+
+    [Fact]
+    public void TryUseSkill_DiseaseSkill_GivesDiseaseToController()
+    {
+        var (field, mob) = Setup([new MobSkillRef(123, 1)]);
+        var controller = new Player(new Maple.Core.Characters.Character { Id = 9, Name = "Ctrl" }, new Position(0, 0, 0, 0));
+
+        var use = Service(Skill(123)).TryUseSkill(field, mob, T0, controller)!;
+
+        Assert.Equal(PlayerDisease.Stun, use.Disease!.Disease);
+        Assert.Equal(10, use.Disease.X);
+        Assert.Equal(30_000, use.Disease.DurationMilliseconds);
+        Assert.True(controller.HasDisease(PlayerDisease.Stun));
+    }
+
+    [Fact]
+    public void TryUseSkill_DiseaseAreaSkill_ControllerOutOfRange_NoDisease()
+    {
+        var (field, mob) = Setup([new MobSkillRef(120, 1)]);
+        var controller = new Player(new Maple.Core.Characters.Character { Id = 9, Name = "Ctrl" }, new Position(900, 0, 0, 0));
+        var skill = Skill(120) with { Area = new MobSkillArea(-100, -50, 100, 50) };
+
+        var use = Service(skill).TryUseSkill(field, mob, T0, controller)!;
+
+        Assert.Null(use.Disease);
+        Assert.Empty(controller.Diseases);
+    }
+
     private static Mob AddMob(FieldInstance field, int objectId, short x, short y)
     {
         var mob = new Mob(

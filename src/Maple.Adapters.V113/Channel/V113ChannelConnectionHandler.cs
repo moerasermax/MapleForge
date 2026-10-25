@@ -4304,7 +4304,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             lock (field)
             {
-                skillUse = mob.IsAlive ? _mobSkills.TryUseSkill(field, mob, DateTimeOffset.UtcNow) : null;
+                skillUse = mob.IsAlive ? _mobSkills.TryUseSkill(field, mob, DateTimeOffset.UtcNow, player) : null;
             }
         }
 
@@ -4320,6 +4320,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                 await BroadcastPacketToMapAsync(player.Character, session, V113MonsterStatusCodec.ApplyMonsterStatus(buff.ObjectId, buff.Applied), ct);
             }
+        }
+
+        // P126：Java getDiseaseBuff → 自己 giveDebuff、同圖他人 giveForeignDebuff。
+        if (skillUse?.Disease is { } disease)
+        {
+            await session.SendAsync(V113DiseasePackets.GiveDebuff(disease), ct);
+            await BroadcastPacketToOthersAsync(player.Character, V113DiseasePackets.GiveForeignDebuff(player.Character.Id, disease), ct);
         }
 
         // P125：Java heal(…, broadcast=true) → map.broadcastMessage(healMonster)。

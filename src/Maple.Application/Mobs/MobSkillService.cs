@@ -6,7 +6,8 @@ namespace Maple.Application.Mobs;
 public sealed record MobSkillUse(
     MobSkillDefinition Skill,
     IReadOnlyList<MobBuffApplication>? Buffs = null,
-    IReadOnlyList<MobHeal>? Heals = null);
+    IReadOnlyList<MobHeal>? Heals = null,
+    ActiveDisease? Disease = null);
 
 /// <summary>P125：怪物補血（Java healMonster 廣播的 oid 與補血量）。</summary>
 public sealed record MobHeal(int ObjectId, int Amount);
@@ -30,7 +31,8 @@ public sealed class MobSkillService
         _random = random ?? Random.Shared;
     }
 
-    public MobSkillUse? TryUseSkill(FieldInstance field, Mob mob, DateTimeOffset now)
+    /// <param name="controller">送出 MOVE_LIFE 的控制者（Java applyEffect 的 player）；異常狀態只會施加在他身上。</param>
+    public MobSkillUse? TryUseSkill(FieldInstance field, Mob mob, DateTimeOffset now, Player? controller = null)
     {
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(mob);
@@ -64,8 +66,9 @@ public sealed class MobSkillService
 
         var buffs = ApplyEffect(field, mob, skill, now);
         var heals = skill.SkillId == HealSkillId ? ApplyHeal(field, mob, skill) : null;
+        var disease = ApplyDisease(mob, skill, controller, now);
         mob.ConsumeMp(skill.MpCon);
-        return new MobSkillUse(skill, buffs, heals);
+        return new MobSkillUse(skill, buffs, heals, disease);
     }
 
     /// <summary>
@@ -95,6 +98,25 @@ public sealed class MobSkillService
     }
 
     public const int HealSkillId = 114;
+
+    /// <summary>
+    /// P126：對照 Java <c>applyEffect</c> 的 disease 分支 → <c>getDiseaseBuff(disease, x, duration, skillId, level)</c>。
+    /// Java <c>getPlayersInRange</c> 的候選名單只放控制者，所以有 lt/rb 時也只檢查控制者是否在範圍內。
+    /// </summary>
+    private static ActiveDisease? ApplyDisease(Mob mob, MobSkillDefinition skill, Player? controller, DateTimeOffset now)
+    {
+        if (controller is null || Player.DiseaseFromMobSkill(skill.SkillId) is not { } disease)
+        {
+            return null;
+        }
+
+        if (skill.Area is { } area && !Contains(BoundingBox(area, mob), controller.Position))
+        {
+            return null;
+        }
+
+        return controller.TryGiveDisease(disease, skill.X, skill.DurationMilliseconds, skill.SkillId, skill.Level, now);
+    }
 
     /// <summary>
     /// P125：對照 Java <c>applyEffect</c> case 114：有 lt/rb 時範圍內所有怪物、否則自己，各 <c>heal(getHP(), 0, true)</c>

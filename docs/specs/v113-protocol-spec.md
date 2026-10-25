@@ -1765,3 +1765,20 @@ writeShort(0xE8) writeInt(oid) writeByte(0) writeByte(useskill?1:0) writeByte(sk
 ```
 
 P117 前 MapleForge 在 `skill` 後多寫 2 個 0、`unk` 後多寫 12 個 0（照抄 c2s `MOVE_LIFE` 需略過的欄位），其他玩家看到的怪物移動欄位會錯位；既有測試把錯誤版型鎖成期望，已同步更正。movement 仍原樣轉送 c2s 剩餘位元組（Java 會重新序列化並捨棄尾端 9~17 位元組；尾端多餘資料客戶端不讀）。證據層級：Java source + Adapters focused tests；**unverified**（需雙客戶端真機確認他人畫面的怪物移動）。
+
+### 玩家異常狀態 GIVE_BUFF / GIVE_FOREIGN_BUFF / CANCEL_BUFF / CANCEL_FOREIGN_BUFF disease 版（P126）
+
+對照 Java `MapleDisease`（long 遮罩、isFirst 決定寫在第一或第二個 long）與 `MaplePacketCreator.giveDebuff`/`giveForeignDebuff`/`cancelDebuff`/`cancelForeignDebuff`：
+
+```text
+GIVE_BUFF(0x1E):          long first, long second, short x, short skillId, short level, int duration, short 0, short 900, byte 1
+GIVE_FOREIGN_BUFF(0xC0):  int cid, long first, long second, [skillId==125: short 0], short skillId, short level, short 0, short 900
+CANCEL_BUFF(0x1F):        long first, long second, byte 1
+CANCEL_FOREIGN_BUFF(0xC1): int cid, long first, long second
+first 組：POTION 0x80000000000、SHADOW 0x100000000000、BLIND 0x200000000000、FREEZE 0x8000000000000
+second 組：SLOW 0x1、MORPH 0x2、SEDUCE 0x80、ZOMBIFY 0x4000、REVERSE_DIRECTION 0x80000、WEIRD_FLAME 0x8000000、
+           STUN 0x2000000000000、POISON 0x4000000000000、SEAL 0x8000000000000、DARKNESS 0x10000000000000、
+           WEAKEN 0x4000000000000000、CURSE 0x8000000000000000
+```
+
+來源：怪物技能 120-126/128/132-137（`getByMobSkill`），只施加在送 MOVE_LIFE 的控制者；同時最多 2 種、不重複；神聖之盾擋 SEDUCE/STUN 以外。到期由 3 秒世界 tick 解除。證據層級：Java source + Adapters focused tests；**unverified**。異常的伺服器端效果（封印擋技能、殭屍化藥水減半、中毒扣血等）尚未移植。
