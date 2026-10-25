@@ -390,6 +390,21 @@ public sealed class NpcContextTests
     }
 
     [Fact]
+    public void CanHoldAndGainItem_UniqueItemAlreadyOwned_Refused()
+    {
+        // P217：Java checkSpace——唯一道具且已持有剛好 1 個 → canHold(id, qty) false，gainItem 不給。
+        var player = NewPlayer();
+        var ctx = new NpcContext(9000000, player, NewQuestService(), isPickupRestricted: static id => id == 4030003);
+
+        Assert.True(ctx.CanHold(4030003, 1));
+        ctx.GainItem(4030003, 1);
+        Assert.False(ctx.CanHold(4030003, 1));
+        ctx.GainItem(4030003, 1);
+
+        Assert.Equal(1, ctx.ItemQuantity(4030003));
+    }
+
+    [Fact]
     public async Task SafeDispose_EndsOnNextResponseWithoutCallingScript()
     {
         var player = NewPlayer();

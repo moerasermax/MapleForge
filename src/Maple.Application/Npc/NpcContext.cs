@@ -85,8 +85,10 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
         Func<int, int>? guildPointsOf = null,
         Func<int, bool>? isCash = null,
         int channelNumber = 1,
-        Func<int, IReadOnlyList<(int ReactorId, byte State)>>? reactorsOf = null)
+        Func<int, IReadOnlyList<(int ReactorId, byte State)>>? reactorsOf = null,
+        Func<int, bool>? isPickupRestricted = null)
     {
+        _isPickupRestricted = isPickupRestricted ?? (static _ => false);
         _reactorsOf = reactorsOf ?? (static _ => []);
         _isCash = isCash ?? (static id => id / 1_000_000 == 5);
         _channelNumber = channelNumber;
@@ -628,8 +630,15 @@ public sealed class NpcContext : INpcScriptContext, INpcShopScriptContext
     /// <summary>Java <c>canHold(itemId)</c>：該類背包有空格。</summary>
     public bool CanHold(int itemId) => _player.Inventory.By(InventoryTypeOf(itemId)).FirstFreeSlot() is not null;
 
-    /// <summary>P181：Java <c>canHold(itemId, quantity)</c> → <c>checkSpace(c, itemId, quantity, "")</c>（計入既有堆疊）。</summary>
-    public bool CanHold(int itemId, int quantity) => _player.HasSpaceFor(itemId, quantity);
+    private readonly Func<int, bool> _isPickupRestricted;
+
+    /// <summary>
+    /// P181：Java <c>canHold(itemId, quantity)</c> → <c>checkSpace(c, itemId, quantity, "")</c>（計入既有堆疊）。
+    /// P217：checkSpace 開頭——唯一道具且 haveItem(id, 1, true, false)（剛好 1 個）→ false；gainItem 因此也不給。
+    /// </summary>
+    public bool CanHold(int itemId, int quantity)
+        => !(_isPickupRestricted(itemId) && _player.HasExactlyOneIncludingEquipped(itemId))
+            && _player.HasSpaceFor(itemId, quantity);
 
     /// <summary>Java <c>removeAll(id, show=true)</c>：清掉背包裡該道具全部數量並提示。</summary>
     public void RemoveAll(int itemId)

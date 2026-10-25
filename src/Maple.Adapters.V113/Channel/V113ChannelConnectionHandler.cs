@@ -81,6 +81,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly Maple.Application.Squads.SquadRegistry? _squads;
     private readonly V113SquadNotifier? _squadNotifier;
     private readonly Maple.Application.Text.WzStringCatalog? _strings;
+    private readonly Maple.Core.Items.IItemMakeCatalog? _itemCatalog;
     private readonly DropServiceOptions? _dropOptions;
 
     /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
@@ -215,8 +216,10 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         Maple.Application.Events.IEventWorld? eventWorld = null,
         Maple.Application.Squads.SquadRegistry? squads = null,
         V113SquadNotifier? squadNotifier = null,
-        Maple.Application.Text.WzStringCatalog? strings = null)
+        Maple.Application.Text.WzStringCatalog? strings = null,
+        Maple.Core.Items.IItemMakeCatalog? itemCatalog = null)
     {
+        _itemCatalog = itemCatalog;
         _partyRegistry = partyRegistry;
         _portalOverrides = portalOverrides ?? new Maple.Application.Events.PortalScriptOverrideRegistry();
         _eventScripts = eventScripts;
@@ -2530,7 +2533,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             guildPointsOf: guildId => _guildService.GetGuildAsync(guildId).GetAwaiter().GetResult()?.GuildPoints ?? 0,
             isCash: _equipTemplates is { } cashTemplates ? cashTemplates.IsCash : null,
             channelNumber: _options.ChannelIndex + 1,
-            reactorsOf: FieldReactorStates);
+            reactorsOf: FieldReactorStates,
+            isPickupRestricted: _itemCatalog is { } uniqueCatalog ? uniqueCatalog.IsPickupRestricted : null);
 
     /// <summary>
     /// P176：跨隊員腳本效果——排進該隊員自己的連線序列執行（warp／經驗／道具），結果照一般 cm 送包流程送給對方。
