@@ -1,5 +1,6 @@
 using Maple.Application.Items;
 using Maple.Core.IO;
+using Maple.Core.Skills;
 using Maple.Core.World;
 
 namespace Maple.Adapters.V113.Channel;
@@ -78,8 +79,65 @@ public sealed class V113UseConsumableHandler
             foreign.Add(V113DiseasePackets.CancelForeignDebuff(player.Character.Id, disease));
         }
 
+        AddItemBuffPackets(player, result.Buff, packets, foreign);
         packets.Add(V113StatsPackets.EnableActions());
         return new V113UseConsumableResult(true, true, packets, foreign.Count > 0 ? foreign : null);
+    }
+
+    /// <summary>
+    /// P164：Java applyBuffEffect（道具）：未變身 → 他人 <c>showBuffeffect(cid, itemId, 1)</c>；變身 → 他人 <c>giveForeignBuff([MORPH])</c>，
+    /// berserk2 → 他人 <c>giveForeignBuff([BERSERK_FURY=1])</c>；本人 <c>giveBuff(-itemId, 持續時間, statups)</c>。
+    /// </summary>
+    internal static void AddItemBuffPackets(Player player, ItemBuffApplication? applied, List<byte[]> self, List<byte[]> foreign)
+    {
+        if (applied is null)
+        {
+            return;
+        }
+
+        var characterId = player.Character.Id;
+        var itemId = -applied.Effect.SourceId;
+        if (applied.ShowForeignEffect)
+        {
+            foreign.Add(V113SkillPackets.ShowForeignBuffEffect(characterId, itemId, 1));
+        }
+
+        if (applied.Buff.Stats.FirstOrDefault(static s => s.Stat == MapleBuffStat.MORPH) is { Stat: MapleBuffStat.MORPH } morph)
+        {
+            foreign.Add(V113BuffItemPackets.GiveForeignBuff(characterId, [morph], isMorph: true));
+        }
+        else if (applied.Buff.Stats.Any(static s => s.Stat == MapleBuffStat.BERSERK_FURY))
+        {
+            foreign.Add(V113BuffItemPackets.GiveForeignBuff(characterId, [new BuffStatValue(MapleBuffStat.BERSERK_FURY, 1)], isMorph: false));
+        }
+
+        self.Add(V113SkillPackets.GiveBuff(applied.Effect.SourceId, applied.Buff.DurationMilliseconds, applied.Buff.Stats, applied.Effect));
+    }
+
+    /// <summary>P164：任務 buffItemID 等「不消耗」的道具效果套用，回傳本人與他人封包。</summary>
+    internal (IReadOnlyList<byte[]> Self, IReadOnlyList<byte[]> Foreign) ApplyItemWithoutConsume(Player player, int itemId)
+    {
+        var result = _service.ApplyWithoutConsume(player, itemId, DateTimeOffset.UtcNow);
+        if (!result.Success)
+        {
+            return ([], []);
+        }
+
+        var self = new List<byte[]>();
+        var foreign = new List<byte[]>();
+        if (result.StatUpdates.Count > 0)
+        {
+            self.Add(V113StatsPackets.UpdateStats(result.StatUpdates));
+        }
+
+        foreach (var disease in result.CuredDiseases ?? [])
+        {
+            self.Add(V113DiseasePackets.CancelDebuff(disease));
+            foreign.Add(V113DiseasePackets.CancelForeignDebuff(player.Character.Id, disease));
+        }
+
+        AddItemBuffPackets(player, result.Buff, self, foreign);
+        return (self, foreign);
     }
 
     private static V113UseConsumableResult EnableActionsOnly()

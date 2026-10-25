@@ -2030,7 +2030,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             warp: warp,
             openShop: openShop,
             openStorage: openStorage,
-            sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
+            sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, player, session, c),
             sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
             sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
@@ -2066,7 +2066,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             warp: warp,
             openShop: openShop,
             openStorage: openStorage,
-            sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, session, c),
+            sendQuestResult: (result, c) => SendQuestTransactionResultAsync(result, player, session, c),
             sendInfoQuestUpdate: (questId, data, c) => session.SendAsync(V113QuestPackets.UpdateInfoQuest(questId, data), c),
             sendBuddyCapacity: (capacity, c) => session.SendAsync(V113BuddyPackets.UpdateBuddyCapacity((byte)capacity), c),
             increaseGuildCapacity: c => IncreaseGuildCapacityAndBroadcastAsync(player, session, c),
@@ -2980,7 +2980,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         var result = _questService.HandleClientAction(player, action);
-        await SendQuestTransactionResultAsync(result, session, ct);
+        await SendQuestTransactionResultAsync(result, player, session, ct);
     }
 
     private async Task HandleUpdateQuestAsync(PacketReader reader, Player player, MapleSession session, CancellationToken ct)
@@ -2996,11 +2996,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
 
         var result = _questService.UpdateQuest(player, questId);
-        await SendQuestTransactionResultAsync(result, session, ct);
+        await SendQuestTransactionResultAsync(result, player, session, ct);
     }
 
-    private static async Task SendQuestTransactionResultAsync(
+    private async Task SendQuestTransactionResultAsync(
         QuestTransactionResult result,
+        Player player,
         MapleSession session,
         CancellationToken ct)
     {
@@ -3046,6 +3047,21 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         foreach (var (skillId, level, masterLevel) in result.SkillChanges)
         {
             await session.SendAsync(V113StatsPackets.UpdateSkill(skillId, level, masterLevel), ct);
+        }
+
+        // P164：buffItemID → getItemEffect(id).applyTo(c)（不消耗道具）。
+        if (result.BuffItemId is { } buffItemId)
+        {
+            var (self, foreign) = _useConsumableHandler.ApplyItemWithoutConsume(player, buffItemId);
+            foreach (var packet in self)
+            {
+                await session.SendAsync(packet, ct);
+            }
+
+            foreach (var packet in foreign)
+            {
+                await BroadcastPacketToOthersAsync(player.Character, packet, ct);
+            }
         }
 
         if (result.ShowQuestCompletionId is { } completedQuestId)

@@ -160,6 +160,53 @@ public sealed class UseItemServiceTests
         Assert.Equal((short)25, player.Hp);
     }
 
+    [Fact]
+    public void Use_TimedItem_RegistersBuff_WithAlchemistYDuration()
+    {
+        // P164：applyBuffEffect：未變身 → alchemistModifyVal(withX=false)：夜使者藥劑精通 y=150 → 時間 ×1.5。
+        var player = NewPlayer(hp: 50, maxHp: 100, mp: 10, maxMp: 50, UseItem(2022109, 1, 2));
+        player.Character.Job = 412;
+        player.ChangeSkillLevel(4110000, 1, 20);
+        var alchemist = new Maple.Core.Skills.MapleSkill
+        {
+            Id = 4110000,
+            Effects = [new Maple.Core.Skills.MapleStatEffect { SourceId = 4110000, Level = 1, X = 120, Y = 150 }],
+        };
+        var service = new UseItemService(new BuffCatalog(), new Maple.Application.Skills.InMemorySkillCatalog([alchemist]));
+
+        var result = service.Use(player, slot: 1, itemId: 2022109, now: DateTimeOffset.UnixEpoch);
+
+        var buff = result.Buff!;
+        Assert.True(buff.ShowForeignEffect);
+        Assert.Equal(-2022109, buff.Buff.SourceId);
+        Assert.Equal(15000, buff.Buff.DurationMilliseconds);
+        Assert.Equal(5, player.GetBuffValue(Maple.Core.Skills.MapleBuffStat.WATK));
+    }
+
+    [Fact]
+    public void Use_MorphItem_UsesMorphSelfStats()
+    {
+        var player = NewPlayer(hp: 50, maxHp: 100, mp: 10, maxMp: 50, UseItem(2210000, 1, 1));
+        var service = new UseItemService(new BuffCatalog());
+
+        var buff = service.Use(player, slot: 1, itemId: 2210000, now: DateTimeOffset.UnixEpoch).Buff!;
+
+        Assert.Equal(12, player.GetBuffValue(Maple.Core.Skills.MapleBuffStat.MORPH));
+        Assert.Contains(buff.Buff.Stats, static s => s.Stat == Maple.Core.Skills.MapleBuffStat.JUMP);
+    }
+
+    private sealed class BuffCatalog : Maple.Core.Items.IItemEffectCatalog
+    {
+        public Maple.Core.Items.ItemEffect? GetEffect(int itemId) => new(itemId, 0, 0, 0, 0);
+
+        public Maple.Core.Skills.MapleStatEffect? GetBuffEffect(int itemId) => itemId switch
+        {
+            2022109 => new() { SourceId = -itemId, IsSkill = false, IsOverTime = true, DurationMilliseconds = 10000, Statups = [new(Maple.Core.Skills.MapleBuffStat.WATK, 5)] },
+            2210000 => new() { SourceId = -itemId, IsSkill = false, IsOverTime = true, DurationMilliseconds = 10000, MorphId = 12, Jump = 3 },
+            _ => null,
+        };
+    }
+
     private static UseItemService NewService() => new(new HardcodedItemEffectCatalog());
 
     private static Player NewPlayer(short hp, short maxHp, short mp, short maxMp, params ItemRecord[] items)

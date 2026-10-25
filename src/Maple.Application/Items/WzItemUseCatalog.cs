@@ -69,6 +69,74 @@ public sealed class WzItemUseCatalog : IItemUseCatalog, IItemEffectCatalog, IScr
     }
 
     /// <summary>
+    /// P164：對照 Java <c>loadFromData(spec, itemId, skill=false)</c>：<c>time &gt; -1</c> 即 overTime（道具時間單位為毫秒）；
+    /// statups 依序 WATK(pad)、WDEF(pdd)、MATK(mad)、MDEF(mdd)、ACC、AVOID(eva)、SPEED、JUMP、MAXHP(mhpR+mhp_temp)、
+    /// MAXMP(mmpR+mmp_temp)、EXPRATE(expBuff)、ACASH_RATE(cashBuff)、DROP_RATE(itemupbyitem×200)、MESO_RATE(mesoupbyitem×200)、
+    /// BERSERK_FURY(berserk2)、BOOSTER、ILLUSION（非 0 才加）；morph 另記 <see cref="Maple.Core.Skills.MapleStatEffect.MorphId"/>。
+    /// </summary>
+    public Maple.Core.Skills.MapleStatEffect? GetBuffEffect(int itemId)
+    {
+        var spec = GetItemNode(itemId)?["spec"];
+        var time = GetInt(spec, "time") ?? -1;
+        if (spec is null || time <= -1)
+        {
+            return null;
+        }
+
+        int I(string key) => GetInt(spec, key) ?? 0;
+        var statups = new List<Maple.Core.Skills.BuffStatValue>();
+        void Add(Maple.Core.Skills.MapleBuffStat stat, int value)
+        {
+            if (value != 0)
+            {
+                statups.Add(new Maple.Core.Skills.BuffStatValue(stat, value));
+            }
+        }
+
+        Add(Maple.Core.Skills.MapleBuffStat.WATK, (short)I("pad"));
+        Add(Maple.Core.Skills.MapleBuffStat.WDEF, (short)I("pdd"));
+        Add(Maple.Core.Skills.MapleBuffStat.MATK, (short)I("mad"));
+        Add(Maple.Core.Skills.MapleBuffStat.MDEF, (short)I("mdd"));
+        Add(Maple.Core.Skills.MapleBuffStat.ACC, (short)I("acc"));
+        Add(Maple.Core.Skills.MapleBuffStat.AVOID, (short)I("eva"));
+        Add(Maple.Core.Skills.MapleBuffStat.SPEED, (short)I("speed"));
+        Add(Maple.Core.Skills.MapleBuffStat.JUMP, (short)I("jump"));
+        Add(Maple.Core.Skills.MapleBuffStat.MAXHP, (sbyte)I("mhpR") + I("mhp_temp"));
+        Add(Maple.Core.Skills.MapleBuffStat.MAXMP, (sbyte)I("mmpR") + I("mmp_temp"));
+        Add(Maple.Core.Skills.MapleBuffStat.EXPRATE, I("expBuff"));
+        Add(Maple.Core.Skills.MapleBuffStat.ACASH_RATE, I("cashBuff"));
+        Add(Maple.Core.Skills.MapleBuffStat.DROP_RATE, I("itemupbyitem") * 200);
+        Add(Maple.Core.Skills.MapleBuffStat.MESO_RATE, I("mesoupbyitem") * 200);
+        Add(Maple.Core.Skills.MapleBuffStat.BERSERK_FURY, I("berserk2"));
+        Add(Maple.Core.Skills.MapleBuffStat.BOOSTER, I("booster"));
+        Add(Maple.Core.Skills.MapleBuffStat.ILLUSION, I("illusion"));
+
+        var morph = I("morph");
+        if (statups.Count == 0 && morph <= 0)
+        {
+            return null;
+        }
+
+        return new Maple.Core.Skills.MapleStatEffect
+        {
+            SourceId = -itemId,
+            IsSkill = false,
+            IsOverTime = true,
+            DurationMilliseconds = time,
+            Watk = (short)I("pad"),
+            Wdef = (short)I("pdd"),
+            Matk = (short)I("mad"),
+            Mdef = (short)I("mdd"),
+            Acc = (short)I("acc"),
+            Avoid = (short)I("eva"),
+            Speed = (short)I("speed"),
+            Jump = (short)I("jump"),
+            MorphId = morph,
+            Statups = statups,
+        };
+    }
+
+    /// <summary>
     /// P121：升級卷軸（204xxxx）數值（對照 Java <c>getEquipStats(scrollId)</c>：info 的 success、cursed、inc*）。
     /// 特殊卷軸（混沌、恢復、裝備強化、潛能、釘鞋/防寒）的專屬效果尚未移植，目前只取通用數值。
     /// </summary>

@@ -136,4 +136,27 @@ public sealed class ChannelUseConsumableHandlerTests
             Quantity = quantity,
             Expiration = -1,
         };
+
+    [Fact]
+    public void ItemBuffPackets_SelfGiveBuffNegativeId_ForeignShowEffect()
+    {
+        // P164：Java applyBuffEffect：他人 showBuffeffect(cid, itemId, 1)；本人 giveBuff(-itemId, 持續, statups)。
+        var player = new Maple.Core.World.Player(new Maple.Core.Characters.Character { Id = 7, Name = "Buff" }, new Maple.Core.World.Position(0, 0, 0, 0));
+        var effect = new Maple.Core.Skills.MapleStatEffect
+        {
+            SourceId = -2022109,
+            IsSkill = false,
+            IsOverTime = true,
+            DurationMilliseconds = 10000,
+            Statups = [new Maple.Core.Skills.BuffStatValue(Maple.Core.Skills.MapleBuffStat.WATK, 5)],
+        };
+        var buff = player.ApplyBuffStats(effect, DateTimeOffset.UnixEpoch)!;
+        var self = new List<byte[]>();
+        var foreign = new List<byte[]>();
+
+        V113UseConsumableHandler.AddItemBuffPackets(player, new Maple.Application.Items.ItemBuffApplication(effect, buff, ShowForeignEffect: true), self, foreign);
+
+        Assert.Equal([V113SkillPackets.GiveBuff(-2022109, 10000, buff.Stats, effect)], self);
+        Assert.Equal([V113SkillPackets.ShowForeignBuffEffect(7, 2022109, 1)], foreign);
+    }
 }

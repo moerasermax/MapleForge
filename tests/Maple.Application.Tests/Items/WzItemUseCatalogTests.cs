@@ -50,6 +50,27 @@ public sealed class WzItemUseCatalogTests
     }
 
     [Fact]
+    public void GetBuffEffect_ReadsTimedStatupsInJavaOrder()
+    {
+        // P164：loadFromData：time > -1 → overTime；statups WATK、SPEED、MESO_RATE(×200)；SourceId = -itemId。
+        var catalog = new WzItemUseCatalog(new ItemDataProvider());
+
+        var effect = catalog.GetBuffEffect(2022109)!;
+
+        Assert.Equal(-2022109, effect.SourceId);
+        Assert.False(effect.IsSkill);
+        Assert.Equal(180000, effect.DurationMilliseconds);
+        Assert.Equal(
+            [
+                new Maple.Core.Skills.BuffStatValue(Maple.Core.Skills.MapleBuffStat.WATK, 5),
+                new Maple.Core.Skills.BuffStatValue(Maple.Core.Skills.MapleBuffStat.SPEED, 10),
+                new Maple.Core.Skills.BuffStatValue(Maple.Core.Skills.MapleBuffStat.MESO_RATE, 200),
+            ],
+            effect.Statups);
+        Assert.Null(catalog.GetBuffEffect(2000019)); // 無 time
+    }
+
+    [Fact]
     public void GetEffect_UnknownItem_ReturnsNull()
     {
         Assert.Null(new WzItemUseCatalog(new ItemDataProvider()).GetEffect(2000999));
@@ -123,6 +144,17 @@ public sealed class WzItemUseCatalogTests
                 }),
             });
 
+            var attackPotion = new Node("02022109", children: new Dictionary<string, IDataNode>
+            {
+                ["spec"] = new Node("spec", children: new Dictionary<string, IDataNode>
+                {
+                    ["pad"] = new Node("pad", 5),
+                    ["speed"] = new Node("speed", 10),
+                    ["mesoupbyitem"] = new Node("mesoupbyitem", 1),
+                    ["time"] = new Node("time", 180000),
+                }),
+            });
+
             _itemRoot = new Node("Item", children: new Dictionary<string, IDataNode>
             {
                 ["Consume"] = new Node("Consume", children: new Dictionary<string, IDataNode>
@@ -130,6 +162,10 @@ public sealed class WzItemUseCatalogTests
                     ["0200.img"] = new Node("0200.img", children: new Dictionary<string, IDataNode>
                     {
                         ["02000019"] = potion,
+                    }),
+                    ["0202.img"] = new Node("0202.img", children: new Dictionary<string, IDataNode>
+                    {
+                        ["02022109"] = attackPotion,
                     }),
                     ["0204.img"] = new Node("0204.img", children: new Dictionary<string, IDataNode>
                     {
