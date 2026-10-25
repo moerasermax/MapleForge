@@ -151,6 +151,78 @@ public sealed class ChannelPartyPacketTests
         return names;
     }
 
+    [Theory]
+    [InlineData(2, "left:2")]
+    [InlineData(1, "disband:1")]
+    public async Task HandlerLeave_NotifiesEventInstance(int leaverId, string expected)
+    {
+        // P179：Java PartyHandler case 2——隊長離隊（解散）→ disbandParty，隊員離隊 → leftParty。
+        var service = new PartyService(new InMemoryPartyRegistry(firstPartyId: 40));
+        service.CreateParty(Member(1, "Leader"));
+        service.JoinParty(40, Member(2, "Guest"));
+        var events = new RecordingEventHost();
+        var handler = new V113PartyOperationHandler(service, new FakePartySessionHook(), events: events);
+
+        await handler.HandlePartyOperationAsync(
+            new PacketReader(new PacketWriter().WriteByte((byte)V113PartyClientOperation.Leave).ToArray()),
+            Player(leaverId, leaverId == 1 ? "Leader" : "Guest", channelIndexMap: 100000000),
+            channelIndex: 0,
+            (_, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal([expected], events.Calls);
+    }
+
+    [Fact]
+    public async Task HandlerExpel_OnlineMember_DisbandsLeadersEventInstance()
+    {
+        var service = new PartyService(new InMemoryPartyRegistry(firstPartyId: 40));
+        service.CreateParty(Member(1, "Leader"));
+        service.JoinParty(40, Member(2, "Guest"));
+        var events = new RecordingEventHost();
+        var handler = new V113PartyOperationHandler(service, new FakePartySessionHook(), events: events);
+
+        await handler.HandlePartyOperationAsync(
+            new PacketReader(new PacketWriter().WriteByte((byte)V113PartyClientOperation.Expel).WriteInt(2).ToArray()),
+            Player(1, "Leader", channelIndexMap: 100000000),
+            channelIndex: 0,
+            (_, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal(["disband:1"], events.Calls);
+    }
+
+    private sealed class RecordingEventHost : Maple.Application.Events.IEventScriptHost
+    {
+        public List<string> Calls { get; } = [];
+
+        public void Start(DateTimeOffset now) { }
+
+        public void Tick(DateTimeOffset now) { }
+
+        public bool HasEvent(string name) => false;
+
+        public object? GetEventManager(string name) => null;
+
+        public object? GetEventInstance(int characterId) => null;
+
+        public void OnChangedMap(int characterId, int mapId) { }
+
+        public int? GetTimeLeftSeconds(int characterId) => null;
+
+        public void OnPlayerDead(int characterId) { }
+
+        public bool OnPlayerRevive(int characterId) => false;
+
+        public void OnPlayerDisconnected(int characterId) { }
+
+        public void OnMonsterKilled(int mapId, int objectId, int monsterId, int? highestDamageCharacterId) { }
+
+        public void OnLeftParty(int characterId) => Calls.Add($"left:{characterId}");
+
+        public void OnDisbandParty(int characterId) => Calls.Add($"disband:{characterId}");
+    }
+
     private static PartyMember Member(int id, string name, int channelIndex = 0, int mapId = 100000000) =>
         new(id, name, Level: 30, JobId: 100, mapId, channelIndex);
 

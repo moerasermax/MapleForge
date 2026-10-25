@@ -32,6 +32,8 @@ public sealed class EventInstanceApi
 
     private IEventWorld World => _runtime.Host.World;
 
+    internal EventRuntime Runtime => _runtime;
+
     public string getName() => Name;
 
     public EventManagerApi getEventManager() => _runtime.Api;
@@ -415,14 +417,71 @@ public sealed class EventInstanceApi
         }
     }
 
-    internal void MarkDisconnected(int characterId)
+    internal void OnChangedMap(int characterId, int mapId) => Call("changedMap", new EventCharacterApi(_runtime, characterId), mapId);
+
+    internal void OnPlayerDead(int characterId) => Call("playerDead", new EventCharacterApi(_runtime, characterId));
+
+    /// <summary>Java revivePlayer：腳本回傳 boolean 則用之，否則 true。</summary>
+    internal bool OnPlayerRevive(int characterId)
     {
+        if (Disposed)
+        {
+            return false;
+        }
+
+        var result = _runtime.InvokeNow("playerRevive", this, new EventCharacterApi(_runtime, characterId));
+        return !result.IsBoolean() || result.AsBoolean();
+    }
+
+    /// <summary>
+    /// Java playerDisconnected：ret = 腳本回傳（非數字 0）；記斷線、unregister；ret 0 → 沒人就 dispose；
+    /// ret &gt; 0 且人數 &lt; ret，或 ret &lt; 0 且（斷線者是隊長或人數 &lt; -ret）→ 其他人 playerExit 後 dispose。
+    /// </summary>
+    internal void OnPlayerDisconnected(int characterId)
+    {
+        if (Disposed)
+        {
+            return;
+        }
+
+        var chr = new EventCharacterApi(_runtime, characterId);
+        var result = _runtime.InvokeNow("playerDisconnected", this, chr);
+        var ret = result.IsNumber() ? (int)(sbyte)(long)result.AsNumber() : 0;
+        var leader = isLeader(chr);
+        int[] others = [];
+        bool dispose;
         lock (_lock)
         {
-            if (!Disposed)
+            if (Disposed)
             {
-                _disconnected.Add(characterId);
+                return;
             }
+
+            _disconnected.Add(characterId);
+            UnregisterNoLock(characterId);
+            var count = _players.Count;
+            if (ret == 0)
+            {
+                dispose = count <= 0;
+            }
+            else
+            {
+                dispose = (ret > 0 && count < ret) || (ret < 0 && (leader || count < -ret));
+                if (dispose)
+                {
+                    others = _players.Where(id => id != characterId).ToArray();
+                }
+            }
+        }
+
+        foreach (var id in others)
+        {
+            removePlayer(new EventCharacterApi(_runtime, id));
+        }
+
+        if (dispose)
+        {
+            this.dispose();
         }
     }
 

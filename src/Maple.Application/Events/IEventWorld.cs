@@ -83,4 +83,32 @@ public interface IEventScriptHost
 
     /// <summary>P178：角色目前所屬事件實例（Java <c>chr.getEventInstance()</c>）；腳本引擎層型別，無則 null。</summary>
     object? GetEventInstance(int characterId);
+
+    // ── P179：遊戲流程掛勾（呼叫端不可持有 field 鎖：腳本可能回頭操作地圖）────────────────────────
+    /// <summary>Java <c>changeMapInternal</c> 開頭：<c>eim.changedMap(chr, to.getId())</c>（換圖前）。</summary>
+    void OnChangedMap(int characterId, int mapId);
+
+    /// <summary>Java <c>MapleMap.addPlayer</c>：eim 計時中 → getClock(剩餘秒)；否則 null。</summary>
+    int? GetTimeLeftSeconds(int characterId);
+
+    /// <summary>Java <c>playerDead</c> → <c>eim.playerKilled</c>。</summary>
+    void OnPlayerDead(int characterId);
+
+    /// <summary>Java <c>ChangeMap</c> 死亡復活：<c>eim.revivePlayer</c>（腳本回 boolean，否則 true）。</summary>
+    bool OnPlayerRevive(int characterId);
+
+    /// <summary>Java <c>MapleClient.disconnect</c> → <c>eim.playerDisconnected</c>。</summary>
+    void OnPlayerDisconnected(int characterId);
+
+    /// <summary>
+    /// Java <c>MapleMonster.killBy</c>：最高傷害者領經驗時 <c>monsterKilled</c>（怪物的實例優先，否則該玩家的實例），
+    /// 之後怪物登記的實例 <c>unregisterMonster</c>（清空時 allMonstersDead）。
+    /// </summary>
+    void OnMonsterKilled(int mapId, int objectId, int monsterId, int? highestDamageCharacterId);
+
+    /// <summary>Java PartyHandler 離隊（非隊長）→ <c>eim.leftParty(chr)</c>。</summary>
+    void OnLeftParty(int characterId);
+
+    /// <summary>Java PartyHandler 隊長離隊／踢出在線隊員 → <c>eim.disbandParty()</c>。</summary>
+    void OnDisbandParty(int characterId);
 }

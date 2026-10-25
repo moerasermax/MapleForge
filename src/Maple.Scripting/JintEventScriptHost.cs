@@ -129,6 +129,43 @@ public sealed class JintEventScriptHost : IEventScriptHost
 
     internal void SetPlayerInstance(int characterId, EventInstanceApi eim) => _playerInstances[characterId] = eim;
 
+    private EventInstanceApi? InstanceOf(int characterId) => GetEventInstance(characterId) as EventInstanceApi;
+
+    public void OnChangedMap(int characterId, int mapId) => InstanceOf(characterId)?.OnChangedMap(characterId, mapId);
+
+    public int? GetTimeLeftSeconds(int characterId)
+        => InstanceOf(characterId) is { } eim && eim.isTimerStarted() ? (int)(eim.getTimeLeft() / 1000) : null;
+
+    public void OnPlayerDead(int characterId) => InstanceOf(characterId)?.OnPlayerDead(characterId);
+
+    public bool OnPlayerRevive(int characterId) => InstanceOf(characterId)?.OnPlayerRevive(characterId) ?? false;
+
+    public void OnPlayerDisconnected(int characterId) => InstanceOf(characterId)?.OnPlayerDisconnected(characterId);
+
+    public void OnMonsterKilled(int mapId, int objectId, int monsterId, int? highestDamageCharacterId)
+    {
+        _trackedMobs.TryRemove((mapId, objectId), out var tracked);
+        if (highestDamageCharacterId is { } killer)
+        {
+            (tracked?.EventInstance ?? InstanceOf(killer))?.OnMonsterKilled(killer, monsterId);
+        }
+
+        if (tracked?.EventInstance is { } owner)
+        {
+            owner.unregisterMonster(tracked);
+        }
+    }
+
+    public void OnLeftParty(int characterId)
+    {
+        if (InstanceOf(characterId) is { } eim)
+        {
+            eim.leftParty(new EventCharacterApi(eim.Runtime, characterId));
+        }
+    }
+
+    public void OnDisbandParty(int characterId) => InstanceOf(characterId)?.disbandParty();
+
     /// <summary>只在角色仍屬於該實例時清除（避免舊實例清掉新登記）。</summary>
     internal void ClearPlayerInstance(int characterId, EventInstanceApi eim)
         => _playerInstances.TryRemove(new KeyValuePair<int, EventInstanceApi>(characterId, eim));
@@ -142,10 +179,7 @@ public sealed class JintEventScriptHost : IEventScriptHost
         }
     }
 
-    internal MonsterTemplate? FindTrackedMonster(int mapId, int objectId)
-        => _trackedMobs.TryGetValue((mapId, objectId), out var mob) ? mob : null;
 
-    internal void ForgetMonster(int mapId, int objectId) => _trackedMobs.TryRemove((mapId, objectId), out _);
 }
 
 /// <summary>P177：一個事件腳本的執行期（引擎、鎖、屬性、排程）。</summary>

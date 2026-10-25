@@ -75,6 +75,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly Maple.Application.Events.ITransportEffects? _transportEffects;
     private readonly IPartyRegistry? _partyRegistry;
     private readonly Maple.Application.Events.PortalScriptOverrideRegistry _portalOverrides;
+    private readonly Maple.Application.Events.IEventScriptHost? _eventScripts;
     private readonly DropServiceOptions? _dropOptions;
 
     /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
@@ -203,10 +204,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         Maple.Application.Events.ITransportEffects? transportEffects = null,
         IPartyRegistry? partyRegistry = null,
         DropServiceOptions? dropOptions = null,
-        Maple.Application.Events.PortalScriptOverrideRegistry? portalOverrides = null)
+        Maple.Application.Events.PortalScriptOverrideRegistry? portalOverrides = null,
+        Maple.Application.Events.IEventScriptHost? eventScripts = null)
     {
         _partyRegistry = partyRegistry;
         _portalOverrides = portalOverrides ?? new Maple.Application.Events.PortalScriptOverrideRegistry();
+        _eventScripts = eventScripts;
         _dropOptions = dropOptions;
         _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
@@ -502,6 +505,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             }
             else
             {
+                // P179：Java ChangeMap 死亡分支 eim.revivePlayer(chr) && chr.isAlive() → 由事件處理。
+                if (!player.IsAlive && _eventScripts is not null && RunEventHook(() => _eventScripts.OnPlayerRevive(chr.Id)) && player.IsAlive)
+                {
+                    return;
+                }
+
                 // 死亡/特殊 targetid：MVP 回當前圖的 ReturnMap portal 0（不卡死）；無效則放行
                 var map = _mapService.LoadMap(chr.MapId);
                 if (map.ReturnMapId is not (0 or NoTargetMapId) && map.ReturnMapId != chr.MapId)
@@ -1886,6 +1895,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             if (player is not null)
             {
+                // P179：Java MapleClient.disconnect → eim.playerDisconnected（在地圖移除與存檔之前）。
+                var disconnecting = player.Character.Id;
+                RunEventHook(() => _eventScripts?.OnPlayerDisconnected(disconnecting));
                 var tradeResult = _tradeService.DeregisterPlayer(player, sessionToken);
                 try
                 {
@@ -2395,6 +2407,53 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// 對照 Java NPCMoreTalk：lastMsg==2(getText) 帶字串、否則 selection = 剩餘≥4 readInt / &gt;0 readByte / else -1。
     /// </summary>
     /// <summary>P173：Boats.js 的 setScriptName（船艙 out00/out01 → OBoat1/2、EBoat1/2）；P177：事件腳本的 setScriptName。</summary>
+    /// <summary>
+    /// P179：Java killBy → giveExpToCharacter(highestDamage) 的 monsterKilled，與 unregisterMonster。
+    /// 最高傷害者＝擊殺者（KillerHighestDamage）或其他領經驗者中標記最高者；沒有經驗分配（無獎勵擊殺）則只 unregister。
+    /// </summary>
+    private void NotifyEventMonsterKilled(Player killer, CombatMobHit hit)
+    {
+        if (_eventScripts is null)
+        {
+            return;
+        }
+
+        int? highest = hit.Rewards switch
+        {
+            null => null,
+            { KillerHighestDamage: true } => killer.Character.Id,
+            { OtherAwards: { } others } => others.FirstOrDefault(static a => a.HighestDamage)?.Receiver.Character.Id,
+            _ => null,
+        };
+        RunEventHook(() => _eventScripts.OnMonsterKilled(killer.Character.MapId, hit.ObjectId, hit.MonsterId, highest));
+    }
+
+    /// <summary>P179：事件腳本掛勾不得中斷遊戲流程（腳本例外已在主機吞掉，這裡再保險）。</summary>
+    private void RunEventHook(Action hook)
+    {
+        try
+        {
+            hook();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[EventScript] 事件掛勾失敗");
+        }
+    }
+
+    private bool RunEventHook(Func<bool> hook)
+    {
+        try
+        {
+            return hook();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[EventScript] 事件掛勾失敗");
+            return false;
+        }
+    }
+
     private MapPortal WithScriptOverride(int mapId, MapPortal portal)
         => _portalOverrides.Get(mapId, portal.Name) is { } script
             ? new MapPortal { Id = portal.Id, Name = portal.Name, Type = portal.Type, X = portal.X, Y = portal.Y, TargetMapId = portal.TargetMapId, TargetPortalName = portal.TargetPortalName, Script = script }
@@ -2556,6 +2615,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         int spawnPortalId = 0)
     {
         var chr = player.Character;
+        // P179：Java changeMapInternal 開頭 eventInstance.changedMap(this, to.getId())。
+        RunEventHook(() => _eventScripts?.OnChangedMap(chr.Id, mapId));
         var oldMapId = chr.MapId;
         var removedFromOldMap = _mapRegistry.Deregister(oldMapId, chr.Id, sessionToken);
         _partySearchHandler.NotifyMapLeave(player);
@@ -2610,6 +2671,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         if (BoatPacketOnEntry(mapId) is { } boatPacket)
         {
             await session.SendAsync(boatPacket, ct); // P173：MapleMap.addPlayer 的 hasBoat
+        }
+
+        // P179：MapleMap.addPlayer——事件實例計時中 → getClock(剩餘秒)。
+        if (_eventScripts?.GetTimeLeftSeconds(chr.Id) is { } timeLeft)
+        {
+            await session.SendAsync(V113TransportEffects.Clock(timeLeft), ct);
         }
 
         await V113ReactorHandler.SendFieldReactorsAsync(field, session, ct);
@@ -4589,6 +4656,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.KillMonster(hit.ObjectId), ct);
                 await NotifyControllerStoppedAsync(hit.ControllerId, hit.ObjectId, player, session, ct);
+                NotifyEventMonsterKilled(player, hit);
 
                 // P148：spawnRevives → 全圖 SPAWN_MONSTER(-2, link = 死亡 oid)，攻擊者接手控制。
                 foreach (var revived in hit.Revived ?? [])
@@ -4622,6 +4690,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             {
                 await session.SendAsync(packet, ct);
             }
+
+            RunEventHook(() => _eventScripts?.OnPlayerDead(player.Character.Id)); // P179：Java playerDead → eim.playerKilled
 
             await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
         }

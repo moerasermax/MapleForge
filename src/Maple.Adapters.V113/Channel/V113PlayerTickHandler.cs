@@ -26,14 +26,18 @@ public sealed class V113PlayerTickHandler
     private readonly V113PartyHpSync? _partyHpSync;
     private readonly IMapSessionRegistry _mapRegistry;
 
+    private readonly Maple.Application.Events.IEventScriptHost? _events;
+
     public V113PlayerTickHandler(
         SkillService skills,
         FieldHazardService hazards,
         PlayerDeathService deaths,
         V113BuffCancellationEffects buffEffects,
         IMapSessionRegistry mapRegistry,
-        V113PartyHpSync? partyHpSync = null)
+        V113PartyHpSync? partyHpSync = null,
+        Maple.Application.Events.IEventScriptHost? events = null)
     {
+        _events = events;
         _partyHpSync = partyHpSync;
         _skills = skills;
         _hazards = hazards;
@@ -108,6 +112,7 @@ public sealed class V113PlayerTickHandler
                 }
 
                 await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, entry.SendPacket).ConfigureAwait(false);
+                _events?.OnPlayerDead(player.Character.Id); // P179：Java playerDead → eim.playerKilled
             }
 
             await SendBestEffortAsync(

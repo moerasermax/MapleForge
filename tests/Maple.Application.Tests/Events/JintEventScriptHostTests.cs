@@ -152,6 +152,17 @@ public sealed class JintEventScriptHostTests : IDisposable
             em.setProperty("timedOut", "yes");
         }
         function allMonstersDead(eim) { eim.setProperty("cleared", "true"); }
+        function playerDisconnected(eim, player) { return -2; }
+        function leftParty(eim, player) {
+            if (eim.disposeIfPlayerBelow(3, 103000890)) { em.setProperty("started", "false"); } else { playerExit(eim, player); }
+        }
+        function disbandParty(eim) { eim.disposeIfPlayerBelow(100, 103000890); em.setProperty("state", "0"); }
+        function playerExit(eim, player) {
+            eim.unregisterPlayer(player);
+            var exit = eim.getMapFactory().getMap(103000890);
+            player.changeMap(exit, exit.getPortal(0));
+        }
+        function playerDead(eim, player) { eim.setProperty("dead", "" + player.getId()); }
         """;
 
     [Fact]
@@ -287,6 +298,117 @@ public sealed class JintEventScriptHostTests : IDisposable
         Assert.Equal([(7, 103000800, 0)], world.Warps);
     }
 
+    // ── P179：遊戲流程掛勾 ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void OnChangedMap_OutsidePq_UnregistersAndDisposes()
+    {
+        var (host, world, _) = Started(KerningLike, [7]);
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(7));
+
+        host.OnChangedMap(7, 103000890);
+
+        Assert.True(eim.Disposed);
+        Assert.Null(host.GetEventInstance(7));
+        Assert.Equal("0", Api(host).getProperty("state"));
+    }
+
+    [Fact]
+    public void OnPlayerDisconnected_LeaderWithMinusTwo_ExitsOthersAndDisposes()
+    {
+        var (host, world, _) = Started(KerningLike, [7, 8, 9]);
+        world.Parties[7] = new EventPartyInfo(1, 7, [7, 8, 9]);
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(8));
+        world.Warps.Clear();
+
+        host.OnPlayerDisconnected(7);
+
+        Assert.True(eim.Disposed);
+        Assert.Equal([(8, 103000890, 0), (9, 103000890, 0)], world.Warps);
+    }
+
+    [Fact]
+    public void OnPlayerDisconnected_NonLeader_StaysWhileEnoughPlayers()
+    {
+        var (host, world, _) = Started(KerningLike, [7, 8, 9]);
+        world.Parties[8] = new EventPartyInfo(1, 7, [7, 8, 9]);
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(8));
+
+        host.OnPlayerDisconnected(8);
+
+        Assert.False(eim.Disposed);
+        Assert.Equal(2, eim.getPlayerCount());
+        Assert.True(eim.isDisconnected(new MapRefChar(8)));
+    }
+
+    [Fact]
+    public void OnLeftParty_BelowThree_WarpsAllAndDisposes_DisbandAlso()
+    {
+        var (host, world, _) = Started(KerningLike, [7, 8]);
+        world.Warps.Clear();
+
+        host.OnLeftParty(8);
+
+        Assert.Equal([(7, 103000890, 0), (8, 103000890, 0)], world.Warps);
+        Assert.Equal("false", Api(host).getProperty("started"));
+        Assert.Null(host.GetEventInstance(7));
+        host.OnDisbandParty(7); // 已無實例：無事
+    }
+
+    [Fact]
+    public void OnPlayerDead_InvokesPlayerDead_AndClockOnMapEntry()
+    {
+        var (host, _, _) = Started(KerningLike, [7]);
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(7));
+
+        host.OnPlayerDead(7);
+
+        Assert.Equal("7", eim.getProperty("dead"));
+        Assert.Equal(1800, host.GetTimeLeftSeconds(7));
+        Assert.Null(host.GetTimeLeftSeconds(8));
+        Assert.True(host.OnPlayerRevive(7)); // 腳本無 playerRevive → Java 預設 true
+    }
+
+    [Fact]
+    public void OnMonsterKilled_CountsKill_AndAllMonstersDead()
+    {
+        var (host, world, _) = Create("""
+            function init() {}
+            function monsterValue(eim, mobId) { return mobId == 9300003 ? 2 : 1; }
+            function setup() {
+                var eim = em.newInstance("Boss");
+                var map = eim.setInstanceMap(100000000);
+                var mob = em.getMonster(9300003);
+                eim.registerMonster(mob);
+                map.spawnMonsterOnGroundBelow(mob, new java.awt.Point(0, 0));
+                return eim;
+            }
+            function playerEntry(eim, player) {}
+            function allMonstersDead(eim) { eim.setProperty("cleared", "true"); }
+            """);
+        world.OnMap[100000000] = [7];
+        host.Start(T0);
+        Api(host).startInstance(new PartyRef(1, [7]), new MapRef(100000000));
+        var eim = Assert.IsType<EventInstanceApi>(host.GetEventInstance(7));
+
+        host.OnMonsterKilled(100000000, 999, 100100, 7); // 不是實例怪：算進玩家的實例
+        Assert.Equal(1, eim.getKillCount(new MapRefChar(7)));
+        Assert.Null(eim.getProperty("cleared"));
+
+        host.OnMonsterKilled(100000000, 1, 9300003, 7);
+        Assert.Equal(3, eim.getKillCount(new MapRefChar(7)));
+        Assert.Equal("true", eim.getProperty("cleared"));
+    }
+
+    private (JintEventScriptHost, FakeWorld, PortalScriptOverrideRegistry) Started(string source, int[] members)
+    {
+        var (host, world, portals) = Create(source);
+        world.OnMap[103000000] = members;
+        host.Start(T0);
+        Api(host).startInstance(new PartyRef(1, members), new MapRef(103000000));
+        return (host, world, portals);
+    }
+
     private static EventManagerApi Api(JintEventScriptHost host) => Assert.IsType<EventManagerApi>(host.GetEventManager("Test"));
 
     private (JintEventScriptHost, FakeWorld, PortalScriptOverrideRegistry) Create(string source, string[]? extraEvents = null, TimeProvider? time = null)
@@ -331,7 +453,9 @@ public sealed class JintEventScriptHostTests : IDisposable
 
         public void SendEnvironment(int characterId, int mode, string name) { }
 
-        public EventPartyInfo? GetParty(int characterId) => null;
+        public Dictionary<int, EventPartyInfo> Parties { get; } = [];
+
+        public EventPartyInfo? GetParty(int characterId) => Parties.GetValueOrDefault(characterId);
 
         public void BroadcastNotice(int mapId, int type, string message) => Notices.Add((mapId, type, message));
 

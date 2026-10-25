@@ -34,12 +34,18 @@ public sealed class V113PartyOperationHandler
     private readonly IV113PartySessionHook _sessions;
 
     private readonly DoorService? _doors;
+    private readonly Maple.Application.Events.IEventScriptHost? _events;
 
-    public V113PartyOperationHandler(PartyService parties, IV113PartySessionHook sessions, DoorService? doors = null)
+    public V113PartyOperationHandler(
+        PartyService parties,
+        IV113PartySessionHook sessions,
+        DoorService? doors = null,
+        Maple.Application.Events.IEventScriptHost? events = null)
     {
         _parties = parties;
         _sessions = sessions;
         _doors = doors;
+        _events = events;
     }
 
     /// <summary>P161：Java <c>new MaplePartyCharacter(chr)</c>——角色快照加上門欄位。</summary>
@@ -367,6 +373,16 @@ public sealed class V113PartyOperationHandler
         if (result.Succeeded)
         {
             await BroadcastPartyUpdateAsync(result, player, channelIndex, sendSelf, ct);
+
+            // P179：Java PartyHandler case 2——隊長離隊（解散）→ eim.disbandParty()，否則 eim.leftParty(chr)。
+            if (result.UpdateKind == PartyUpdateKind.Disband)
+            {
+                _events?.OnDisbandParty(player.Character.Id);
+            }
+            else
+            {
+                _events?.OnLeftParty(player.Character.Id);
+            }
         }
     }
 
@@ -432,6 +448,13 @@ public sealed class V113PartyOperationHandler
         if (result.Succeeded)
         {
             await BroadcastPartyUpdateAsync(result, player, channelIndex, sendSelf, ct);
+
+            // P179：Java PartyHandler case 4——踢出在線隊員時，隊長的事件實例 disbandParty()。
+            if (result.Target is { IsOnline: true })
+            {
+                _events?.OnDisbandParty(player.Character.Id);
+            }
+
             return;
         }
 
