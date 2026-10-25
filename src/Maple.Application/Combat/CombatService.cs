@@ -41,7 +41,9 @@ public sealed record CombatMobHit(
     // P124：怪物身上有物/魔反射時，攻擊者因此被扣的 HP（Java player.addHP(-(7000 + nextInt(8000)))，實際扣血量）。
     int ReflectedDamage = 0,
     // P143：吸魔成功時的被動技能 ID（呼叫端送 showOwnBuffEffect／showBuffeffect）；0 = 未觸發。
-    int MpEaterSkillId = 0);
+    int MpEaterSkillId = 0,
+    // P144：偷錢掉出的楓幣（呼叫端廣播 DROP_ITEM_FROM_MAPOBJECT）。
+    IReadOnlyList<MapDrop>? PickPocketDrops = null);
 
 /// <summary>
 /// 怪物血條顯示所需快照（在戰鬥鎖內擷取）：顯示類型、血量、王血條顏色、最近攻擊者。
@@ -261,6 +263,9 @@ public sealed class CombatService
                 mob.RecordAttacker(attacker.Character.Id, now);
             }
 
+            // P144：Java applyAttack 射程檢查之後、扣血之前——偷錢 buff 下普攻與指定技能逐行掉楓幣。
+            var pickPocketDrops = !attack.IsMagic && !attack.FromSummon ? PickPocket(field, attacker, mob, attack, target) : null;
+
             // P124：Java DamageParse.applyAttack——鬼神之擊（1221011）打王固定 199999，其餘留 1 HP。
             var requested = attack.SkillId == HeavensHammerSkillId && totalDamage > 0
                 ? (mob.Stats.Boss ? 199_999 : Math.Max(0, mob.Hp - 1))
@@ -305,7 +310,8 @@ public sealed class CombatService
                 mulungEnergyAfter,
                 appliedStatuses,
                 ApplyReflect(mob, attacker, attack.IsMagic, totalDamage),
-                mpEaterSkillId));
+                mpEaterSkillId,
+                pickPocketDrops));
 
             if (totalDamage > 0 && !attack.IsMagic && !attack.FromSummon)
             {
@@ -321,6 +327,26 @@ public sealed class CombatService
 
         return new CombatAttackResult(hits);
     }
+
+    /// <summary>
+    /// P144：Java <c>applyAttack</c>：PICKPOCKET buff 存在且技能為普攻 0、4001334、4201005、4211002、4211004、4221003、
+    /// 4221007 → <c>handlePickPocket</c>（maxmeso = buff 值、機率取偷錢 4211003 在目前等級的 prop）。
+    /// </summary>
+    private IReadOnlyList<MapDrop>? PickPocket(FieldInstance field, Player attacker, Mob mob, CombatAttack attack, CombatAttackTarget target)
+    {
+        if (_mobKillHandler is null
+            || attacker.GetBuffValue(MapleBuffStat.PICKPOCKET) is not { } maxMeso
+            || attack.SkillId is not (0 or 4001334 or 4201005 or 4211002 or 4211004 or 4221003 or 4221007))
+        {
+            return null;
+        }
+
+        var prop = _skills?.GetSkill(PickPocketSkillId)?.GetEffect(attacker.GetSkillLevel(PickPocketSkillId))?.Prop ?? 100;
+        var drops = _mobKillHandler.OnPickPocket(field, attacker, mob, target.DamageLines, maxMeso, prop);
+        return drops.Count > 0 ? drops : null;
+    }
+
+    public const int PickPocketSkillId = 4211003;
 
     /// <summary>
     /// P143：Java <c>MapleStatEffect.applyPassive</c>（魔力吸收 2100000／2200000／2300000，依 <c>getMPEaterForJob</c>：

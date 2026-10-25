@@ -3999,6 +3999,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 }
             }
 
+            // P144：偷錢 → spawnMesoDrop（全圖 dropItemFromMapObject，動畫 1）。
+            foreach (var drop in hit.PickPocketDrops ?? [])
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, V113DropPackets.DropItemFromMapObject(drop), ct);
+            }
+
             // P143：吸魔成功 → showOwnBuffEffect(skill, 1)；未變身時對他人 showBuffeffect(id, skill, 1)。
             if (hit.MpEaterSkillId != 0)
             {

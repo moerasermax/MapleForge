@@ -63,6 +63,26 @@ public static class FootholdMath
         return (fh.Id, x, dropY);
     }
 
+    /// <summary>P144：Java <c>MapleMap.calcDropPos(initial, fallback)</c>：<c>calcPointBelow(x, y - 50)</c>，找不到用 fallback。</summary>
+    public static (int X, int Y, int FootholdId)? CalcDropPos(IReadOnlyList<MapFoothold> footholds, int x, int y)
+        => CalcPointBelow(footholds, x, y - 50) is { } point ? (point.X, point.Y, point.FootholdId) : null;
+
+    /// <summary>
+    /// P144：Java <c>MapleFootholdTree.getMinDropX/getMaxDropX</c>：根節點逐一 insert 時以 x1/x2 更新，欄位初值 0
+    /// （範圍恆含 0，照抄）。
+    /// </summary>
+    public static (int Min, int Max) DropXRange(IReadOnlyList<MapFoothold> footholds)
+    {
+        int min = 0, max = 0;
+        foreach (var fh in footholds)
+        {
+            max = Math.Max(max, Math.Max(fh.X1, fh.X2));
+            min = Math.Min(min, Math.Min(fh.X1, fh.X2));
+        }
+
+        return (min, max);
+    }
+
     // Java：s1=|y2-y1|、s2=|x2-x1|、s4=|x-x1|，s5 = cos(atan(s2/s1)) * (s4 / cos(atan(s1/s2)))；y2<y1 時往上。
     private static int SlopeY(MapFoothold fh, int x)
     {

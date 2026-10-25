@@ -1,4 +1,6 @@
+using Maple.Application.Maps;
 using Maple.Core.Drops;
+using Maple.Core.Maps;
 using Maple.Application.Parties;
 using Maple.Core.Inventory;
 using Maple.Core.Items;
@@ -23,6 +25,10 @@ public sealed record MobKillRewards(
 public interface IMobKillHandler
 {
     MobKillRewards OnMobKilled(FieldInstance field, Player killer, Mob mob);
+
+    /// <summary>P144：神偷偷錢（Java <c>DamageParse.handlePickPocket</c>）；預設不掉落。</summary>
+    IReadOnlyList<MapDrop> OnPickPocket(FieldInstance field, Player attacker, Mob mob, IReadOnlyList<int> damageLines, int maxMeso, int prop)
+        => [];
 }
 
 public enum DropPickupStatus
@@ -68,6 +74,7 @@ public sealed class DropService : IMobKillHandler
     private readonly IPartyRegistry? _parties;
     private readonly IEquipTemplateProvider? _equipTemplates;
     private readonly Random _random;
+    private readonly MapService? _maps;
 
     public DropService(
         IMonsterDropCatalog catalog,
@@ -75,8 +82,10 @@ public sealed class DropService : IMobKillHandler
         TimeProvider? timeProvider = null,
         IPartyRegistry? parties = null,
         IEquipTemplateProvider? equipTemplates = null,
-        Random? random = null)
+        Random? random = null,
+        MapService? maps = null)
     {
+        _maps = maps;
         _catalog = catalog;
         _options = options ?? new DropServiceOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -237,7 +246,8 @@ public sealed class DropService : IMobKillHandler
         var drop = MapDrop.ForMeso(
             AllocateDropObjectId(field),
             meso,
-            player.Position,
+            // P144：Java spawnMesoDrop → calcDropPos(position, position)。
+            CalcDropPos(field, player.Position.X, player.Position.Y, player.Position),
             player.Position,
             player.ObjectId,
             player.Character.Id,
@@ -276,10 +286,12 @@ public sealed class DropService : IMobKillHandler
             }
 
             var item = CreateItem(entry);
+            var basePosition = GetDropPosition(mob, sequence, dropType);
             var drop = MapDrop.ForItem(
                 AllocateDropObjectId(field),
                 item,
-                GetDropPosition(mob, sequence, dropType),
+                // P144：Java spawnMobDrop(idrop, calcDropPos(pos, mob.getPosition()), ...)。
+                CalcDropPos(field, basePosition.X, basePosition.Y, mob.Position),
                 mob.Position,
                 mob.ObjectId,
                 ownerId,
@@ -299,7 +311,7 @@ public sealed class DropService : IMobKillHandler
             var drop = MapDrop.ForMeso(
                 AllocateDropObjectId(field),
                 meso,
-                GetMesoDropPosition(mob, sequence),
+                MesoDropPosition(field, mob, sequence),
                 mob.Position,
                 mob.ObjectId,
                 ownerId,
@@ -311,6 +323,66 @@ public sealed class DropService : IMobKillHandler
         }
 
         return spawned;
+    }
+
+    /// <summary>
+    /// P144：對照 Java <c>DamageParse.handlePickPocket</c>：每一行（客戶端原始傷害）擲偷錢 4211003 的機率，成功則在
+    /// <c>(怪物 x + rand(100) - 50, 怪物 y)</c> 經 calcDropPos 掉
+    /// <c>min((int)max(傷害 / 20000.0 * maxmeso, 1), maxmeso)</c> 楓幣（主人 = 攻擊者、dropType 0、非玩家掉落）。
+    /// </summary>
+    public IReadOnlyList<MapDrop> OnPickPocket(FieldInstance field, Player attacker, Mob mob, IReadOnlyList<int> damageLines, int maxMeso, int prop)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(attacker);
+        ArgumentNullException.ThrowIfNull(mob);
+
+        var drops = new List<MapDrop>();
+        foreach (var line in damageLines)
+        {
+            if (prop != 100 && _random.Next(99) >= prop)
+            {
+                continue;
+            }
+
+            var meso = Math.Min((int)Math.Max(line / 20000.0 * maxMeso, 1.0), maxMeso);
+            var x = (int)(mob.Position.X + _random.Next(100) - 50.0);
+            var drop = MapDrop.ForMeso(
+                AllocateDropObjectId(field),
+                meso,
+                CalcDropPos(field, x, mob.Position.Y, new Position(ClampShort(x), mob.Position.Y, 0, mob.Position.Foothold)),
+                mob.Position,
+                mob.ObjectId,
+                attacker.Character.Id,
+                dropType: 0,
+                _timeProvider.GetUtcNow());
+            field.Add(drop);
+            drops.Add(drop);
+        }
+
+        return drops;
+    }
+
+    /// <summary>Java <c>calcDropPos</c>；未注入 MapService 或找不到踏腳石時用 fallback。</summary>
+    private Position CalcDropPos(FieldInstance field, int x, int y, Position fallback)
+        => _maps is not null && FootholdMath.CalcDropPos(_maps.LoadMap(field.MapId).Footholds, x, y) is { } point
+            ? new Position(ClampShort(point.X), ClampShort(point.Y), 0, (short)point.FootholdId)
+            : fallback;
+
+    /// <summary>
+    /// Java dropFromMonster 楓幣位置：<c>x = min(max(mobX - 25 * (d / 2), minDropX + 25), maxDropX - d * 25)</c>，
+    /// 再 calcDropPos（fallback = 怪物位置）。無地圖資料時沿用原本的 <c>mobX - 25 * (d / 2)</c>。
+    /// </summary>
+    private Position MesoDropPosition(FieldInstance field, Mob mob, int sequence)
+    {
+        var footholds = _maps?.LoadMap(field.MapId).Footholds;
+        if (footholds is not { Count: > 0 })
+        {
+            return GetMesoDropPosition(mob, sequence);
+        }
+
+        var (minX, maxX) = FootholdMath.DropXRange(footholds);
+        var x = Math.Min(Math.Max(mob.Position.X - 25 * (sequence / 2), minX + 25), maxX - sequence * 25);
+        return CalcDropPos(field, x, mob.Position.Y, mob.Position);
     }
 
     private int AllocateDropObjectId(FieldInstance field)
