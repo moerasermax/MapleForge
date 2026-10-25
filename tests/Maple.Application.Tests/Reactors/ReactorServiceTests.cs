@@ -127,6 +127,7 @@ public sealed class ReactorServiceTests
         {
             rm.SpawnMonster(9300001, 3);
             rm.KillMonster(9300001);
+            rm.SpawnMonsterAt(9300001, 2, -50, 30);
             rm.ChangeMusic("Bgm00/Silence");
         });
         var service = new ReactorService(provider, scripts, combat: combat);
@@ -135,15 +136,16 @@ public sealed class ReactorServiceTests
 
         var ctx = service.HitReactor(field, CreatePlayer(), reactor.ObjectId, charPosition: 1, stance: 7).ScriptContext!;
 
-        Assert.Equal(3, ctx.SpawnedMobs.Count);
-        Assert.All(ctx.SpawnedMobs, m => Assert.Equal((100, 190), (m.Position.X, m.Position.Y)));
+        Assert.Equal(5, ctx.SpawnedMobs.Count);
+        Assert.All(ctx.SpawnedMobs.Take(3), m => Assert.Equal((100, 190), (m.Position.X, m.Position.Y)));
+        Assert.All(ctx.SpawnedMobs.Skip(3), m => Assert.Equal((-50, 30), (m.Position.X, m.Position.Y))); // P184 座標版
         Assert.Equal([(ctx.SpawnedMobs[0].ObjectId, (byte)1)], ctx.KilledMobs);
-        Assert.Equal(2, field.Objects.OfType<Mob>().Count());
+        Assert.Equal(4, field.Objects.OfType<Mob>().Count());
         Assert.Equal(["Bgm00/Silence"], ctx.Music);
 
         ctx.KillAll();
         Assert.Empty(field.Objects.OfType<Mob>());
-        Assert.Equal(3, ctx.KilledMobs.Count);
+        Assert.Equal(5, ctx.KilledMobs.Count);
     }
 
     private static Player CreatePlayer(int mapId = 100000000) => new(

@@ -106,9 +106,26 @@ public sealed class ReactorScriptContext : IReactorScriptContext
             return;
         }
 
+        SpawnAt(monsterId, quantity, Reactor.Position.X, Reactor.Position.Y - 10);
+    }
+
+    /// <summary>P184：Java <c>spawnMonster(id, qty, Point(x, y))</c>：指定座標下方地面生 qty 隻。</summary>
+    public void SpawnMonsterAt(int monsterId, int quantity, int x, int y)
+    {
+        Record(nameof(SpawnMonsterAt), monsterId, quantity, x, y);
+        SpawnAt(monsterId, quantity, x, y);
+    }
+
+    private void SpawnAt(int monsterId, int quantity, int x, int y)
+    {
+        if (_field is null || _combat is null)
+        {
+            return;
+        }
+
         for (var i = 0; i < quantity; i++)
         {
-            if (_combat.SpawnMonsterOnGroundBelow(_field, monsterId, Reactor.Position.X, Reactor.Position.Y - 10) is { } mob)
+            if (_combat.SpawnMonsterOnGroundBelow(_field, monsterId, x, y) is { } mob)
             {
                 _spawnedMobs.Add(mob);
             }

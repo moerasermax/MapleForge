@@ -18,6 +18,9 @@ public interface IReactorScriptContext
     void DropItems(bool meso = false, int mesoChance = 0, int minMeso = 0, int maxMeso = 0, int minItems = 0);
     void DoHarvest();
     void SpawnMonster(int monsterId, int quantity = 1);
+
+    /// <summary>P184：Java AbstractPlayerInteraction.spawnMonster(id, qty, new Point(x, y))。</summary>
+    void SpawnMonsterAt(int monsterId, int quantity, int x, int y);
     void SpawnNpc(int npcId);
     void MapMessage(string message);
     void MapMessage(int type, string message);

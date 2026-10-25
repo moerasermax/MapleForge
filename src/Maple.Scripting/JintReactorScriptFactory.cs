@@ -101,6 +101,11 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
         public void spawnMonster(int id, int qty) => _rm.SpawnMonster(id, qty);
         public void spawnMob(int id) => _rm.SpawnMonster(id);
         public void spawnMob(int id, int qty) => _rm.SpawnMonster(id, qty);
+        // P184：AbstractPlayerInteraction 座標版
+        public void spawnMonster(int id, int x, int y) => _rm.SpawnMonsterAt(id, 1, x, y);
+        public void spawnMonster(int id, int qty, int x, int y) => _rm.SpawnMonsterAt(id, qty, x, y);
+        public void spawnMob(int id, int x, int y) => _rm.SpawnMonsterAt(id, 1, x, y);
+        public void spawnMob(int id, int qty, int x, int y) => _rm.SpawnMonsterAt(id, qty, x, y);
         public void spawnNpc(int npcId) => _rm.SpawnNpc(npcId);
         public void mapMessage(string message) => _rm.MapMessage(message);
         public void mapMessage(int type, string message) => _rm.MapMessage(type, message);
@@ -109,7 +114,9 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
         public int getMapId() => _rm.MapId;
         public ReactorFacade getReactor() => new(_rm.Reactor);
         public MapFacade getMap() => new(_rm);
-        public PlayerFacade getPlayer() => new(_rm);
+        /// <summary>P184：Java getMap(mapId)；MapFacade 的查詢以觸發者所在地圖為準（反應堆狀態操作仍為 no-op）。</summary>
+        public MapFacade getMap(int mapId) => new(_rm);
+        public PlayerFacade getPlayer() => new(_rm, _events);
         public void warp(int mapId) => _rm.Warp(mapId);
         public void warp(int mapId, int portal) => _rm.Warp(mapId, portal);
         public void warpS(int mapId) => _rm.WarpS(mapId);
@@ -174,10 +181,14 @@ public sealed class JintReactorScriptFactory : IReactorScriptFactory
     private sealed class PlayerFacade
     {
         private readonly IReactorScriptContext _rm;
+        private readonly Maple.Application.Events.IEventScriptHost? _events;
 
-        public PlayerFacade(IReactorScriptContext rm) => _rm = rm;
+        public PlayerFacade(IReactorScriptContext rm, Maple.Application.Events.IEventScriptHost? events) => (_rm, _events) = (rm, events);
 
         public int getId() => _rm.Player.Character.Id;
+        public string getName() => _rm.Player.Character.Name;
+        public bool isGM() => false; // MapleForge 尚無 GM 系統（同 NpcContext.IsGm）
+        public object? getEventInstance() => _events?.GetEventInstance(_rm.Player.Character.Id);
         public int getMapId() => _rm.Player.Character.MapId;
         public int getMeso() => _rm.Player.Character.Meso;
     }
