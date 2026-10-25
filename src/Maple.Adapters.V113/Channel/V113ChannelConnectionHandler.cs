@@ -3127,6 +3127,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             await session.SendAsync(handled.Packet, ct);
         }
 
+        // P139：Java applyBuffEffect 的 giveForeignBuff（同圖其他人看得到隱身／鬥氣／影分身等外觀）。
+        if (handled.Cast is { Status: SkillCastStatus.Success, AppliedBuff: not null, Effect: { } buffEffect }
+            && SkillService.GetForeignBuffStats(buffEffect) is { } foreignStats)
+        {
+            await BroadcastPacketToOthersAsync(
+                player.Character,
+                V113BuffItemPackets.GiveForeignBuff(player.Character.Id, foreignStats, isMorph: false),
+                ct);
+        }
+
         foreach (var resetPacket in handled.CooldownResetPackets ?? Array.Empty<byte[]>())
         {
             await session.SendAsync(resetPacket, ct);

@@ -39,6 +39,13 @@ public sealed class V113BuffCancellationEffects
             return;
         }
 
+        // P139：Java cancelPlayerBuffs → map.broadcastMessage(this, cancelForeignBuff(id, buffstats), false)（每個被取消的效果一包）。
+        var others = _mapRegistry.GetOthers(player.Character.MapId, player.Character.Id);
+        foreach (var cancellation in cancellations)
+        {
+            await SendAllAsync(others, V113SkillPackets.CancelForeignBuff(player.Character.Id, cancellation.Stats), ct).ConfigureAwait(false);
+        }
+
         // P116：Java cancelEffect → recalcLocalStats → enforceMaxHpMp（神聖之火等 MAXHP/MAXMP buff 結束時壓回上限）。
         if (sendSelf is not null)
         {

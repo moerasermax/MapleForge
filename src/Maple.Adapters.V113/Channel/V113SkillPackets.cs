@@ -112,6 +112,16 @@ internal static class V113SkillPackets
         return w.ToArray();
     }
 
+    /// <summary>P139：對照 Java <c>MaplePacketCreator.cancelForeignBuff(cid, statups)</c>：<c>[0xC1][int cid][buff mask]</c>。</summary>
+    public static byte[] CancelForeignBuff(int characterId, IReadOnlyList<MapleBuffStat> stats)
+    {
+        var w = new PacketWriter(24);
+        w.WriteShort(CancelForeignBuffOp);
+        w.WriteInt(characterId);
+        WriteBuffMask(w, stats);
+        return w.ToArray();
+    }
+
     /// <summary>對照 Java <c>MaplePacketCreator.skillCooldown(sid, time)</c>：通知客戶端技能冷卻秒數，
     /// <c>seconds == 0</c> 表示冷卻結束。</summary>
     public static byte[] SkillCooldown(int skillId, int seconds)

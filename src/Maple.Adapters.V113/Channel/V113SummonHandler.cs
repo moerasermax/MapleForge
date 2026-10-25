@@ -77,6 +77,7 @@ internal static class V113SummonHandler
         CombatAttackResult result;
         byte[]? removePacket = null;
         byte[]? cancelBuffPacket = null;
+        byte[]? cancelForeignBuffPacket = null;
         lock (field)
         {
             if (field.Get(request.SummonObjectId) is not Summon summon ||
@@ -103,6 +104,7 @@ internal static class V113SummonHandler
                 if (stats.Length > 0)
                 {
                     cancelBuffPacket = V113SkillPackets.CancelBuff(stats);
+                    cancelForeignBuffPacket = V113SkillPackets.CancelForeignBuff(player.Character.Id, stats);
                 }
             }
         }
@@ -118,6 +120,12 @@ internal static class V113SummonHandler
         if (cancelBuffPacket is not null)
         {
             await session.SendAsync(cancelBuffPacket, ct);
+        }
+
+        // P139：Java cancelPlayerBuffs 同時廣播 cancelForeignBuff。
+        if (cancelForeignBuffPacket is not null)
+        {
+            await BroadcastToOthersAsync(player, mapRegistry, cancelForeignBuffPacket, ct);
         }
     }
 
@@ -154,6 +162,7 @@ internal static class V113SummonHandler
         byte[]? damagePacket;
         byte[]? removePacket = null;
         byte[]? cancelBuffPacket = null;
+        byte[]? cancelForeignBuffPacket = null;
         lock (field)
         {
             summon = field.Objects
@@ -181,6 +190,7 @@ internal static class V113SummonHandler
                 if (stats.Length > 0)
                 {
                     cancelBuffPacket = V113SkillPackets.CancelBuff(stats);
+                    cancelForeignBuffPacket = V113SkillPackets.CancelForeignBuff(player.Character.Id, stats);
                 }
             }
         }
@@ -194,6 +204,12 @@ internal static class V113SummonHandler
         if (cancelBuffPacket is not null)
         {
             await session.SendAsync(cancelBuffPacket, ct);
+        }
+
+        // P139：Java cancelPlayerBuffs 同時廣播 cancelForeignBuff。
+        if (cancelForeignBuffPacket is not null)
+        {
+            await BroadcastToOthersAsync(player, mapRegistry, cancelForeignBuffPacket, ct);
         }
     }
 

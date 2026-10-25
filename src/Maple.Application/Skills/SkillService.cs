@@ -107,6 +107,36 @@ public sealed partial class SkillService
         _random = random ?? Random.Shared;
     }
 
+    /// <summary>
+    /// P139：Java <c>applyBuffEffect</c> 對同圖其他玩家廣播的 <c>giveForeignBuff</c> 狀態（施放者本人另收 giveBuff）：
+    /// 隱身術系（9001004、13101006、4330001、4001003、14001003）DARKSIGHT 0、鬥氣集中（1111002、11111001）COMBO 0、
+    /// 無形之箭（3101004、3201004、13101003）SOULARROW 0、影分身（4111002、14111000）SHADOWPARTNER 0、
+    /// 飛翔（x001026）SOARING 1、狂暴之怒（x001011）或 berserk2 BERSERK_FURY 1、金剛不壞（x001010）DIVINE_BODY 1。
+    /// 變身（MORPH，Java 改用 Selfstat 註冊）、海盜衝刺類（giveForeignPirate）、騎寵（showMonsterRiding）另議，回 null。
+    /// </summary>
+    public static IReadOnlyList<BuffStatValue>? GetForeignBuffStats(MapleStatEffect effect)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+
+        if (!effect.IsSkill)
+        {
+            return null;
+        }
+
+        return effect.SourceId switch
+        {
+            9001004 or 13101006 or 4330001 or 4001003 or 14001003 => [new BuffStatValue(MapleBuffStat.DARKSIGHT, 0)],
+            1111002 or 11111001 => [new BuffStatValue(MapleBuffStat.COMBO, 0)],
+            3101004 or 3201004 or 13101003 => [new BuffStatValue(MapleBuffStat.SOULARROW, 0)],
+            4111002 or 14111000 => [new BuffStatValue(MapleBuffStat.SHADOWPARTNER, 0)],
+            1026 or 10001026 or 20001026 or 20011026 or 30001026 => [new BuffStatValue(MapleBuffStat.SOARING, 1)],
+            1011 or 10001011 or 20001011 or 20011011 or 30001011 => [new BuffStatValue(MapleBuffStat.BERSERK_FURY, 1)],
+            1010 or 10001010 or 20001010 or 20011010 or 30001010 => [new BuffStatValue(MapleBuffStat.DIVINE_BODY, 1)],
+            _ when effect.Statups.Any(static s => s.Stat == MapleBuffStat.BERSERK_FURY) => [new BuffStatValue(MapleBuffStat.BERSERK_FURY, 1)],
+            _ => null,
+        };
+    }
+
     public SkillCastResult Cast(Player player, int skillId, int clientSkillLevel, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(player);
