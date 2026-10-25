@@ -79,15 +79,18 @@ public sealed class CombatService
     private readonly TimeProvider _timeProvider;
     private readonly Random _random;
     private readonly PlayerLocalStatsCalculator? _localStats;
+    private readonly OnHitStatusApplier? _onHitStatuses;
 
     public CombatService(
         MapService maps,
         IMobKillHandler? mobKillHandler = null,
         TimeProvider? timeProvider = null,
         Random? random = null,
-        PlayerLocalStatsCalculator? localStats = null)
+        PlayerLocalStatsCalculator? localStats = null,
+        ISkillCatalog? skills = null)
     {
         _localStats = localStats;
+        _onHitStatuses = skills is null ? null : new OnHitStatusApplier(skills, random ?? Random.Shared);
         _maps = maps;
         _mobKillHandler = mobKillHandler;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -265,7 +268,9 @@ public sealed class CombatService
                 : null;
 
             var appliedStatuses = result.AppliedDamage > 0 && !result.Killed
-                ? ApplySkillStatuses(mob, attack.SkillEffect, attacker, now)
+                ? CombineStatuses(
+                    !attack.IsMagic && !attack.FromSummon ? _onHitStatuses?.Apply(mob, attacker, attack.SkillId, now) : null,
+                    ApplySkillStatuses(mob, attack.SkillEffect, attacker, now))
                 : null;
 
             var rewards = result.Killed
@@ -308,6 +313,18 @@ public sealed class CombatService
 
         return new CombatAttackResult(hits);
     }
+
+    /// <summary>P142：buff 衍生異常（先）與技能 monsterStatus（後）合併；皆無回 null。</summary>
+    private static IReadOnlyList<MonsterStatusEffect>? CombineStatuses(
+        IReadOnlyList<MonsterStatusEffect>? onHit,
+        IReadOnlyList<MonsterStatusEffect>? skill)
+        => (onHit is { Count: > 0 }, skill is { Count: > 0 }) switch
+        {
+            (true, true) => [.. onHit!, .. skill!],
+            (true, false) => onHit,
+            (false, true) => skill,
+            _ => null,
+        };
 
     /// <summary>
     /// P141：對照 Java <c>applyAttack</c> 扣血後的攻擊者 HP 效果（<c>setHp(..., silent)</c>，HP 封包隨尾段 applyTo 送出）。
