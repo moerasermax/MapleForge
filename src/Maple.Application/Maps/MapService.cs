@@ -131,7 +131,8 @@ public sealed class MapService
             TagColor: tagColor,
             TagBgColor: tagBgColor,
             NoDoom: GetInt(info, "noDoom", 0) > 0,
-            Resistances: ElementCodec.DecodeResistances(GetString(info, "elemAttr")));
+            Resistances: ElementCodec.DecodeResistances(GetString(info, "elemAttr")),
+            Skills: LoadMobSkills(info["skill"]));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -315,6 +316,23 @@ public sealed class MapService
         }
 
         return footholds;
+    }
+
+    /// <summary>P122：對照 Java <c>MapleLifeFactory</c>：info/skill/{i}/skill、level，i 從 0 連續遞增到缺號為止。</summary>
+    private static IReadOnlyList<MobSkillRef>? LoadMobSkills(IDataNode? skillRoot)
+    {
+        if (skillRoot is null)
+        {
+            return null;
+        }
+
+        var skills = new List<MobSkillRef>();
+        for (var i = 0; skillRoot[i.ToString(System.Globalization.CultureInfo.InvariantCulture)] is { } entry; i++)
+        {
+            skills.Add(new MobSkillRef(GetInt(entry, "skill", 0), GetInt(entry, "level", 0)));
+        }
+
+        return skills.Count > 0 ? skills : null;
     }
 
     /// <summary>對照 Java <c>MapleLifeFactory</c> 的 hpdisplaytype 判斷順序（預設 -1）。</summary>

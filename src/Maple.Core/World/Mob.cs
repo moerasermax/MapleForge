@@ -26,7 +26,9 @@ public sealed record MobStats(
     // P110：WZ info/noDoom（Java MapleMonsterStats.isNoDoom）。
     bool NoDoom = false,
     // P114：WZ info/elemAttr 解析後的屬性抗性（null = 全 Normal）。
-    IReadOnlyDictionary<Element, ElementalEffectiveness>? Resistances = null)
+    IReadOnlyDictionary<Element, ElementalEffectiveness>? Resistances = null,
+    // P122：WZ info/skill（Java MapleMonsterStats.getSkills）。
+    IReadOnlyList<MobSkillRef>? Skills = null)
 {
     /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
     public ElementalEffectiveness GetEffectiveness(Element element)
@@ -55,6 +57,7 @@ public sealed class Mob : IFieldObject
 
     private readonly Dictionary<int, DateTimeOffset> _lastAttackTimes = new();
     private readonly Dictionary<MonsterStatus, MonsterStatusEffect> _statuses = new();
+    private readonly Dictionary<int, DateTimeOffset> _skillUsedAt = new();
 
     public MapMonster Definition { get; }
 
@@ -271,6 +274,35 @@ public sealed class Mob : IFieldObject
 
         return status is MonsterStatus.Poison or MonsterStatus.VenomousWeapon && !hasSourceEffect;
     }
+
+    /// <summary>P122：Java <c>getLastSkillUsed</c>（存的是 Java <c>setLastSkillUsed</c> 寫入的時間，見該方法）。</summary>
+    public DateTimeOffset? GetLastSkillUsed(int skillId)
+        => _skillUsedAt.TryGetValue(skillId, out var at) ? at : null;
+
+    /// <summary>
+    /// P122：逐字對照 Java <c>MapleMonster.setLastSkillUsed</c>：一般技能存 now + cooltime（搭配呼叫端
+    /// <c>now - ls &gt; cooltime</c> 判斷，實際冷卻為兩倍）；140/141 互相牽制（存 now + 2×cooltime，另一個存 now 或 now + cooltime）。
+    /// </summary>
+    public void SetLastSkillUsed(int skillId, DateTimeOffset now, int coolTimeMilliseconds)
+    {
+        switch (skillId)
+        {
+            case 140:
+                _skillUsedAt[140] = now.AddMilliseconds(coolTimeMilliseconds * 2.0);
+                _skillUsedAt[141] = now;
+                break;
+            case 141:
+                _skillUsedAt[141] = now.AddMilliseconds(coolTimeMilliseconds * 2.0);
+                _skillUsedAt[140] = now.AddMilliseconds(coolTimeMilliseconds);
+                break;
+            default:
+                _skillUsedAt[skillId] = now.AddMilliseconds(coolTimeMilliseconds);
+                break;
+        }
+    }
+
+    /// <summary>P122：扣怪物 MP（Java <c>setMp(getMp() - mpCon)</c>，負值夾 0）。</summary>
+    public void ConsumeMp(int amount) => Mp = Math.Max(0, Mp - amount);
 
     /// <summary>套用怪物移動最終位置（MONSTER_MOVE 後續接線用）。</summary>
     public void MoveTo(Position position) => Position = position;

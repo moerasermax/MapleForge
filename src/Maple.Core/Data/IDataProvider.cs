@@ -33,7 +33,7 @@ public interface IDataNode
     IReadOnlyDictionary<string, IDataNode> Children { get; }
 
     /// <summary>
-    /// 節點的葉值（int、float、string、WzVector…）；
+    /// 節點的葉值（int、float、string、<see cref="DataVector"/>…）；
     /// 目錄與 Image 節點回傳 null。
     /// </summary>
     object? Value { get; }
@@ -41,3 +41,6 @@ public interface IDataNode
     /// <summary>依名稱取得子節點；找不到時回傳 null。</summary>
     IDataNode? this[string name] { get; }
 }
+
+/// <summary>二維向量葉值（WZ Shape2D#Vector2D，如 lt/rb/origin）。P122 由 Content 移到 Core，供 Application 讀取。</summary>
+public sealed record DataVector(int X, int Y);

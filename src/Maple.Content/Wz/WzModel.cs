@@ -1,3 +1,4 @@
+using Maple.Core.Data;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
@@ -73,8 +74,6 @@ public sealed class WzProperty : WzObject
 
     public object? Value { get; }
 }
-
-public sealed record WzVector(int X, int Y);
 
 public sealed record WzCanvasRef(int DataOffset, int DataLength);
 
@@ -378,7 +377,7 @@ public sealed class WzFile : IDisposable
         return iname switch
         {
             "Property" => ReadSubProperty(),
-            "Shape2D#Vector2D" => new WzVector(ReadCompressedInt(_reader), ReadCompressedInt(_reader)),
+            "Shape2D#Vector2D" => new DataVector(ReadCompressedInt(_reader), ReadCompressedInt(_reader)),
             "Shape2D#Convex2D" => ReadConvexProperty(),
             "Canvas" => ReadCanvasReference(),
             "Sound_DX8" => ReadSoundReference(),

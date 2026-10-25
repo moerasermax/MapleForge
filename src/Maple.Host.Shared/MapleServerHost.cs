@@ -16,6 +16,7 @@ using Maple.Application.Guilds;
 using Maple.Application.Guilds.Bbs;
 using Maple.Application.Items;
 using Maple.Application.Maps;
+using Maple.Application.Mobs;
 using Maple.Application.Npcs;
 using Maple.Application.NpcItemServices;
 using Maple.Application.OnlinePlayers;
@@ -124,6 +125,9 @@ public static class MapleServerHost
         builder.Services.AddSingleton<ISkillCatalog>(sp => new WzSkillCatalog(sp.GetRequiredService<IDataProvider>()));
         builder.Services.AddSingleton<ISkillBookCatalog>(_ => new JsonSkillBookCatalog(ResolveSkillBookCatalogPath(builder)));
         builder.Services.AddSingleton<SkillService>();
+        // P122：怪物技能（Skill.wz MobSkill.img）。
+        builder.Services.AddSingleton<Maple.Core.World.IMobSkillCatalog>(sp => new WzMobSkillCatalog(sp.GetRequiredService<IDataProvider>()));
+        builder.Services.AddSingleton<MobSkillService>();
         // P119：怪物掉落表（Java drop_data）。資料檔不進版控，路徑由 Content:MonsterDropCatalogPath 指定
         // （tools/drop-data/convert_drop_data.py 從 Java SQL dump 轉出）；未設定或檔案不存在時退回空表並警告。
         builder.Services.AddSingleton<IMonsterDropCatalog>(sp =>

@@ -10,6 +10,7 @@ using Maple.Application.Drops;
 using Maple.Application.Fame;
 using Maple.Application.Guilds;
 using Maple.Application.Maps;
+using Maple.Application.Mobs;
 using Maple.Application.Npcs;
 using Maple.Application.OnlinePlayers;
 using Maple.Application.Parties;
@@ -62,6 +63,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly IFieldInstanceRegistry _fieldRegistry;
     private readonly MapService _mapService;
     private readonly IEquipTemplateProvider? _equipTemplates;
+    private readonly MobSkillService? _mobSkills;
     private readonly INpcScriptFactory _npcScripts;
     private readonly ShopService _shopService;
     private readonly StorageService _storageService;
@@ -171,10 +173,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         DoorService doorService,
         V113BuffCancellationEffects buffEffects,
         V113PartyHpSync partyHpSync,
-        IEquipTemplateProvider? equipTemplates = null)
+        IEquipTemplateProvider? equipTemplates = null,
+        MobSkillService? mobSkills = null)
     {
         _log = log;
         _equipTemplates = equipTemplates;
+        _mobSkills = mobSkills;
         _partyHpSync = partyHpSync;
         _buffEffects = buffEffects;
         _doorService = doorService;
@@ -4263,9 +4267,25 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 player.Character.Id, player.Character.MapId, mob.Definition.MonsterId, data.ObjectId, data.StartX, mob.Position.X);
         }
 
+        // P122：對照 Java MobHandler.MoveMonster 的 useSkill 區塊——施放成功才在回應帶 realskill/level（否則 0/0）。
+        MobSkillUse? skillUse = null;
+        if (data.UseSkill > 0 && _mobSkills is not null)
+        {
+            lock (field)
+            {
+                skillUse = mob.IsAlive ? _mobSkills.TryUseSkill(field, mob, DateTimeOffset.UtcNow) : null;
+            }
+        }
+
         // Response 給控制者
         await session.SendAsync(
-            V113MobMovementPackets.MoveMonsterResponse(data.ObjectId, data.MoveId, mob.Mp, aggro: false),
+            V113MobMovementPackets.MoveMonsterResponse(
+                data.ObjectId,
+                data.MoveId,
+                mob.Mp,
+                aggro: false,
+                skillId: (byte)(skillUse?.Skill.SkillId ?? 0),
+                skillLevel: (byte)(skillUse?.Skill.Level ?? 0)),
             ct);
 
         // 廣播移動給同圖其他玩家
