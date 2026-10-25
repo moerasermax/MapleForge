@@ -5755,6 +5755,12 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await BroadcastPacketToMapAsync(player.Character, session, packet, ct);
         }
+
+        // P186：Java 自爆走 killMonster → killBy → eventInstance.unregisterMonster（自爆無經驗分配，不計 monsterKilled）。
+        if (result.Killed && _eventScripts is not null)
+        {
+            RunEventHook(() => _eventScripts.OnMonsterKilled(field.MapId, result.Request.MobObjectId, result.MonsterId, null));
+        }
     }
 
     private async Task HandleEventMiniGameResultAsync(

@@ -10,7 +10,11 @@ internal sealed record V113MonsterBombResult(
     V113MonsterBombRequest Request,
     bool Killed,
     IReadOnlyList<byte[]> SelfPackets,
-    IReadOnlyList<byte[]> MapPackets);
+    IReadOnlyList<byte[]> MapPackets)
+{
+    /// <summary>P186：自爆的怪物 ID（事件實例 unregisterMonster 用）。</summary>
+    public int MonsterId { get; init; }
+}
 
 internal static class V113MonsterBombHandler
 {
@@ -63,7 +67,10 @@ internal static class V113MonsterBombHandler
                 [
                     V113CombatPackets.KillMonster(killed.ObjectId, killed.Animation),
                     .. revived.Select(static r => V113CombatPackets.SpawnMonster(r, spawnType: -2, link: r.LinkObjectId)),
-                ]);
+                ])
+            {
+                MonsterId = killed.MonsterId,
+            };
         }
     }
 

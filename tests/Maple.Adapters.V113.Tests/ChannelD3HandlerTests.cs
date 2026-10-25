@@ -133,6 +133,7 @@ public sealed class ChannelD3HandlerTests
 
         Assert.Equal(100001, request.MobObjectId);
         Assert.True(result.Killed);
+        Assert.Equal(9300166, result.MonsterId); // P186：事件實例 unregisterMonster 用
         Assert.Empty(result.SelfPackets);
         Assert.Null(field.GetMob(100001));
 
