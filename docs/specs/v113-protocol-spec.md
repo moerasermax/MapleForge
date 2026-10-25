@@ -1839,3 +1839,15 @@ cancelHoming: [0x1F][long 1<<16][long 0]（Java 把 getValue() 寫在第一個 l
 ```
 
 證據層級：Java source（`MaplePacketCreator.giveHoming:1737`／`cancelHoming:1940`、`MapleCharacter.cancelPlayerBuffs:1977`）＋ focused tests；**unverified**。
+
+### 時空門：partyPortal 與可見對象（P160）
+
+```text
+partyPortal: [0x37][short 0x24][byte 0][int 村莊][int 目標][short x][short y]；關門重設 = (999999999, 999999999, (-1,-1))
+開門（MapleMap.spawnDoor，目標地圖全員＋村莊的主人/隊友）: spawnDoor(owner, 目標座標, false) → [partyPortal] → spawnPortal(村莊, 目標, 目標座標) → enableActions
+進圖（sendSpawnData，人在目標地圖或無隊伍的主人）: spawnDoor(owner, 在村莊?村莊傳送點:目標座標, true) → [partyPortal] → spawnPortal
+關門（sendDestroyData，人在目標地圖、主人、隊友）: removeDoor → [partyPortal 重設] → spawnPortal(999999999, 999999999)
+[partyPortal] 只給「主人有隊伍」時的主人與隊友。
+```
+
+證據層級：Java source（見任務歷程 2026-10-26_162）＋ focused tests；**unverified**。

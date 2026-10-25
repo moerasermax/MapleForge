@@ -147,6 +147,47 @@ public sealed class DoorService
         return _parties.GetPartyForCharacter(player.Character.Id)?.Id == ownerPartyId;
     }
 
+    /// <summary>P160：目標地圖或村莊是 <paramref name="mapId"/> 的所有門（Java 兩張地圖各有一個 MapleDoor 物件）。</summary>
+    public IReadOnlyList<Door> GetDoorsInMap(int mapId)
+    {
+        lock (_gate)
+        {
+            return _doorsByOwner.Values.Where(d => d.IsVisibleFromMap(mapId)).ToArray();
+        }
+    }
+
+    /// <summary>Java <c>getOwner().getParty() != null</c>（用主人「目前」的隊伍，不是開門當下）。</summary>
+    public bool OwnerHasParty(Door door)
+        => _parties?.GetPartyForCharacter(door.OwnerId) is not null;
+
+    /// <summary>Java <c>getOwnerId() == chr.getId() || getOwner().getParty().getMemberById(chr.getId()) != null</c>。</summary>
+    public bool IsOwnerOrPartyMember(Door door, int characterId)
+    {
+        if (characterId == door.OwnerId)
+        {
+            return true;
+        }
+
+        var party = _parties?.GetPartyForCharacter(door.OwnerId);
+        return party is not null && _parties!.GetPartyForCharacter(characterId)?.Id == party.Id;
+    }
+
+    /// <summary>P160：Java <c>MapleMap.spawnDoor</c> 的 canSpawn：人在目標地圖、主人本人或主人隊友。</summary>
+    public bool CanSeeOpening(Door door, int viewerMapId, int viewerId)
+        => door.TargetMapId == viewerMapId || IsOwnerOrPartyMember(door, viewerId);
+
+    /// <summary>P160：Java <c>MapleDoor.sendSpawnData</c>（進圖補送）：人在目標地圖，或主人本人且沒有隊伍。</summary>
+    public bool SendsSpawnData(Door door, int viewerMapId, int viewerId)
+        => door.TargetMapId == viewerMapId || (viewerId == door.OwnerId && !OwnerHasParty(door));
+
+    /// <summary>P160：Java <c>MapleDoor.sendDestroyData</c>：人在目標地圖、主人本人或主人隊友。</summary>
+    public bool SendsDestroyData(Door door, int viewerMapId, int viewerId)
+        => CanSeeOpening(door, viewerMapId, viewerId);
+
+    /// <summary>P160：partyPortal 只給有隊伍的主人與其隊友。</summary>
+    public bool SendsPartyPortal(Door door, int viewerId)
+        => OwnerHasParty(door) && IsOwnerOrPartyMember(door, viewerId);
+
     private void RemoveDoorLocked(int ownerId)
     {
         if (!_doorsByOwner.Remove(ownerId, out var existing))

@@ -521,6 +521,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                             await SendFieldMonstersAsync(currentField, s, token);
                             await SendFieldDropsAsync(currentField, s, token);
                             await SendFieldMistsAsync(currentField, s, token);
+                            foreach (var doorPacket in _buffEffects.BuildDoorSpawnData(chr.MapId, chr.Id))
+                            {
+                                await s.SendAsync(doorPacket, token); // P160：MapleDoor.sendSpawnData
+                            }
+
                             await V113ReactorHandler.SendFieldReactorsAsync(currentField, s, token);
 
                             _log.LogInformation("[Channel] 角色 {Name} 已進入地圖 {Map}，同地圖 {Count} 人", chr.Name, chr.MapId, others.Count);
@@ -2263,6 +2268,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SendFieldMonstersAsync(field, session, ct);
         await SendFieldDropsAsync(field, session, ct);
         await SendFieldMistsAsync(field, session, ct);
+        foreach (var doorPacket in _buffEffects.BuildDoorSpawnData(mapId, chr.Id))
+        {
+            await session.SendAsync(doorPacket, ct); // P160：MapleDoor.sendSpawnData
+        }
+
         await V113ReactorHandler.SendFieldReactorsAsync(field, session, ct);
 
         // P085：對照 Java MapleMap.addPlayer 的 SUMMON 分支——跟隨型召喚獸在落地位置重新出生並廣播（含自己）。
@@ -3223,9 +3233,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
     /// <summary>
     /// P087：對照 Java <c>MapleStatEffect.applyTo</c> 的 <c>isMagicDoor()</c> 分支——建門成功後依
-    /// <c>MapleDoor.sendSpawnData</c> 對目標地圖玩家送 <c>spawnDoor(owner, targetPos, true)</c> +
-    /// <c>spawnPortal(town, target, targetPos)</c>；村莊沒空位時聊天欄提示。重複施放先對舊門送 destroy data。
-    /// 隊伍成員的 <c>partyPortal</c>（PARTY_OPERATION 0x24）尚未移植。
+    /// <c>MapleMap.spawnDoor</c> 送生成封包（P160：含村莊與隊伍 partyPortal）；村莊沒空位時聊天欄提示。重複施放先對舊門送 destroy data。
     /// </summary>
     private async Task OpenMagicDoorAsync(Player player, V113SpecialMoveRequest? request, MapleSession session, CancellationToken ct)
     {
@@ -3241,28 +3249,13 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             return;
         }
 
+        // P160：舊門先送 destroy data，新門照 Java MapleMap.spawnDoor 對目標地圖與村莊送生成封包。
         if (opened.Replaced is { } old)
         {
-            foreach (var entry in _mapRegistry.GetAll(old.TargetMapId))
-            {
-                try
-                {
-                    await entry.SendPacket(V113DoorPackets.RemoveDoor(old.OwnerId), ct);
-                    await entry.SendPacket(V113DoorPackets.RemoveTownPortal(), ct);
-                }
-                catch { /* session 可能正在關 */ }
-            }
+            await _buffEffects.SendDoorDestroyAsync(old, ct);
         }
 
-        foreach (var entry in _mapRegistry.GetAll(door.TargetMapId))
-        {
-            try
-            {
-                await entry.SendPacket(V113DoorPackets.SpawnDoor(door.OwnerId, door.TargetPosition, town: true), ct);
-                await entry.SendPacket(V113DoorPackets.SpawnPortal(door.TownMapId, door.TargetMapId, door.TargetPosition), ct);
-            }
-            catch { /* session 可能正在關 */ }
-        }
+        await _buffEffects.SendDoorOpenedAsync(door, ct);
     }
 
     private Task CloseMagicDoorAsync(int ownerId, CancellationToken ct)

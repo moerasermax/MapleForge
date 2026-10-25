@@ -62,6 +62,24 @@ internal static class V113DoorPackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// P160：Java <c>partyPortal(townId, targetId, skillId, pos)</c>：<c>[PARTY_OPERATION 0x37][short 0x24][byte 0][int 村莊][int 目標][pos]</c>
+    /// （skillId 被註解掉不寫）。關門時 Java 送 <c>partyPortal(999999999, 999999999, 0, (-1, -1))</c>。unverified。
+    /// </summary>
+    public static byte[] PartyPortal(int townMapId, int targetMapId, Position position)
+    {
+        var w = new PacketWriter(17);
+        w.WriteShort(V113PartyPackets.SendPartyOperationOpcode);
+        w.WriteShort(0x24);
+        w.WriteByte(0);
+        w.WriteInt(townMapId);
+        w.WriteInt(targetMapId);
+        WritePosition(w, position);
+        return w.ToArray();
+    }
+
+    public static byte[] PartyPortalReset() => PartyPortal(NoDoorMapId, NoDoorMapId, new Position(-1, -1, 0, 0));
+
     private static void WritePosition(PacketWriter writer, Position position)
     {
         writer.WriteShort(position.X);
