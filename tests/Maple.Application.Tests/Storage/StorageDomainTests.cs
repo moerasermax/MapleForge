@@ -210,6 +210,23 @@ public sealed class StorageDomainTests
         Assert.Equal(400, player.Character.Meso);
     }
 
+    [Fact]
+    public void Store_DropRestrictedItem_NeedsKarmaFlag_WhichIsClearedOnStore()
+    {
+        // P212：Java isDropRestricted → KARMA_EQ／KARMA_USE 清掉後可存，否則拒絕。
+        var account = new Account { Id = 7 };
+        var player = BuildPlayer(
+            account,
+            new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4031000, Slot = 1, Quantity = 1 },
+            new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4031000, Slot = 2, Quantity = 1, Flag = ItemFlags.KarmaUse | ItemFlags.Lock });
+        player.AttachStorage(account);
+        Func<int, bool> restricted = static id => id == 4031000;
+
+        Assert.Equal(StorageStoreStatus.Rejected, player.TryStoreItemToStorage(InventoryType.Etc, 1, 1, 4031000, 0, restricted, out _));
+        Assert.Equal(StorageStoreStatus.Success, player.TryStoreItemToStorage(InventoryType.Etc, 2, 1, 4031000, 0, restricted, out _));
+        Assert.Equal(ItemFlags.Lock, Assert.Single(player.Storage.Items).Flag);
+    }
+
     private static Player BuildPlayer(Account account, params ItemRecord[] inventoryItems)
     {
         var character = new Character

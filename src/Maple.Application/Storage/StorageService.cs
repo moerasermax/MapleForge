@@ -30,6 +30,11 @@ public sealed record StorageResult(
 /// <summary>帳號倉庫用例；不持 session/封包，結果由 adapter 編碼。</summary>
 public sealed class StorageService
 {
+    private readonly Maple.Core.Items.IItemMakeCatalog? _items;
+
+    /// <summary>P212：道具目錄供 isDropRestricted（不可交易）判斷；未提供時不檢查。</summary>
+    public StorageService(Maple.Core.Items.IItemMakeCatalog? items = null) => _items = items;
+
     public StorageResult Open(Player player)
     {
         player.Storage.SortByInventoryType();
@@ -45,7 +50,8 @@ public sealed class StorageService
     public StorageResult Store(Player player, InventoryType type, short inventorySlot, short quantity, int expectedItemId = 0)
     {
         var fee = player.Character.MapId == FreeMarketMapId ? FreeMarketStoreFee : StoreFee;
-        return player.TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee, out var removed) switch
+        Func<int, bool>? restricted = _items is null ? null : _items.IsDropRestricted;
+        return player.TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee, restricted, out var removed) switch
         {
             StorageStoreStatus.Success => new StorageResult(StorageResultKind.Stored, type, MesoChanged: true, Removed: removed),
             StorageStoreStatus.Full => new StorageResult(StorageResultKind.Full),

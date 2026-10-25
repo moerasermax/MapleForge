@@ -33,9 +33,19 @@ public sealed partial class Player
     public bool TryStoreItemToStorage(InventoryType type, short inventorySlot, short quantity, int expectedItemId = 0)
         => TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee: 0, out _) == StorageStoreStatus.Success;
 
+    public StorageStoreStatus TryStoreItemToStorage(
+        InventoryType type,
+        short inventorySlot,
+        short quantity,
+        int expectedItemId,
+        int fee,
+        out InventoryQuantityMutation? mutation)
+        => TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee, isDropRestricted: null, out mutation);
+
     /// <summary>
     /// P211：Java NPCHandler.handleStorage mode 5——數量 &lt; 1 不處理；倉庫滿；格子空；楓幣不足手續費（一般 100、自由市場 500）；
     /// 寵物不可存；飛鏢／子彈整組存入；ID 不符或數量不足拒絕。成功時扣手續費、<c>removeFromSlot</c>（回傳數量異動供呼叫端送封包）後存入。
+    /// P212：不可交易（drop-restricted）的道具要有 karma 旗標（KARMA_EQ 優先，再 KARMA_USE），存入的那份清掉該旗標；沒有就拒絕。
     /// </summary>
     public StorageStoreStatus TryStoreItemToStorage(
         InventoryType type,
@@ -43,6 +53,7 @@ public sealed partial class Player
         short quantity,
         int expectedItemId,
         int fee,
+        Func<int, bool>? isDropRestricted,
         out InventoryQuantityMutation? mutation)
     {
         mutation = null;
@@ -59,6 +70,17 @@ public sealed partial class Player
         if ((expectedItemId > 0 && source.ItemId != expectedItemId) || (!rechargeable && source.Quantity < quantity))
             return StorageStoreStatus.Rejected;
 
+        short? karmaToClear = null;
+        if (isDropRestricted?.Invoke(source.ItemId) == true)
+        {
+            if (ItemFlags.Has(source.Flag, ItemFlags.KarmaEquip))
+                karmaToClear = ItemFlags.KarmaEquip;
+            else if (ItemFlags.Has(source.Flag, ItemFlags.KarmaUse))
+                karmaToClear = ItemFlags.KarmaUse;
+            else
+                return StorageStoreStatus.Rejected;
+        }
+
         if (rechargeable)
             quantity = source.Quantity;
 
@@ -66,8 +88,13 @@ public sealed partial class Player
         if (!bag.TryTake(inventorySlot, quantity, out var item) || item is null)
             return StorageStoreStatus.Rejected;
 
+        var originalFlag = item.Flag;
+        if (karmaToClear is { } karma)
+            item.Flag = ItemFlags.Clear(item.Flag, karma);
+
         if (!Storage.TryStore(item))
         {
+            item.Flag = originalFlag;
             RestoreTakenItem(bag, inventorySlot, item);
             return StorageStoreStatus.Full;
         }
