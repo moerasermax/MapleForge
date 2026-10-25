@@ -125,6 +125,8 @@ public static class MapleServerHost
         builder.Services.AddSingleton<ISkillCatalog>(sp => new WzSkillCatalog(sp.GetRequiredService<IDataProvider>()));
         builder.Services.AddSingleton<ISkillBookCatalog>(_ => new JsonSkillBookCatalog(ResolveSkillBookCatalogPath(builder)));
         builder.Services.AddSingleton<SkillService>();
+        // P136：玩家總屬性（Java PlayerStats.recalcLocalStats 子集）。
+        builder.Services.AddSingleton<PlayerLocalStatsCalculator>();
         // P122：怪物技能（Skill.wz MobSkill.img）。
         builder.Services.AddSingleton<Maple.Core.World.IMobSkillCatalog>(sp => new WzMobSkillCatalog(sp.GetRequiredService<IDataProvider>()));
         builder.Services.AddSingleton<MobSkillService>();
