@@ -201,6 +201,29 @@ public sealed class CombatService
         return spawned;
     }
 
+    /// <summary>
+    /// P177：Java <c>MapleMap.resetFully()</c> 的怪物部分：<c>killAllMonsters(false)</c>（不給獎勵）→ <c>respawn(true)</c>
+    /// （所有重生點立刻重生）。回傳被移除的 objectId 與新生的怪。呼叫端持有 field 鎖並廣播。
+    /// </summary>
+    public (IReadOnlyList<int> Removed, IReadOnlyList<Mob> Spawned) ResetFieldMonsters(FieldInstance field, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        var removed = new List<int>();
+        foreach (var mob in field.Objects.OfType<Mob>().ToArray())
+        {
+            field.Remove(mob.ObjectId);
+            removed.Add(mob.ObjectId);
+        }
+
+        foreach (var point in field.SpawnPoints)
+        {
+            point.Reset(now);
+        }
+
+        return (removed, RespawnMonsters(field, now));
+    }
+
     private static int AllocateNextMobObjectId(FieldInstance field)
         => Math.Max(DefaultMobObjectIdBase, field.Objects.Select(static o => o.ObjectId).DefaultIfEmpty(0).Max()) + 1;
 

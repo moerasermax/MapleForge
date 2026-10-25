@@ -26,8 +26,11 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
     private static readonly Regex LoadCall = new(@"load\s*\([^)]*\)\s*;?", RegexOptions.Compiled);
     private static readonly Regex ImportPackageCall = new(@"importPackage\s*\([^)]*\)\s*;?", RegexOptions.Compiled);
 
-    public JintNpcScriptFactory(NpcScriptOptions options, ILogger<JintNpcScriptFactory> log)
+    private readonly Maple.Application.Events.IEventScriptHost? _events;
+
+    public JintNpcScriptFactory(NpcScriptOptions options, ILogger<JintNpcScriptFactory> log, Maple.Application.Events.IEventScriptHost? events = null)
     {
+        _events = events;
         _npcDir = Path.Combine(options.ScriptsDirectory, "npc");
         _portalDir = Path.Combine(options.ScriptsDirectory, "portal");
         _questDir = Path.Combine(options.ScriptsDirectory, "quest");
@@ -113,14 +116,14 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
     }
 
     /// <summary>剝除 Jint 不認的 Rhino/Nashorn Java 互通呼叫（shim 另外注入吃殘留）。</summary>
-    private static string Preprocess(string raw)
+    internal static string Preprocess(string raw)
     {
         raw = LoadCall.Replace(raw, string.Empty);
         raw = ImportPackageCall.Replace(raw, string.Empty);
         return raw;
     }
 
-    private static Engine BuildEngine(INpcScriptContext cm)
+    private Engine BuildEngine(INpcScriptContext cm)
     {
         var engine = new Engine(o => o
             .LimitRecursion(64)
@@ -140,12 +143,12 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         engine.Execute(JavaShim);
 
         // cm facade：lowercase 名＝腳本 API。送對話類只記 pending、領域類即時委派。
-        engine.SetValue("cm", new CmFacade(cm, openShop));
+        engine.SetValue("cm", new CmFacade(cm, openShop, _events));
 
         return engine;
     }
 
-    private const string JavaShim = """
+    internal const string JavaShim = """
         var java = {
             lang: {
                 Math: { random: Math.random, floor: Math.floor, ceil: Math.ceil, min: Math.min, max: Math.max, abs: Math.abs, round: Math.round, pow: Math.pow, sqrt: Math.sqrt },
@@ -167,11 +170,13 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
     {
         private readonly INpcScriptContext _cm;
         private readonly Action<int> _openShop;
+        private readonly Maple.Application.Events.IEventScriptHost? _events;
 
-        public CmFacade(INpcScriptContext cm, Action<int> openShop)
+        public CmFacade(INpcScriptContext cm, Action<int> openShop, Maple.Application.Events.IEventScriptHost? events)
         {
             _cm = cm;
             _openShop = openShop;
+            _events = events;
         }
 
         public void sendNext(string text) => _cm.SendNext(text);
@@ -298,9 +303,10 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void updateEvanIntroState(string data) => _cm.UpdateEvanIntroState(data);
 
         // ── P173 ─────────────────────────────────────────────────────────────────────
-        public EventManagerFacade? getEventManager(string name) => _cm.HasEventManager(name) ? new(_cm, name) : null;
+        /// <summary>P177：交通事件（原生 C#）優先，否則交給事件腳本主機（Jint em）。</summary>
+        public object? getEventManager(string name) => _cm.HasEventManager(name) ? new EventManagerFacade(_cm, name) : _events?.GetEventManager(name);
         public void changeMusic(string song) => _cm.ChangeMusic(song);
-        public ClientFacade getClient() => new(_cm);
+        public ClientFacade getClient() => new(_cm, _events);
 
         // ── P175 ─────────────────────────────────────────────────────────────────────
         public bool haveMonster(int monsterId) => _cm.HaveMonster(monsterId);
@@ -406,14 +412,15 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
     private sealed class ClientFacade
     {
         private readonly INpcScriptContext _cm;
+        private readonly Maple.Application.Events.IEventScriptHost? _events;
 
-        public ClientFacade(INpcScriptContext cm) => _cm = cm;
+        public ClientFacade(INpcScriptContext cm, Maple.Application.Events.IEventScriptHost? events) => (_cm, _events) = (cm, events);
 
         public ClientFacade getChannelServer() => this;
 
         public ClientFacade getEventSM() => this;
 
-        public EventManagerFacade? getEventManager(string name) => _cm.HasEventManager(name) ? new(_cm, name) : null;
+        public object? getEventManager(string name) => _cm.HasEventManager(name) ? new EventManagerFacade(_cm, name) : _events?.GetEventManager(name);
     }
 
     /// <summary>P170：MaplePortal 子集（getId／getName）。</summary>
@@ -540,7 +547,7 @@ public sealed class JintNpcScriptFactory : INpcScriptFactory, IPortalScriptFacto
         public void gainAp(int amount) => _cm.GainAp(amount);
         public void changeJob(int job) => _cm.ChangeJob(job);
         public MapFacade getMap() => new(_cm, _cm.GetMap());
-        public ClientFacade getClient() => new(_cm);
+        public ClientFacade getClient() => new(_cm, null);
         public PartyFacade? getParty() => _cm.GetPartyState() is { } party ? new(party) : null;
 
         /// <summary>P170：Java <c>changeMap(MapleMap, MaplePortal)</c> → warp(map, portal id)。</summary>

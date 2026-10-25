@@ -321,6 +321,17 @@ public static class MapleServerHost
         builder.Services.AddSingleton<TransportService>();
         builder.Services.AddHostedService<TransportHostedService>();
 
+        // P177：事件腳本（Java EventScriptManager；Jint 跑 scripts/event/*.js，em.schedule 由 1 秒 tick 驅動）。
+        builder.Services.AddSingleton<PortalScriptOverrideRegistry>();
+        builder.Services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<IOptions<ServerInstanceOptions>>().Value;
+            return new EventScriptOptions { ScriptsDirectory = o.ScriptsDirectory, Events = o.EventScripts };
+        });
+        builder.Services.AddSingleton<IEventWorld, V113EventWorld>();
+        builder.Services.AddSingleton<IEventScriptHost, JintEventScriptHost>();
+        builder.Services.AddHostedService<EventScriptHostedService>();
+
         return builder;
     }
 

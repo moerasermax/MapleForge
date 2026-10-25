@@ -56,6 +56,13 @@ public sealed class MobSpawnPoint
 
     /// <summary>對照 Java <c>MonsterListener.monsterKilled</c>：怪物死亡時重算下次可重生時間
     /// （<c>MobTime &gt; 0</c> 才延後，否則立刻可生）並歸還這個重生點的計數額度。</summary>
+    /// <summary>P177：Java <c>respawn(force: true)</c>（resetFully）：忽略重生計時與計數，立刻可生。</summary>
+    public void Reset(DateTimeOffset now)
+    {
+        NextPossibleSpawn = now;
+        _spawnedCount = 0;
+    }
+
     public void OnMonsterKilled(DateTimeOffset now)
     {
         NextPossibleSpawn = Definition.MobTime > 0 ? now + TimeSpan.FromSeconds(Definition.MobTime) : now;

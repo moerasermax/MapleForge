@@ -74,6 +74,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     private readonly IQuestScriptFactory? _questScripts;
     private readonly Maple.Application.Events.ITransportEffects? _transportEffects;
     private readonly IPartyRegistry? _partyRegistry;
+    private readonly Maple.Application.Events.PortalScriptOverrideRegistry _portalOverrides;
     private readonly DropServiceOptions? _dropOptions;
 
     /// <summary>P176：線上角色 → (Player, session)，供跨玩家腳本效果在對方序列內使用（只在對方 Post 的工作裡讀取）。</summary>
@@ -201,9 +202,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         IQuestScriptFactory? questScripts = null,
         Maple.Application.Events.ITransportEffects? transportEffects = null,
         IPartyRegistry? partyRegistry = null,
-        DropServiceOptions? dropOptions = null)
+        DropServiceOptions? dropOptions = null,
+        Maple.Application.Events.PortalScriptOverrideRegistry? portalOverrides = null)
     {
         _partyRegistry = partyRegistry;
+        _portalOverrides = portalOverrides ?? new Maple.Application.Events.PortalScriptOverrideRegistry();
         _dropOptions = dropOptions;
         _transportEffects = transportEffects;
         _questScripts = questScripts ?? npcScripts as IQuestScriptFactory;
@@ -2391,9 +2394,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// c2s NPC_TALK_MORE：[byte lastMsg][byte action(mode)][selection]。
     /// 對照 Java NPCMoreTalk：lastMsg==2(getText) 帶字串、否則 selection = 剩餘≥4 readInt / &gt;0 readByte / else -1。
     /// </summary>
-    /// <summary>P173：Boats.js 的 setScriptName（船艙 out00/out01 → OBoat1/2、EBoat1/2）。</summary>
-    private static MapPortal WithScriptOverride(int mapId, MapPortal portal)
-        => Maple.Application.Events.TransportService.GetPortalScriptOverride(mapId, portal.Name) is { } script
+    /// <summary>P173：Boats.js 的 setScriptName（船艙 out00/out01 → OBoat1/2、EBoat1/2）；P177：事件腳本的 setScriptName。</summary>
+    private MapPortal WithScriptOverride(int mapId, MapPortal portal)
+        => _portalOverrides.Get(mapId, portal.Name) is { } script
             ? new MapPortal { Id = portal.Id, Name = portal.Name, Type = portal.Type, X = portal.X, Y = portal.Y, TargetMapId = portal.TargetMapId, TargetPortalName = portal.TargetPortalName, Script = script }
             : portal;
 

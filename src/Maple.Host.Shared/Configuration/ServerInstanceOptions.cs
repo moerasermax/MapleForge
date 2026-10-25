@@ -31,6 +31,22 @@ public sealed class ServerInstanceOptions
     /// WZ 遊戲資料目錄（含 Map.wz/Mob.wz/String.wz 等，對照 v113_Client 目錄）。
     /// 2026-08-23 隨工作區重組搬到 E:（見 <c>MapleStory_docs/_已搬移.md</c>），未受版控追蹤。
     /// </summary>
+    /// <summary>
+    /// P177：要載入的事件腳本（scripts/event/&lt;name&gt;.js，對照 Java settings.ini server.settings.events）。
+    /// 交通船班（Boats／Trains／Geenie／Flight／AirPlane／Subway）已原生移植，不在此列。
+    /// </summary>
+    public string[] EventScripts { get; set; } =
+    [
+        "HontalePQ", "HorntailBattle", "elevator", "Christmas", "FireDemon", "Amoria", "AutomatedEvent", "English", "English0", "English1",
+        "English2", "WuGongPQ", "ElementThanatos", "4jberserk", "4jrush", "OrbisPQ", "HenesysPQ", "Romeo", "Juliet", "Pirate", "Ellin",
+        "DollHouse", "BossBalrog_NORMAL", "Nibergen", "PinkBeanBattle", "ZakumBattle", "NamelessMagicMonster", "Dunas", "Dunas2", "ZakumPQ",
+        "LudiPQ", "KerningPQ", "ProtectTylus", "Vergamot", "CoreBlaze", "GuildQuest", "Aufhaven", "KyrinTrainingGroundC",
+        "KyrinTrainingGroundV", "ProtectPig", "ScarTarBattle", "s4resurrection", "s4resurrection2", "s4nest", "s4aWorld", "DLPracticeField",
+        "BossQuestEASY", "BossQuestHARD", "BossQuestHELL", "BossQuestMed", "shaoling", "Ravana", "MV", "BossBalrog", "Ghostbaby",
+        "MagicQuest1", "Francis", "Relic", "aran3rd", "aran3rd2", "aran4th", "ProtectRichard", "SnackBar", "Mechanical", "CygnusBattle",
+        "FishKing", "HillaBattle", "cpq", "cpq2",
+    ];
+
     public string WzDirectory { get; set; } = @"E:\WorkSpace_離線資料\02_遊戲素材_game-assets\MapleStory\v113_Client";
 
     /// <summary>
