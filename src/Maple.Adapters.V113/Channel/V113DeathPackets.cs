@@ -14,6 +14,12 @@ internal static class V113DeathPackets
     public static IReadOnlyList<byte[]> Build(Player player, PlayerDeathOutcome outcome)
     {
         var packets = new List<byte[]> { V113StatsPackets.EnableActions() };
+        if (outcome.SoulStoneRevived)
+        {
+            // P205：靈魂之石——dropMessage(5) 後 return，不送 EXP 更新；換圖由呼叫端排進連線。
+            packets.Add(V113BroadcastPackets.ServerNotice(5, PlayerDeathOutcome.SoulStoneMessage));
+            return packets;
+        }
 
         // P090：playerDead 前段取消的 buff（dispelSkill(0) + MORPH/MONSTER_RIDING/SUMMON/PUPPET）。
         foreach (var cancellation in outcome.CancelledBuffs)

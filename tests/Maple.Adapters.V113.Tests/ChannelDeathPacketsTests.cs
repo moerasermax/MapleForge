@@ -71,6 +71,54 @@ public sealed class ChannelDeathPacketsTests
         Assert.Equal(V113StatsPackets.UpdateStats(new[] { new PlayerStatUpdate(PlayerStatKind.Exp, 829) }), packets[2]);
     }
 
+    [Fact]
+    public void SoulStone_RevivesAtXPercent_SkipsPenaltyAndBuffCancel()
+    {
+        // P205：Java playerDead 開頭的 SOUL_STONE 分支。
+        var player = NewPlayer(exp: 1000);
+        player.Character.Stats.MaxHp = 1000;
+        var soulStone = new MapleStatEffect
+        {
+            SourceId = 22181003,
+            Level = 1,
+            IsOverTime = true,
+            X = 40,
+            DurationMilliseconds = 60_000,
+            Statups = [new BuffStatValue(MapleBuffStat.SOUL_STONE, 1)],
+        };
+        player.ApplyBuffStats(soulStone, DateTimeOffset.UtcNow);
+        var service = new PlayerDeathService(
+            new Maple.Application.Maps.MapService(new NullDataProvider()),
+            new SingleSkillCatalog(new MapleSkill { Id = 22181003, Effects = [soulStone] }));
+
+        var outcome = service.OnPlayerDied(player);
+
+        Assert.True(outcome.SoulStoneRevived);
+        Assert.Empty(outcome.CancelledBuffs);
+        Assert.Equal((short)400, player.Hp);
+        Assert.Equal(1000, player.Character.Exp);
+        Assert.Equal(1, player.GetBuffValue(MapleBuffStat.SOUL_STONE));
+        Assert.Equal(
+            new[]
+            {
+                V113StatsPackets.EnableActions(),
+                V113BroadcastPackets.ServerNotice(5, PlayerDeathOutcome.SoulStoneMessage),
+            },
+            V113DeathPackets.Build(player, outcome));
+    }
+
+    private sealed class SingleSkillCatalog(MapleSkill skill) : ISkillCatalog
+    {
+        public MapleSkill? GetSkill(int skillId) => skillId == skill.Id ? skill : null;
+    }
+
+    private sealed class NullDataProvider : Core.Data.IDataProvider
+    {
+        public Core.Data.IDataNode GetRoot(string fileName) => throw new NotSupportedException();
+
+        public Core.Data.IDataNode? GetAt(string fileName, string path) => null;
+    }
+
     private static Player NewPlayer(int exp)
         => new(new Character
         {

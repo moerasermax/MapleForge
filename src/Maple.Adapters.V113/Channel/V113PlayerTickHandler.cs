@@ -27,6 +27,7 @@ public sealed class V113PlayerTickHandler
     private readonly IMapSessionRegistry _mapRegistry;
 
     private readonly Maple.Application.Events.IEventScriptHost? _events;
+    private readonly V113SessionCommandRegistry? _sessionCommands;
 
     public V113PlayerTickHandler(
         SkillService skills,
@@ -35,9 +36,11 @@ public sealed class V113PlayerTickHandler
         V113BuffCancellationEffects buffEffects,
         IMapSessionRegistry mapRegistry,
         V113PartyHpSync? partyHpSync = null,
-        Maple.Application.Events.IEventScriptHost? events = null)
+        Maple.Application.Events.IEventScriptHost? events = null,
+        V113SessionCommandRegistry? sessionCommands = null)
     {
         _events = events;
+        _sessionCommands = sessionCommands;
         _partyHpSync = partyHpSync;
         _skills = skills;
         _hazards = hazards;
@@ -112,7 +115,14 @@ public sealed class V113PlayerTickHandler
                 }
 
                 await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, entry.SendPacket).ConfigureAwait(false);
-                _events?.OnPlayerDead(player.Character.Id); // P179：Java playerDead → eim.playerKilled
+                if (outcome.SoulStoneRevived)
+                {
+                    _sessionCommands?.Warp(player.Character.Id, player.Character.MapId, 0); // P205：changeMap(同圖, portal 0)
+                }
+                else
+                {
+                    _events?.OnPlayerDead(player.Character.Id); // P179：Java playerDead → eim.playerKilled
+                }
             }
 
             await SendBestEffortAsync(

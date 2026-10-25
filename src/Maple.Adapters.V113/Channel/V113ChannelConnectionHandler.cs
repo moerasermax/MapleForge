@@ -4944,7 +4944,15 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 await session.SendAsync(packet, ct);
             }
 
-            RunEventHook(() => _eventScripts?.OnPlayerDead(player.Character.Id)); // P179：Java playerDead → eim.playerKilled
+            if (outcome.SoulStoneRevived)
+            {
+                // P205：Java changeMap(getMap(), getPortal(0))——排進自己的連線換圖。
+                _sessionCommands?.Warp(player.Character.Id, player.Character.MapId, 0);
+            }
+            else
+            {
+                RunEventHook(() => _eventScripts?.OnPlayerDead(player.Character.Id)); // P179：Java playerDead → eim.playerKilled
+            }
 
             await _buffEffects.ApplyAsync(player, field, outcome.CancelledBuffs, ct, (pkt, tkn) => session.SendAsync(pkt, tkn));
         }
