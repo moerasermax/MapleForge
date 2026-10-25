@@ -13,6 +13,19 @@ public sealed class MapServiceTests : IDisposable
     public void Dispose() => _provider.Dispose();
 
     [WzFact]
+    public void LoadMobStats_FixedDamageAndOnlyNormalAttack_FromInfo()
+    {
+        // P135：9300311 info/fixedDamage=1、onlyNormalAttack=1；嫩寶 100100 皆無。
+        var special = _svc.LoadMobStats(9300311)!;
+        var normal = _svc.LoadMobStats(100100)!;
+
+        Assert.Equal(1, special.FixedDamage);
+        Assert.True(special.OnlyNormalAttack);
+        Assert.Equal(-1, normal.FixedDamage);
+        Assert.False(normal.OnlyNormalAttack);
+    }
+
+    [WzFact]
     public void Henesys_Loads_With_Portals()
     {
         var map = _svc.LoadMap(100000000);

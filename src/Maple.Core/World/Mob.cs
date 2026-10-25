@@ -30,7 +30,10 @@ public sealed record MobStats(
     // P122：WZ info/skill（Java MapleMonsterStats.getSkills）。
     IReadOnlyList<MobSkillRef>? Skills = null,
     // P130：WZ info/ban（Java BanishInfo：banMsg、banMap/0/field、banMap/0/portal）。
-    MobBanishInfo? Banish = null)
+    MobBanishInfo? Banish = null,
+    // P135：WZ info/fixedDamage（Java getIntConvert 預設 -1：無固定傷害）、info/onlyNormalAttack（&gt; 0）。
+    int FixedDamage = -1,
+    bool OnlyNormalAttack = false)
 {
     /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
     public ElementalEffectiveness GetEffectiveness(Element element)

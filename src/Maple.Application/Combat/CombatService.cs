@@ -203,15 +203,16 @@ public sealed class CombatService
             }
 
             var now = _timeProvider.GetUtcNow();
-            if (target.TotalDamage > 0)
+            var totalDamage = AdjustedTotalDamage(mob.Stats, attack, target);
+            if (totalDamage > 0)
             {
                 mob.RecordAttacker(attacker.Character.Id, now);
             }
 
             // P124：Java DamageParse.applyAttack——鬼神之擊（1221011）打王固定 199999，其餘留 1 HP。
-            var requested = attack.SkillId == HeavensHammerSkillId && target.TotalDamage > 0
+            var requested = attack.SkillId == HeavensHammerSkillId && totalDamage > 0
                 ? (mob.Stats.Boss ? 199_999 : Math.Max(0, mob.Hp - 1))
-                : target.TotalDamage;
+                : totalDamage;
             var result = mob.TakeDamage(requested);
             // P108：對照 Java MapleMonster.damage case -1/2（存活時）→ from.mulungEnergyModify(true)。
             short? mulungEnergyAfter = result.AppliedDamage > 0 && !result.Killed && mob.Stats.HpDisplayType is -1 or 2
@@ -246,7 +247,7 @@ public sealed class CombatService
                     : null,
                 mulungEnergyAfter,
                 appliedStatuses,
-                ApplyReflect(mob, attacker, attack.IsMagic, target.TotalDamage)));
+                ApplyReflect(mob, attacker, attack.IsMagic, totalDamage)));
 
             if (result.Killed)
             {
@@ -256,6 +257,27 @@ public sealed class CombatService
         }
 
         return new CombatAttackResult(hits);
+    }
+
+    /// <summary>
+    /// P135：對照 Java <c>applyAttack:270</c>／<c>applyAttackMagic:681</c> 的逐行改寫（在 GM 豁免與傷害上限之前）：
+    /// 怪物有 fixedDamage → 每一行（含 0 的 miss 行）都改成固定值，但 onlyNormalAttack 時技能攻擊（魔法一律視為技能）為 0；
+    /// 無 fixedDamage 且 onlyNormalAttack → 技能攻擊 0、普攻保留客戶端值（Java 再以 maxDamagePerHit 夾住，待玩家總屬性系列）。
+    /// </summary>
+    public static long AdjustedTotalDamage(MobStats stats, CombatAttack attack, CombatAttackTarget target)
+    {
+        var skillAttack = attack.IsMagic || attack.SkillId != 0;
+        if (stats.FixedDamage != -1)
+        {
+            return stats.OnlyNormalAttack && skillAttack ? 0 : (long)stats.FixedDamage * target.DamageLines.Count;
+        }
+
+        if (stats.OnlyNormalAttack && skillAttack)
+        {
+            return 0;
+        }
+
+        return target.TotalDamage;
     }
 
     /// <summary>

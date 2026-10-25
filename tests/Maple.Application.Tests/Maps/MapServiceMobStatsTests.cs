@@ -50,11 +50,30 @@ public sealed class MapServiceMobStatsTests
         Assert.False(plain.FfaLoot);
     }
 
+    [Fact]
+    public void LoadMobStats_ReadsFixedDamageAndOnlyNormalAttack()
+    {
+        // P135：Java getIntConvert("fixedDamage", -1)、getIntConvert("onlyNormalAttack", 0) > 0。
+        var special = new MapService(new FakeMobDataProvider(false, true, fixedDamage: 1, onlyNormalAttack: 1)).LoadMobStats(100100)!;
+        var plain = new MapService(new FakeMobDataProvider(false, true)).LoadMobStats(100100)!;
+
+        Assert.Equal(1, special.FixedDamage);
+        Assert.True(special.OnlyNormalAttack);
+        Assert.Equal(-1, plain.FixedDamage);
+        Assert.False(plain.OnlyNormalAttack);
+    }
+
     private sealed class FakeMobDataProvider : IDataProvider
     {
         private readonly IDataNode _mobImg;
 
-        public FakeMobDataProvider(bool hasFlyNode, bool hasMoveNode, int? explosiveReward = null, int? publicReward = null)
+        public FakeMobDataProvider(
+            bool hasFlyNode,
+            bool hasMoveNode,
+            int? explosiveReward = null,
+            int? publicReward = null,
+            int? fixedDamage = null,
+            int? onlyNormalAttack = null)
         {
             var info = new Dictionary<string, IDataNode>
             {
@@ -65,6 +84,8 @@ public sealed class MapServiceMobStatsTests
             };
             if (explosiveReward is { } e) info["explosiveReward"] = new Node("explosiveReward", e);
             if (publicReward is { } p) info["publicReward"] = new Node("publicReward", p);
+            if (fixedDamage is { } f) info["fixedDamage"] = new Node("fixedDamage", f);
+            if (onlyNormalAttack is { } o) info["onlyNormalAttack"] = new Node("onlyNormalAttack", o);
             var children = new Dictionary<string, IDataNode>
             {
                 ["info"] = new Node("info", children: info),

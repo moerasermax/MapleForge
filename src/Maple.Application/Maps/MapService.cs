@@ -133,7 +133,9 @@ public sealed class MapService
             NoDoom: GetInt(info, "noDoom", 0) > 0,
             Resistances: ElementCodec.DecodeResistances(GetString(info, "elemAttr")),
             Skills: LoadMobSkills(info["skill"]),
-            Banish: LoadBanish(info["ban"]));
+            Banish: LoadBanish(info["ban"]),
+            FixedDamage: GetInt(info, "fixedDamage", -1),
+            OnlyNormalAttack: GetInt(info, "onlyNormalAttack", 0) > 0);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
