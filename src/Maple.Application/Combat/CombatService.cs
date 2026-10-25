@@ -258,6 +258,12 @@ public sealed class CombatService
                 return new CombatAttackResult(hits, Aborted: true);
             }
 
+            // P146：Java applyAttackMagic——群體治癒打到非不死系怪物 → return（整次攻擊中止）。
+            if (attack.IsMagic && attack.SkillId == HealSkillId && !mob.Stats.Undead)
+            {
+                return new CombatAttackResult(hits, Aborted: true);
+            }
+
             if (totalDamage > 0)
             {
                 mob.RecordAttacker(attacker.Character.Id, now);
@@ -347,6 +353,8 @@ public sealed class CombatService
     }
 
     public const int PickPocketSkillId = 4211003;
+
+    public const int HealSkillId = 2301002;
 
     /// <summary>
     /// P143：Java <c>MapleStatEffect.applyPassive</c>（魔力吸收 2100000／2200000／2300000，依 <c>getMPEaterForJob</c>：

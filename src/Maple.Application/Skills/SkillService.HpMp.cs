@@ -101,22 +101,14 @@ public sealed partial class SkillService
         return new SkillHpMpResult(SkillCastStatus.Success, updates);
     }
 
-    /// <summary>
-    /// Java <c>calcHPChange(applyfrom, primary=true)</c> 的攻擊技能部分：GM 技能 9001000/9101000 +500000、
-    /// <c>hpR</c>（<c>(int)(currentMaxHp * hpR) / (殭屍 ? 2 : 1)</c>）、<c>-hpCon</c>。技能 <c>hp</c>（治癒公式
-    /// makeHealHP 需總魔攻）未納入：WZ 中帶 hp 的技能只有被動、召喚獸治療與群體治癒（魔法攻擊尾段排除 applyTo）。
-    /// 4211001 氣絕（Java 以 LUK/DEX 公式覆寫 hpchange）待總屬性系列。
-    /// </summary>
-    private static int CalcHpChange(Player player, MapleStatEffect effect)
-    {
-        var hpChange = effect.SourceId is 9001000 or 9101000 ? 500_000 : 0;
-        if (effect.HpRate != 0)
-        {
-            hpChange += (int)(player.MaxHp * effect.HpRate) / (player.HasDisease(PlayerDisease.Zombify) ? 2 : 1);
-        }
-
-        return hpChange - effect.HpCon;
-    }
+    /// <summary>P146：Java <c>calcHPChange(applyfrom, primary=true)</c>，見 <see cref="SkillHpFormula"/>。</summary>
+    private int CalcHpChange(Player player, MapleStatEffect effect)
+        => SkillHpFormula.CalcHpChange(
+            player,
+            effect,
+            primary: true,
+            SkillHpFormula.NeedsLocalStats(effect) ? new Maple.Application.Combat.PlayerLocalStatsCalculator(_skills).Calculate(player) : null,
+            _random);
 
     /// <summary>
     /// Java <c>calcMPChange(applyfrom, primary=true)</c>：<c>mp</c>（技能不經鍊金術）＋<c>(int)(currentMaxMp * mpR)</c>；

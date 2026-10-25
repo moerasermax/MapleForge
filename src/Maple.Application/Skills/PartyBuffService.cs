@@ -1,3 +1,4 @@
+using Maple.Application.Combat;
 using Maple.Application.Mobs;
 using Maple.Application.Parties;
 using Maple.Core.Skills;
@@ -24,11 +25,13 @@ public sealed class PartyBuffService
 {
     private readonly IPartyRegistry? _parties;
     private readonly Random _random;
+    private readonly PlayerLocalStatsCalculator? _localStats;
 
-    public PartyBuffService(IPartyRegistry? parties = null, Random? random = null)
+    public PartyBuffService(IPartyRegistry? parties = null, Random? random = null, PlayerLocalStatsCalculator? localStats = null)
     {
         _parties = parties;
         _random = random ?? Random.Shared;
+        _localStats = localStats;
     }
 
     /// <summary>Java <c>isPartyBuff</c>：有 lt/rb（partyBuff 恆為 true）且不是鬥氣系（1211003~1211008、1221003/1221004、11111007、12101005、4311001）。</summary>
@@ -117,11 +120,15 @@ public sealed class PartyBuffService
     {
         var hpBefore = target.Hp;
         var stats = target.Character.Stats;
-        var hpChange = resurrection ? stats.MaxHp : 0;
-        if (!resurrection && effect.HpRate != 0)
-        {
-            hpChange += (int)(caster.MaxHp * effect.HpRate) / (caster.HasDisease(PlayerDisease.Zombify) ? 2 : 1);
-        }
+        // P146：非 primary 的 calcHPChange（治癒術的 makeHealHP 用施放者總魔攻）；復活覆寫為目標基礎最大 HP。
+        var hpChange = resurrection
+            ? stats.MaxHp
+            : SkillHpFormula.CalcHpChange(
+                caster,
+                effect,
+                primary: false,
+                SkillHpFormula.NeedsLocalStats(effect) ? _localStats?.Calculate(caster) : null,
+                _random);
 
         int mpChange = effect.Mp;
         if (effect.MpRate != 0)

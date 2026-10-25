@@ -36,7 +36,9 @@ public sealed record MobStats(
     bool OnlyNormalAttack = false,
     // P137：WZ info/eva、info/MDDamage（Java getEva、getMagicDefense；魔法傷害上限用）。
     int Eva = 0,
-    int MagicDefense = 0)
+    int MagicDefense = 0,
+    // P146：WZ info/undead（Java setUndead：undead &gt; 0 或 9700004、9700009~9700011）。
+    bool Undead = false)
 {
     /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
     public ElementalEffectiveness GetEffectiveness(Element element)
