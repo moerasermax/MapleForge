@@ -33,7 +33,10 @@ public sealed record MobStats(
     MobBanishInfo? Banish = null,
     // P135：WZ info/fixedDamage（Java getIntConvert 預設 -1：無固定傷害）、info/onlyNormalAttack（&gt; 0）。
     int FixedDamage = -1,
-    bool OnlyNormalAttack = false)
+    bool OnlyNormalAttack = false,
+    // P137：WZ info/eva、info/MDDamage（Java getEva、getMagicDefense；魔法傷害上限用）。
+    int Eva = 0,
+    int MagicDefense = 0)
 {
     /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
     public ElementalEffectiveness GetEffectiveness(Element element)

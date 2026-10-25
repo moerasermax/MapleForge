@@ -3754,7 +3754,11 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         // P132/P133：Java applyAttackMagic 尾段 effect.applyTo(player)（pos = null → 玩家位置）——HP/MP 消耗、
         // 劇毒霧 2111003／火焰齒輪 12111005。
-        await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: true, player.Position, session, ct);
+        // P137：傷害封鎖門檻中止時 Java 已 return，尾段 applyTo 不執行。
+        if (!result.Aborted)
+        {
+            await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: true, player.Position, session, ct);
+        }
     }
 
     /// <summary>

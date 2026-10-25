@@ -81,6 +81,9 @@ public sealed class MapleStatEffect
     /// </summary>
     public World.MobSkillArea? Area { get; init; }
 
+    /// <summary>P137：WZ <c>fixdamage</c>（Java <c>getFixDamage</c>，預設 0；新手蝸牛殼等固定傷害上限）。</summary>
+    public int FixDamage { get; init; }
+
     public bool HasBuffStats => Statups.Count > 0;
 
     public DateTimeOffset? GetExpiresAt(DateTimeOffset startedAt)

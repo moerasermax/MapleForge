@@ -135,7 +135,9 @@ public sealed class MapService
             Skills: LoadMobSkills(info["skill"]),
             Banish: LoadBanish(info["ban"]),
             FixedDamage: GetInt(info, "fixedDamage", -1),
-            OnlyNormalAttack: GetInt(info, "onlyNormalAttack", 0) > 0);
+            OnlyNormalAttack: GetInt(info, "onlyNormalAttack", 0) > 0,
+            Eva: GetInt(info, "eva", 0),
+            MagicDefense: GetInt(info, "MDDamage", 0));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

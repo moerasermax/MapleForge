@@ -55,7 +55,8 @@ public sealed record CombatMobHpDisplay(
     public byte HpPercent => (byte)Math.Clamp((int)Math.Ceiling(Hp * 100.0 / Math.Max(1, MaxHp)), 0, 100);
 }
 
-public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits)
+/// <param name="Aborted">P137：Java applyAttackMagic 中途 <c>return</c>（傷害封鎖門檻）——後續怪物未處理，呼叫端不做尾段 applyTo。</param>
+public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits, bool Aborted = false)
 {
     public bool AnyKilled => Hits.Any(static h => h.Killed);
 }
@@ -72,13 +73,16 @@ public sealed class CombatService
     private readonly IMobKillHandler? _mobKillHandler;
     private readonly TimeProvider _timeProvider;
     private readonly Random _random;
+    private readonly PlayerLocalStatsCalculator? _localStats;
 
     public CombatService(
         MapService maps,
         IMobKillHandler? mobKillHandler = null,
         TimeProvider? timeProvider = null,
-        Random? random = null)
+        Random? random = null,
+        PlayerLocalStatsCalculator? localStats = null)
     {
+        _localStats = localStats;
         _maps = maps;
         _mobKillHandler = mobKillHandler;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -195,6 +199,11 @@ public sealed class CombatService
         }
 
         var hits = new List<CombatMobHit>();
+        // P137：魔法攻擊的伺服器端傷害上限（需玩家總屬性；未注入計算器時沿用客戶端值）。
+        PlayerLocalStats? magicStats = attack.IsMagic ? _localStats?.Calculate(attacker) : null;
+        var magicBaseMax = magicStats is null
+            ? 0
+            : MagicDamageCap.BaseMaxDamagePerHit(attack.SkillId, attack.SkillEffect, magicStats, attacker.Character.Stats.Int);
         foreach (var target in attack.Targets)
         {
             if (field.Get(target.ObjectId) is not Mob mob || !mob.IsAlive)
@@ -203,7 +212,21 @@ public sealed class CombatService
             }
 
             var now = _timeProvider.GetUtcNow();
-            var totalDamage = AdjustedTotalDamage(mob.Stats, attack, target);
+            long totalDamage;
+            if (magicStats is not null)
+            {
+                if (AdjustMagicDamage(attacker, mob, attack, target, magicStats, magicBaseMax) is not { } magicTotal)
+                {
+                    return new CombatAttackResult(hits, Aborted: true);
+                }
+
+                totalDamage = magicTotal;
+            }
+            else
+            {
+                totalDamage = AdjustedTotalDamage(mob.Stats, attack, target);
+            }
+
             if (totalDamage > 0)
             {
                 mob.RecordAttacker(attacker.Character.Id, now);
@@ -257,6 +280,36 @@ public sealed class CombatService
         }
 
         return new CombatAttackResult(hits);
+    }
+
+    /// <summary>
+    /// P137：Java applyAttackMagic 的逐行改寫加總；任何一行要求中止回 null。屬性：ELEMENT_RESET buff 下為無屬性，
+    /// 否則取技能屬性。負值行不計（同 <see cref="CombatAttackTarget.TotalDamage"/>）。
+    /// </summary>
+    private static long? AdjustMagicDamage(
+        Player attacker,
+        Mob mob,
+        CombatAttack attack,
+        CombatAttackTarget target,
+        PlayerLocalStats stats,
+        double baseMax)
+    {
+        var element = attacker.GetBuffValue(MapleBuffStat.ELEMENT_RESET) is not null
+            ? Element.Neutral
+            : attack.SkillEffect?.SourceElement ?? Element.Neutral;
+        var maxPerHit = MagicDamageCap.MaxDamagePerHit(attacker, attack.SkillId, mob, stats, element, baseMax);
+        long total = 0;
+        foreach (var line in target.DamageLines)
+        {
+            if (MagicDamageCap.AdjustLine(line, attacker, attack.SkillId, attack.SkillEffect, mob, baseMax, maxPerHit) is not { } adjusted)
+            {
+                return null;
+            }
+
+            total += Math.Max(0, adjusted);
+        }
+
+        return total;
     }
 
     /// <summary>

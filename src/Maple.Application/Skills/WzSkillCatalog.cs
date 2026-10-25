@@ -184,6 +184,7 @@ public sealed class WzSkillCatalog : ISkillCatalog
             MonsterStatuses = monsterStatuses,
             SourceElement = element,
             Area = ReadArea(source),
+            FixDamage = GetInt(source, "fixdamage", 0),
         };
     }
 
