@@ -3571,6 +3571,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                 attack.ToCombatAttack() with { SkillEffect = _skillService.GetAttackEffect(player, attack.SkillId), SkillId = attack.SkillId });
         }
 
+        await CancelBuffsOnAttackAsync(player, field, result, session, ct);
+
         if (_log.IsEnabled(LogLevel.Debug))
         {
             var combat = attack.ToCombatAttack();
@@ -3676,6 +3678,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             skillLevel);
         await BroadcastPacketToOthersAsync(player.Character, attackBroadcast, ct);
 
+        await CancelBuffsOnAttackAsync(player, field, result.Combat, session, ct);
         await SendCombatHitsAsync(result.Combat.Hits, player, session, ct);
         await ApplyReflectedDamageAsync(result.Combat.Hits, player, field, session, ct);
 
@@ -3777,6 +3780,26 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         {
             await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: true, player.Position, session, ct);
         }
+    }
+
+    /// <summary>
+    /// P141：物理攻擊處理到射程內怪物時（有任何命中紀錄）解除疾風步／隱身術：本人 CANCEL_BUFF，
+    /// 其餘（CANCEL_FOREIGN_BUFF 等）走取消副作用。
+    /// </summary>
+    private async Task CancelBuffsOnAttackAsync(Player player, FieldInstance field, CombatAttackResult result, MapleSession session, CancellationToken ct)
+    {
+        if (result.Hits.Count == 0)
+        {
+            return;
+        }
+
+        var cancellations = _skillService.CancelBuffsOnAttack(player);
+        foreach (var cancellation in cancellations)
+        {
+            await session.SendAsync(V113SkillPackets.CancelBuff(cancellation.Stats), ct);
+        }
+
+        await ApplyBuffCancellationSideEffectsAsync(player, field, cancellations, session, ct);
     }
 
     /// <summary>

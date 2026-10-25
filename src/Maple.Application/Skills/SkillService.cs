@@ -108,6 +108,37 @@ public sealed partial class SkillService
     }
 
     /// <summary>
+    /// P141：對照 Java <c>applyAttack</c>（物理攻擊，處理到第一隻射程內怪物時）：疾風步一律
+    /// <c>cancelEffectFromBuffStat(WIND_WALK)</c>；隱身術除非來源是進階隱身術 4330001 且 <c>makeChanceResult</c> 成功，
+    /// 否則取消（GM 豁免未移植）。回傳被取消的效果（呼叫端送 CANCEL_BUFF 並走取消副作用）。
+    /// </summary>
+    public IReadOnlyList<PlayerBuffCancellation> CancelBuffsOnAttack(Player player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+
+        var cancelled = new List<PlayerBuffCancellation>();
+        if (player.ActiveBuffs.FirstOrDefault(static b => b.Stat == MapleBuffStat.WIND_WALK) is { } windWalk)
+        {
+            cancelled.AddRange(player.CancelBuffBySource(windWalk.SourceId));
+        }
+
+        if (player.ActiveBuffs.FirstOrDefault(static b => b.Stat == MapleBuffStat.DARKSIGHT) is { } darkSight)
+        {
+            var keep = darkSight.SourceId == AdvancedDarkSightSkillId
+                && _skills.GetSkill(darkSight.SourceId)?.GetEffect(darkSight.SkillLevel) is { } effect
+                && (effect.Prop == 100 || _random.Next(99) < effect.Prop);
+            if (!keep)
+            {
+                cancelled.AddRange(player.CancelBuffBySource(darkSight.SourceId));
+            }
+        }
+
+        return cancelled;
+    }
+
+    public const int AdvancedDarkSightSkillId = 4330001;
+
+    /// <summary>
     /// P139：Java <c>applyBuffEffect</c> 對同圖其他玩家廣播的 <c>giveForeignBuff</c> 狀態（施放者本人另收 giveBuff）：
     /// 隱身術系（9001004、13101006、4330001、4001003、14001003）DARKSIGHT 0、鬥氣集中（1111002、11111001）COMBO 0、
     /// 無形之箭（3101004、3201004、13101003）SOULARROW 0、影分身（4111002、14111000）SHADOWPARTNER 0、

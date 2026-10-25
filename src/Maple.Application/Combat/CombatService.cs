@@ -218,6 +218,7 @@ public sealed class CombatService
         var maxRangeSq = rangeExempt
             ? double.MaxValue
             : AttackRange.MaxDistanceSq(attacker, attack.SkillEffect, attack.SkillId, localStats!.DefRange);
+        long cumulativeDamage = 0;
         foreach (var target in attack.Targets)
         {
             if (field.Get(target.ObjectId) is not Mob mob || !mob.IsAlive)
@@ -241,6 +242,8 @@ public sealed class CombatService
                 totalDamage = AdjustedTotalDamage(mob.Stats, attack, target);
             }
 
+            // Java totDamage += totDamageToOneMonster 在射程檢查之前。
+            cumulativeDamage += totalDamage;
             if (AttackRange.DistanceSq(attacker.Position, mob.Position) > maxRangeSq)
             {
                 return new CombatAttackResult(hits, Aborted: true);
@@ -291,6 +294,11 @@ public sealed class CombatService
                 appliedStatuses,
                 ApplyReflect(mob, attacker, attack.IsMagic, totalDamage)));
 
+            if (totalDamage > 0 && !attack.IsMagic && !attack.FromSummon)
+            {
+                ApplyAttackerDrain(attacker, attack, mob, cumulativeDamage);
+            }
+
             if (result.Killed)
             {
                 field.Remove(mob.ObjectId);
@@ -299,6 +307,35 @@ public sealed class CombatService
         }
 
         return new CombatAttackResult(hits);
+    }
+
+    /// <summary>
+    /// P141：對照 Java <c>applyAttack</c> 扣血後的攻擊者 HP 效果（<c>setHp(..., silent)</c>，HP 封包隨尾段 applyTo 送出）。
+    /// <c>totDamage</c> 是到這隻怪為止的累計總傷（照抄）；上限用基礎最大 HP（Java <c>getMaxHp</c>）/ 2：
+    /// 連擊吸血 COMBO_DRAIN（buff 值 = 技能 x）、吸血術 4101005／吸血 14101006／損人利己 5111004（技能 x）回
+    /// <c>min(怪物最大 HP, min((int)(totDamage * x / 100), maxHp / 2))</c>；龍之獻祭 1311005 扣
+    /// <c>totDamage * x / 100</c>，最低留 1。
+    /// </summary>
+    private static void ApplyAttackerDrain(Player attacker, CombatAttack attack, Mob mob, long totDamage)
+    {
+        var stats = attacker.Character.Stats;
+        int Drain(int x) => (int)Math.Min(mob.Stats.MaxHp, Math.Min((int)(totDamage * (double)x / 100.0), stats.MaxHp / 2));
+
+        if (attacker.GetBuffValue(MapleBuffStat.COMBO_DRAIN) is { } comboDrain)
+        {
+            stats.Hp = (short)Math.Clamp(stats.Hp + Drain(comboDrain), 0, attacker.MaxHp);
+        }
+
+        switch (attack.SkillId)
+        {
+            case 4101005 or 14101006 or 5111004:
+                stats.Hp = (short)Math.Clamp(stats.Hp + Drain(attack.SkillEffect?.X ?? 0), 0, attacker.MaxHp);
+                break;
+            case 1311005:
+                var remaining = stats.Hp - totDamage * (attack.SkillEffect?.X ?? 0) / 100;
+                stats.Hp = (short)Math.Clamp(remaining > 1 ? remaining : 1, 1, attacker.MaxHp);
+                break;
+        }
     }
 
     /// <summary>
