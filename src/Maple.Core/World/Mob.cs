@@ -12,12 +12,17 @@ public sealed record MobStats(
     bool Boss = false,
     bool Mobile = false,
     bool Friendly = false,
-    byte HpDisplayType = 3,
+    // P107：對照 Java MapleLifeFactory——tagColor>0→0（王血條）、friendly→1、武陵 9300184~9300215→2、
+    // 非王或 9410066→3（攻擊者小血條），其餘（王但無 hpTagColor）→-1。
+    sbyte HpDisplayType = 3,
     sbyte SelfDestructAnimation = -1,
     bool Fly = false,
     // P096：對照 Java MapleMonsterStats.isExplosiveReward（WZ info/explosiveReward）與 isFfaLoot（WZ info/publicReward）。
     bool ExplosiveReward = false,
-    bool FfaLoot = false);
+    bool FfaLoot = false,
+    // P107：王血條顏色（WZ info/hpTagColor、hpTagBgcolor；僅王且未隱藏血條時有值）。
+    byte TagColor = 0,
+    byte TagBgColor = 0);
 
 /// <summary>單次怪物傷害套用結果。</summary>
 public sealed record MobDamageResult(
@@ -35,6 +40,11 @@ public sealed record MobDamageResult(
 public sealed class Mob : IFieldObject
 {
     public const byte DefaultStance = 5;
+
+    /// <summary>對照 Java <c>MapleMonster.damage</c> 的 HPDisplayType 3：最近 4 秒內攻擊過的玩家才收到血條。</summary>
+    public static readonly TimeSpan RecentAttackerWindow = TimeSpan.FromSeconds(4);
+
+    private readonly Dictionary<int, DateTimeOffset> _lastAttackTimes = new();
 
     public MapMonster Definition { get; }
 
@@ -89,6 +99,22 @@ public sealed class Mob : IFieldObject
         Hp -= applied;
         return new MobDamageResult(ObjectId, Definition.MonsterId, damage, applied, Hp, Hp == 0);
     }
+
+    /// <summary>
+    /// 記錄攻擊者最後攻擊時間（對照 Java <c>MapleMonster.damage</c> 開頭的 <c>attackers</c> 登記，
+    /// 只在怪物存活且傷害 &gt; 0 時登記）。
+    /// </summary>
+    public void RecordAttacker(int characterId, DateTimeOffset at)
+    {
+        _lastAttackTimes[characterId] = at;
+    }
+
+    /// <summary>最近 <see cref="RecentAttackerWindow"/> 內攻擊過的角色 Id（含邊界）。</summary>
+    public IReadOnlyList<int> GetRecentAttackers(DateTimeOffset now)
+        => _lastAttackTimes
+            .Where(e => e.Value >= now - RecentAttackerWindow)
+            .Select(static e => e.Key)
+            .ToArray();
 
     /// <summary>套用怪物移動最終位置（MONSTER_MOVE 後續接線用）。</summary>
     public void MoveTo(Position position) => Position = position;

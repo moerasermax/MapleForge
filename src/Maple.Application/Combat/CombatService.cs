@@ -21,7 +21,25 @@ public sealed record CombatMobHit(
     MobKillRewards? Rewards = null,
     // 死亡當下的怪物控制者（死亡前捕捉，field.Remove 後就查不到了）。0=無控制者。
     // 對照 Java MapleMonster 死亡流程對控制者送 stopControllingMonster。
-    int ControllerId = 0);
+    int ControllerId = 0,
+    // P107：命中後的血條顯示快照（傷害 > 0 時才有；對照 Java MapleMonster.damage 的 HPDisplayType 分派）。
+    CombatMobHpDisplay? HpDisplay = null);
+
+/// <summary>
+/// 怪物血條顯示所需快照（在戰鬥鎖內擷取）：顯示類型、血量、王血條顏色、最近攻擊者。
+/// 封包版型由 Adapters 決定。
+/// </summary>
+public sealed record CombatMobHpDisplay(
+    sbyte DisplayType,
+    long Hp,
+    long MaxHp,
+    byte TagColor,
+    byte TagBgColor,
+    IReadOnlyList<int> RecentAttackerIds)
+{
+    /// <summary>對照 Java <c>(int) Math.ceil((hp * 100.0) / getMobMaxHp())</c>。</summary>
+    public byte HpPercent => (byte)Math.Clamp((int)Math.Ceiling(Hp * 100.0 / Math.Max(1, MaxHp)), 0, 100);
+}
 
 public sealed record CombatAttackResult(IReadOnlyList<CombatMobHit> Hits)
 {
@@ -163,6 +181,12 @@ public sealed class CombatService
                 continue;
             }
 
+            var now = _timeProvider.GetUtcNow();
+            if (target.TotalDamage > 0)
+            {
+                mob.RecordAttacker(attacker.Character.Id, now);
+            }
+
             var result = mob.TakeDamage(target.TotalDamage);
             var rewards = result.Killed
                 ? _mobKillHandler?.OnMobKilled(field, attacker, mob)
@@ -176,7 +200,16 @@ public sealed class CombatService
                 result.RemainingHp,
                 result.Killed,
                 rewards,
-                mob.ControllerId));
+                mob.ControllerId,
+                result.AppliedDamage > 0
+                    ? new CombatMobHpDisplay(
+                        mob.Stats.HpDisplayType,
+                        result.RemainingHp,
+                        mob.Stats.MaxHp,
+                        mob.Stats.TagColor,
+                        mob.Stats.TagBgColor,
+                        mob.GetRecentAttackers(now))
+                    : null));
 
             if (result.Killed)
             {

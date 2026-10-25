@@ -3740,13 +3740,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     {
         foreach (var hit in hits)
         {
-            if (hit.AppliedDamage > 0)
+            if (hit.HpDisplay is { } display)
             {
-                await BroadcastPacketToMapAsync(
-                    player.Character,
-                    session,
-                    V113CombatPackets.DamageMonster(hit.ObjectId, hit.AppliedDamage),
-                    ct);
+                await SendMobHpDisplayAsync(hit, display, player, session, ct);
             }
 
             if (hit.Killed)
@@ -3759,6 +3755,91 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
                     await SendMobKillRewardsAsync(player, session, rewards, ct);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// P107：命中後的血條顯示，對照 Java <c>MapleMonster.damage</c> 的 HPDisplayType 分派——
+    /// 存活時 0 王血條（全圖）、1 友方怪 DAMAGE_MONSTER（全圖）、-1/2 小血條（全圖）、3 小血條只給 4 秒內攻擊者；
+    /// 死亡時只有 -1 再送一次 0%。玩家攻擊不送一般 DAMAGE_MONSTER（Java 只在持續傷害/反彈時送）。
+    /// </summary>
+    private async Task SendMobHpDisplayAsync(
+        CombatMobHit hit,
+        CombatMobHpDisplay display,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        if (hit.Killed)
+        {
+            if (display.DisplayType == -1)
+            {
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.ShowMonsterHp(hit.ObjectId, display.HpPercent), ct);
+            }
+
+            return;
+        }
+
+        switch (display.DisplayType)
+        {
+            case 0:
+                await BroadcastPacketToMapAsync(
+                    player.Character,
+                    session,
+                    V113CombatPackets.ShowBossHp(hit.MonsterId, display.Hp, display.MaxHp, display.TagColor, display.TagBgColor),
+                    ct);
+                break;
+            case 1:
+                await BroadcastPacketToMapAsync(
+                    player.Character,
+                    session,
+                    V113CombatPackets.DamageFriendlyMob(hit.ObjectId, hit.RequestedDamage, display.Hp, display.MaxHp),
+                    ct);
+                break;
+            case -1:
+            case 2:
+                await BroadcastPacketToMapAsync(player.Character, session, V113CombatPackets.ShowMonsterHp(hit.ObjectId, display.HpPercent), ct);
+                break;
+            case 3:
+                await SendToRecentAttackersAsync(
+                    display.RecentAttackerIds,
+                    V113CombatPackets.ShowMonsterHp(hit.ObjectId, display.HpPercent),
+                    player,
+                    session,
+                    ct);
+                break;
+        }
+    }
+
+    /// <summary>只送給同地圖、最近攻擊過該怪的玩家（對照 Java <c>cattacker.getAttacker().getMap() == from.getMap()</c>）。</summary>
+    private async Task SendToRecentAttackersAsync(
+        IReadOnlyList<int> attackerIds,
+        byte[] packet,
+        Player player,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        IReadOnlyList<MapPlayerEntry>? others = null;
+        foreach (var attackerId in attackerIds)
+        {
+            if (attackerId == player.Character.Id)
+            {
+                await session.SendAsync(packet, ct);
+                continue;
+            }
+
+            others ??= _mapRegistry.GetOthers(player.Character.MapId, player.Character.Id);
+            var other = others.FirstOrDefault(o => o.CharId == attackerId);
+            if (other is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                await other.SendPacket(packet, ct);
+            }
+            catch { /* session might be closing */ }
         }
     }
 

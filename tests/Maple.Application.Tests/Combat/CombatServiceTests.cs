@@ -276,6 +276,84 @@ public sealed class CombatServiceTests
         Assert.Equal(0, killHook.Calls);
     }
 
+    // ── P107：命中後的血條顯示快照（對照 Java MapleMonster.damage 的 HPDisplayType 分派）──
+
+    [Fact]
+    public void ApplyAttack_Hit_SnapshotsHpDisplayAndRecentAttacker()
+    {
+        var now = new DateTimeOffset(2026, 10, 25, 0, 0, 0, TimeSpan.Zero);
+        var service = new CombatService(new MapService(new EmptyDataProvider()), timeProvider: new FakeTimeProvider(now));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = new Mob(
+            new MapMonster { MonsterId = 8800000, X = 0, Y = 0, Fh = 1 },
+            new MobStats(8800000, 300, MaxMp: 0, Level: 1, Exp: 1, Boss: true, HpDisplayType: 0, TagColor: 2, TagBgColor: 5),
+            objectId: 100001);
+        field.Add(player);
+        field.Add(mob);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [100]),
+        ])).Hits);
+
+        var display = Assert.IsType<CombatMobHpDisplay>(hit.HpDisplay);
+        Assert.Equal((sbyte)0, display.DisplayType);
+        Assert.Equal(200, display.Hp);
+        Assert.Equal(300, display.MaxHp);
+        Assert.Equal((byte)2, display.TagColor);
+        Assert.Equal((byte)5, display.TagBgColor);
+        Assert.Equal((byte)67, display.HpPercent); // ceil(200*100/300)=ceil(66.67)
+        Assert.Equal(new[] { player.Character.Id }, display.RecentAttackerIds);
+    }
+
+    [Fact]
+    public void ApplyAttack_ZeroDamage_HasNoHpDisplay()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = MakeMob(objectId: 100001, hp: 100);
+        field.Add(player);
+        field.Add(mob);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [0]),
+        ])).Hits);
+
+        Assert.Null(hit.HpDisplay);
+    }
+
+    [Fact]
+    public void ApplyAttack_Kill_HpDisplayShowsZeroPercent()
+    {
+        var service = new CombatService(new MapService(new EmptyDataProvider()));
+        var field = new FieldInstance(100000100);
+        var player = MakePlayer();
+        var mob = MakeMob(objectId: 100001, hp: 20);
+        field.Add(player);
+        field.Add(mob);
+
+        var hit = Assert.Single(service.ApplyAttack(field, player, new CombatAttack([
+            new CombatAttackTarget(mob.ObjectId, [50]),
+        ])).Hits);
+
+        Assert.True(hit.Killed);
+        Assert.Equal((byte)0, hit.HpDisplay!.HpPercent);
+    }
+
+    [Theory]
+    [InlineData(100100, false, false, 0, 3)]   // 一般怪：攻擊者小血條
+    [InlineData(8800000, true, false, 2, 0)]   // 王且有 hpTagColor：王血條
+    [InlineData(8800000, true, false, 0, -1)]  // 王但無 hpTagColor：-1
+    [InlineData(9410066, true, false, 0, 3)]   // 9410066 例外
+    [InlineData(9300184, false, false, 0, 2)]  // 武陵怪
+    [InlineData(9300215, false, true, 0, 1)]   // friendly 優先於武陵
+    [InlineData(9300215, false, true, 3, 0)]   // tagColor 最優先
+    public void GetHpDisplayType_FollowsJavaMapleLifeFactoryOrder(int monsterId, bool boss, bool friendly, byte tagColor, sbyte expected)
+    {
+        Assert.Equal(expected, MapService.GetHpDisplayType(monsterId, boss, friendly, tagColor));
+    }
+
     private static Player MakePlayer(short hp = 50)
     {
         var chr = new Character

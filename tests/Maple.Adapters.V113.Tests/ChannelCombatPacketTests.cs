@@ -72,6 +72,55 @@ public sealed class ChannelCombatPacketTests
     }
 
     [Fact]
+    public void ShowMonsterHp_MatchesJavaMobPacketLayout()
+    {
+        Assert.Equal(
+            new byte[] { 0xF3, 0x00, 0xA1, 0x86, 0x01, 0x00, 0x43 },
+            V113CombatPackets.ShowMonsterHp(100001, 67));
+    }
+
+    [Fact]
+    public void ShowBossHp_WritesBossEnvType5WithTagColors()
+    {
+        var r = new PacketReader(V113CombatPackets.ShowBossHp(8800000, 200, 300, 2, 5));
+
+        Assert.Equal(V113CombatPackets.BossEnvOp, r.ReadShort());
+        Assert.Equal(5, r.ReadByte());
+        Assert.Equal(8800000, r.ReadInt());
+        Assert.Equal(200, r.ReadInt());
+        Assert.Equal(300, r.ReadInt());
+        Assert.Equal(2, r.ReadByte());
+        Assert.Equal(5, r.ReadByte());
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
+    public void ShowBossHp_ScalesHpAboveIntMax()
+    {
+        var r = new PacketReader(V113CombatPackets.ShowBossHp(8800000, 3_000_000_000, 6_000_000_000, 0, 0));
+
+        r.ReadShort();
+        r.ReadByte();
+        r.ReadInt();
+        Assert.Equal((int)(0.5 * int.MaxValue), r.ReadInt());
+        Assert.Equal(int.MaxValue, r.ReadInt());
+    }
+
+    [Fact]
+    public void DamageFriendlyMob_WritesDisplayFlagAndHp()
+    {
+        var r = new PacketReader(V113CombatPackets.DamageFriendlyMob(100001, 30, 70, 100));
+
+        Assert.Equal(V113CombatPackets.DamageMonsterOp, r.ReadShort());
+        Assert.Equal(100001, r.ReadInt());
+        Assert.Equal(1, r.ReadByte());
+        Assert.Equal(30, r.ReadInt());
+        Assert.Equal(70, r.ReadInt());
+        Assert.Equal(100, r.ReadInt());
+        Assert.Equal(0, r.Remaining);
+    }
+
+    [Fact]
     public void ParseCloseRangeAttack_ReadsJavaParseDmgMFields()
     {
         var body = BuildCloseRangeAttackBody();

@@ -34,6 +34,9 @@ internal static class V113CombatPackets
     public const short MoveMonsterOp = unchecked((short)0xE8);
     public const short MoveMonsterResponseOp = unchecked((short)0xE9);
     public const short DamageMonsterOp = unchecked((short)0xEF);
+    public const short ShowMonsterHpOp = unchecked((short)0xF3); // P107：send.properties SHOW_MONSTER_HP
+    public const short BossEnvOp = unchecked((short)0x87);       // P107：send.properties BOSS_ENV
+    private const byte BossEnvShowHp = 5;
 
     private const int CorkscrewBlow = 5101004;
     private const int GunslingerGrenade = 5201002;
@@ -125,6 +128,52 @@ internal static class V113CombatPackets
         w.WriteInt(displayedDamage);
         return w.ToArray();
     }
+
+    /// <summary>對照 Java <c>MobPacket.showMonsterHP(oid, remhppercentage)</c>（unverified：未經真機擷取）。</summary>
+    public static byte[] ShowMonsterHp(int objectId, byte hpPercent)
+    {
+        var w = new PacketWriter(7);
+        w.WriteShort(ShowMonsterHpOp);
+        w.WriteInt(objectId);
+        w.WriteByte(hpPercent);
+        return w.ToArray();
+    }
+
+    /// <summary>對照 Java <c>MobPacket.showBossHP(MapleMonster)</c>：BOSS_ENV type 5（unverified）。</summary>
+    public static byte[] ShowBossHp(int monsterId, long hp, long maxHp, byte tagColor, byte tagBgColor)
+    {
+        var w = new PacketWriter(17);
+        w.WriteShort(BossEnvOp);
+        w.WriteByte(BossEnvShowHp);
+        w.WriteInt(monsterId);
+        w.WriteInt(ScaleHp(hp, maxHp));
+        w.WriteInt(ClampToInt(maxHp));
+        w.WriteByte(tagColor);
+        w.WriteByte(tagBgColor);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// 對照 Java <c>MobPacket.damageFriendlyMob(mob, damage, display=true)</c>：DAMAGE_MONSTER 帶 display 1
+    /// 與目前/最大血量（unverified）。
+    /// </summary>
+    public static byte[] DamageFriendlyMob(int objectId, long damage, long hp, long maxHp)
+    {
+        var w = new PacketWriter(19);
+        w.WriteShort(DamageMonsterOp);
+        w.WriteInt(objectId);
+        w.WriteByte(1);
+        w.WriteInt(ClampToInt(damage));
+        w.WriteInt(ScaleHp(hp, maxHp));
+        w.WriteInt(ClampToInt(maxHp));
+        return w.ToArray();
+    }
+
+    // Java：hp 超過 int 上限時以 (hp / maxHp) * Integer.MAX_VALUE 縮放。
+    private static int ScaleHp(long hp, long maxHp)
+        => hp > int.MaxValue ? (int)((double)hp / maxHp * int.MaxValue) : (int)hp;
+
+    private static int ClampToInt(long value) => value > int.MaxValue ? int.MaxValue : (int)value;
 
     public static byte[] KillMonster(int objectId, byte animation = 1)
     {

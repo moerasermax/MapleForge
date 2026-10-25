@@ -104,6 +104,11 @@ public sealed class MapService
         var mobile = mobImg?["move"] is not null || fly;
         var explosiveReward = GetInt(info, "explosiveReward", 0) > 0;
         var ffaLoot = GetInt(info, "publicReward", 0) > 0;
+        // P107：對照 Java MapleLifeFactory——王（或 sponge）且未隱藏血條、兩個顏色節點都存在才讀 hpTagColor。
+        var hideHp = GetInt(info, "HPgaugeHide", 0) > 0 || GetInt(info, "hideHP", 0) > 0;
+        var hasTagColors = boss && !hideHp && info["hpTagColor"] is not null && info["hpTagBgcolor"] is not null;
+        var tagColor = hasTagColors ? (byte)GetInt(info, "hpTagColor", 0) : (byte)0;
+        var tagBgColor = hasTagColors ? (byte)GetInt(info, "hpTagBgcolor", 0) : (byte)0;
         var selfDestructAnimation = (sbyte)Math.Clamp(
             GetInt(info["selfDestruction"], "action", -1),
             sbyte.MinValue,
@@ -118,11 +123,13 @@ public sealed class MapService
             Boss: boss,
             Mobile: mobile,
             Friendly: friendly,
-            HpDisplayType: GetHpDisplayType(monsterId, boss, friendly),
+            HpDisplayType: GetHpDisplayType(monsterId, boss, friendly, tagColor),
             SelfDestructAnimation: selfDestructAnimation,
             Fly: fly,
             ExplosiveReward: explosiveReward,
-            FfaLoot: ffaLoot);
+            FfaLoot: ffaLoot,
+            TagColor: tagColor,
+            TagBgColor: tagBgColor);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -308,10 +315,12 @@ public sealed class MapService
         return footholds;
     }
 
-    private static byte GetHpDisplayType(int monsterId, bool boss, bool friendly)
+    /// <summary>對照 Java <c>MapleLifeFactory</c> 的 hpdisplaytype 判斷順序（預設 -1）。</summary>
+    public static sbyte GetHpDisplayType(int monsterId, bool boss, bool friendly, byte tagColor)
     {
+        if (tagColor > 0) return 0;
         if (friendly) return 1;
         if (monsterId >= 9300184 && monsterId <= 9300215) return 2;
-        return !boss || monsterId == 9410066 ? (byte)3 : (byte)0;
+        return !boss || monsterId == 9410066 ? (sbyte)3 : (sbyte)-1;
     }
 }

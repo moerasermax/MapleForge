@@ -1713,3 +1713,18 @@ writeInt(0)
 
 ---
 *待補（M1 後）：getAuthSuccessRequest、角色列表、移動等封包結構（M2/M3 再萃取）。*
+
+### 怪物血條 `SHOW_MONSTER_HP(0xF3)` / `BOSS_ENV(0x87)` type 5 / 友方怪 `DAMAGE_MONSTER(0xEF)` display 1（P107）
+
+對照 Java `MapleMonster.damage` 的 `HPDisplayType` 分派與 `MobPacket.showMonsterHP`/`showBossHP`/`damageFriendlyMob`：
+
+```text
+SHOW_MONSTER_HP: writeShort(0xF3) writeInt(oid) writeByte(ceil(hp*100/maxHp))
+BOSS_ENV:        writeShort(0x87) writeByte(5) writeInt(monsterId) writeInt(hp) writeInt(maxHp) writeByte(tagColor) writeByte(tagBgColor)
+DAMAGE_MONSTER:  writeShort(0xEF) writeInt(oid) writeByte(1) writeInt(damage) writeInt(hp) writeInt(maxHp)   // 友方怪
+                 （hp/maxHp 超過 int 上限時：hp 以 hp/maxHp*int.Max 縮放、maxHp 夾 int.Max）
+```
+
+`HPDisplayType`（`MapleLifeFactory`）：`tagColor>0`→0 王血條（全圖）；friendly→1（全圖 DAMAGE_MONSTER）；武陵 9300184~9300215→2 小血條（全圖）；非王或 9410066→3 小血條只送給同地圖 4 秒內攻擊過的玩家；其餘（王但無 `hpTagColor`）→-1 小血條（全圖，死亡時再送一次 0%）。
+
+**行為變更**：P107 前 MapleForge 每次玩家攻擊命中都廣播一般 `DAMAGE_MONSTER`（`writeByte(0) writeInt(damage)`）；Java 只在持續傷害（中毒等）與反彈傷害才送此包，玩家攻擊不送。P107 起移除。證據層級：Java source + Adapters focused tests；**unverified**（真 v113 client 未 smoke 血條顯示與傷害數字是否重複）。
