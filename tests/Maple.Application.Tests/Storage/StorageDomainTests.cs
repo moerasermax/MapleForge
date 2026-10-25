@@ -227,6 +227,23 @@ public sealed class StorageDomainTests
         Assert.Equal(ItemFlags.Lock, Assert.Single(player.Storage.Items).Flag);
     }
 
+    [Fact]
+    public void Store_UniqueItem_RejectedWhenStorageAlreadyHasIt()
+    {
+        // P213：Java isPickupRestricted && storage.findById != null → 拒絕。
+        var account = new Account { Id = 7 };
+        var player = BuildPlayer(
+            account,
+            new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4030003, Slot = 1, Quantity = 1 },
+            new ItemRecord { Type = (byte)InventoryType.Etc, ItemId = 4030003, Slot = 2, Quantity = 1 });
+        player.AttachStorage(account);
+        Func<int, bool> unique = static id => id == 4030003;
+
+        Assert.Equal(StorageStoreStatus.Success, player.TryStoreItemToStorage(InventoryType.Etc, 1, 1, 4030003, 0, null, unique, out _));
+        Assert.Equal(StorageStoreStatus.Rejected, player.TryStoreItemToStorage(InventoryType.Etc, 2, 1, 4030003, 0, null, unique, out _));
+        Assert.Single(player.Storage.Items);
+    }
+
     private static Player BuildPlayer(Account account, params ItemRecord[] inventoryItems)
     {
         var character = new Character

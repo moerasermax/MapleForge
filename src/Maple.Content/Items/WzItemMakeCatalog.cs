@@ -44,6 +44,11 @@ public sealed class WzItemMakeCatalog : IItemMakeCatalog, IEquipTemplateProvider
     public bool IsAccountShared(int itemId)
         => (GetFlag(itemId) & 0x100) != 0;
 
+    /// <summary>P213：Java <c>MapleItemInformationProvider.isPickupRestricted</c>。</summary>
+    public bool IsPickupRestricted(int itemId)
+        => ((GetFlag(itemId) & 0x80) != 0 || itemId is 4030003 or 4030004)
+            && itemId is not (4001168 or 4031306 or 4031307);
+
     public Equip? CreateEquip(int itemId)
     {
         lock (_itemGate)

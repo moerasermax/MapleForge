@@ -55,6 +55,9 @@ public interface IItemMakeCatalog
 
     bool IsAccountShared(int itemId);
 
+    /// <summary>P213：Java <c>isPickupRestricted</c>（唯一道具：WZ 旗標 0x80 或 4030003/4030004，排除 4001168/4031306/4031307）。</summary>
+    bool IsPickupRestricted(int itemId) => false;
+
     Equip? CreateEquip(int itemId);
 
     ItemMakeEnhanceStats? GetEnhanceStats(int itemId);

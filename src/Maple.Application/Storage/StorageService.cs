@@ -51,7 +51,8 @@ public sealed class StorageService
     {
         var fee = player.Character.MapId == FreeMarketMapId ? FreeMarketStoreFee : StoreFee;
         Func<int, bool>? restricted = _items is null ? null : _items.IsDropRestricted;
-        return player.TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee, restricted, out var removed) switch
+        Func<int, bool>? unique = _items is null ? null : _items.IsPickupRestricted;
+        return player.TryStoreItemToStorage(type, inventorySlot, quantity, expectedItemId, fee, restricted, unique, out var removed) switch
         {
             StorageStoreStatus.Success => new StorageResult(StorageResultKind.Stored, type, MesoChanged: true, Removed: removed),
             StorageStoreStatus.Full => new StorageResult(StorageResultKind.Full),
