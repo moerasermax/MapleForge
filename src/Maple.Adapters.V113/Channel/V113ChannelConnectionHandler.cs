@@ -3573,6 +3573,9 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
         await SendCombatHitsAsync(result.Hits, player, session, ct);
         await ApplyReflectedDamageAsync(result.Hits, player, field, session, ct);
+
+        // P133：Java applyAttack 尾段 applyTo（近戰解析器未保留座標，霧位置用玩家位置）。
+        await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: false, player.Position, session, ct);
     }
 
     private async Task HandleRangedAttackAsync(
@@ -3663,19 +3666,17 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SendCombatHitsAsync(result.Combat.Hits, player, session, ct);
         await ApplyReflectedDamageAsync(result.Combat.Hits, player, field, session, ct);
 
-        // P132：Java applyAttack 尾段 effect.applyTo(player, skillposition ?? position)——毒炸彈 14111006 生成毒霧。
+        // P132/P133：Java applyAttack 尾段 effect.applyTo(player, skillposition ?? position)——HP/MP 消耗、毒炸彈 14111006 毒霧。
         // MapleForge 解析器只保留 attack.position（skillposition 未解析），先以其為準。
-        if (_skillService.GetAttackEffect(player, attack.SkillId) is { } rangedEffect)
-        {
-            await SpawnPlayerMistAsync(
-                player,
-                field,
-                rangedEffect,
-                new Position(attack.Position.X, attack.Position.Y, player.Position.Stance, player.Position.Foothold),
-                player.Position.Stance % 2 != 0,
-                session,
-                ct);
-        }
+        await ApplyAttackSkillEffectAsync(
+            player,
+            field,
+            attack.SkillId,
+            attack.Targets,
+            isMagic: false,
+            new Position(attack.Position.X, attack.Position.Y, player.Position.Stance, player.Position.Foothold),
+            session,
+            ct);
     }
 
     private async Task HandleMagicAttackAsync(
@@ -3751,10 +3752,38 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         await SendCombatHitsAsync(result.Hits, player, session, ct);
         await ApplyReflectedDamageAsync(result.Hits, player, field, session, ct);
 
-        // P132：Java applyAttackMagic 尾段 effect.applyTo(player)（pos = null → 玩家位置）——劇毒霧 2111003／火焰齒輪 12111005。
-        if (_skillService.GetAttackEffect(player, attack.SkillId) is { } magicEffect)
+        // P132/P133：Java applyAttackMagic 尾段 effect.applyTo(player)（pos = null → 玩家位置）——HP/MP 消耗、
+        // 劇毒霧 2111003／火焰齒輪 12111005。
+        await ApplyAttackSkillEffectAsync(player, field, attack.SkillId, attack.Targets, isMagic: true, player.Position, session, ct);
+    }
+
+    /// <summary>
+    /// P133：攻擊尾段的 <c>effect.applyTo(player, pos)</c>——HP/MP 結算（不足時 Java return false：不送封包、不生霧）→
+    /// <c>updatePlayerStats(hpmpupdate, true)</c>（MP 有變才帶、HP 一律帶）→ 隊伍 HP → 霧（P132）。
+    /// 攻擊技能的 buff 類副作用（overTime statups）尚未移植。
+    /// </summary>
+    private async Task ApplyAttackSkillEffectAsync(
+        Player player,
+        FieldInstance field,
+        int skillId,
+        int targetCount,
+        bool isMagic,
+        Position position,
+        MapleSession session,
+        CancellationToken ct)
+    {
+        var hpBefore = player.Hp;
+        if (_skillService.ApplyAttackSkillCost(player, skillId, targetCount, isMagic) is not { Applied: true } cost)
         {
-            await SpawnPlayerMistAsync(player, field, magicEffect, player.Position, player.Position.Stance % 2 != 0, session, ct);
+            return;
+        }
+
+        await session.SendAsync(V113StatsPackets.UpdateStats(cost.Updates, itemReaction: true), ct);
+        await _partyHpSync.BroadcastIfChangedAsync(player, hpBefore, ct);
+
+        if (_skillService.GetAttackEffect(player, skillId) is { } effect)
+        {
+            await SpawnPlayerMistAsync(player, field, effect, position, player.Position.Stance % 2 != 0, session, ct);
         }
     }
 

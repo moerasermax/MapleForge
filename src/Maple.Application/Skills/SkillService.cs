@@ -85,7 +85,7 @@ public sealed record AranComboResult(
     MapleStatEffect? Effect,
     PlayerBuffChange? AppliedBuff);
 
-public sealed class SkillService
+public sealed partial class SkillService
 {
     /// <summary>槍神「海盜船」（Java <c>槍神.海盜船</c>）：施放時不登記冷卻。</summary>
     public const int CorsairBattleshipSkillId = 5221006;
