@@ -53,6 +53,11 @@ internal static class V113ItemMakerHandler
             selfPackets.Add(V113ShopPackets.UpdateMeso(result.Meso));
         }
 
+        foreach (var merged in result.Merges)
+        {
+            selfPackets.Add(V113ItemUsePackets.ModifyInventoryQuantity(merged));
+        }
+
         if (result.CreatedItem is not null && result.CreatedInventoryType is { } type)
         {
             selfPackets.Add(V113ItemUsePackets.ModifyInventoryAdd(type, result.CreatedItem));

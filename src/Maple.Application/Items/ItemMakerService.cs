@@ -51,9 +51,13 @@ public sealed record ItemMakerResult(
     Item? CreatedItem = null,
     IReadOnlyList<InventoryQuantityMutation>? InventoryMutations = null,
     bool MesoChanged = false,
-    int Meso = 0)
+    int Meso = 0,
+    IReadOnlyList<InventoryQuantityMutation>? CreatedMerges = null)
 {
     public bool Success => Status == ItemMakerStatus.Success;
+
+    /// <summary>P203：製作物疊進既有堆疊的格（呼叫端在新增封包前送數量更新）。</summary>
+    public IReadOnlyList<InventoryQuantityMutation> Merges => CreatedMerges ?? Array.Empty<InventoryQuantityMutation>();
 
     public IReadOnlyList<InventoryQuantityMutation> Mutations => InventoryMutations ?? Array.Empty<InventoryQuantityMutation>();
 
@@ -226,7 +230,7 @@ public sealed class ItemMakerService
 
         player.GainMeso(-recipe.Cost);
         var created = type == InventoryType.Equip
-            ? GainEquip(player, itemId)
+            ? GainEquip(player, itemId) is { } equip ? new InventoryStackGain([], [equip], 0) : null
             : GainItem(player, type, itemId, 1);
         if (created is null)
         {
@@ -404,10 +408,18 @@ public sealed class ItemMakerService
         return player.Inventory.By(InventoryType.Equip).Gain(equip);
     }
 
-    private static Item? GainItem(Player player, InventoryType type, int itemId, short quantity)
-        => player.Inventory.By(type).Gain(type == InventoryType.Equip
-            ? new Equip { ItemId = itemId, Quantity = 1 }
-            : new Item { ItemId = itemId, Quantity = quantity });
+    /// <summary>P203：Java <c>addById</c>——非裝備疊進既有堆疊（期限 -1）；裝備開新格。</summary>
+    private static InventoryStackGain? GainItem(Player player, InventoryType type, int itemId, short quantity)
+    {
+        if (type == InventoryType.Equip)
+        {
+            var equip = player.Inventory.By(type).Gain(new Equip { ItemId = itemId, Quantity = 1 });
+            return equip is null ? null : new InventoryStackGain([], [equip], 0);
+        }
+
+        var gain = player.GainItemStacking(itemId, quantity);
+        return gain.AnyChange ? gain : null;
+    }
 
     private bool HasMakerSkill(Player player, int requiredLevel)
         => player.GetSkillLevel(MakerSkillIdForJob(player.Character.Job)) >= requiredLevel;
@@ -570,7 +582,7 @@ public sealed class ItemMakerService
         Player player,
         int createdItemId,
         InventoryType type,
-        Item created,
+        Item? created,
         IReadOnlyList<InventoryQuantityMutation> mutations,
         bool mesoChanged)
         => new(
@@ -582,6 +594,18 @@ public sealed class ItemMakerService
             InventoryMutations: mutations,
             MesoChanged: mesoChanged,
             Meso: player.Character.Meso);
+
+    private static ItemMakerResult Success(
+        Player player,
+        int createdItemId,
+        InventoryType type,
+        InventoryStackGain created,
+        IReadOnlyList<InventoryQuantityMutation> mutations,
+        bool mesoChanged)
+        => Success(player, createdItemId, type, created.Added.FirstOrDefault(), mutations, mesoChanged) with
+        {
+            CreatedMerges = created.Merged,
+        };
 
     private static int CrystalForLevel(int level)
         => level switch

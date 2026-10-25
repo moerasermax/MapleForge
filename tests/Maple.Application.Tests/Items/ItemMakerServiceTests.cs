@@ -123,6 +123,26 @@ public sealed class ItemMakerServiceTests
     }
 
     [Fact]
+    public void CreateCrystal_StacksIntoExistingCrystal()
+    {
+        // P203：Java addById 疊加——既有結晶堆疊數量 +1，不開新格。
+        var catalog = new FakeItemMakeCatalog();
+        catalog.ItemMakeLevels[4000000] = 65;
+        var player = MakePlayer();
+        Put(player, InventoryType.Etc, 1, 4000000, 100);
+        Put(player, InventoryType.Etc, 2, 4260002, 5);
+        var service = new ItemMakerService(catalog, new SequenceRandom());
+
+        var result = service.Handle(player, ItemMakerRequest.CreateCrystal(4000000));
+
+        Assert.Equal(ItemMakerStatus.Success, result.Status);
+        Assert.Null(result.CreatedItem);
+        var merged = Assert.Single(result.Merges);
+        Assert.Equal(((short)2, (short)5, (short)6), (merged.Slot, merged.OldQuantity, merged.NewQuantity));
+        Assert.Equal((short)6, player.Inventory.By(InventoryType.Etc).Get(2)!.Quantity);
+    }
+
+    [Fact]
     public void DisassembleEquip_ConsumesEquipAndCreatesCrystalByRequiredLevel()
     {
         var catalog = new FakeItemMakeCatalog();
