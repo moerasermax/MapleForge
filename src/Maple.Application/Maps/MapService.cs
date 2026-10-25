@@ -132,7 +132,8 @@ public sealed class MapService
             TagBgColor: tagBgColor,
             NoDoom: GetInt(info, "noDoom", 0) > 0,
             Resistances: ElementCodec.DecodeResistances(GetString(info, "elemAttr")),
-            Skills: LoadMobSkills(info["skill"]));
+            Skills: LoadMobSkills(info["skill"]),
+            Banish: LoadBanish(info["ban"]));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -316,6 +317,21 @@ public sealed class MapService
         }
 
         return footholds;
+    }
+
+    /// <summary>P130：對照 Java <c>MapleLifeFactory:161-166</c>：banMsg、banMap/0/field（預設 -1）、banMap/0/portal（預設 sp）。</summary>
+    private static MobBanishInfo? LoadBanish(IDataNode? ban)
+    {
+        if (ban is null)
+        {
+            return null;
+        }
+
+        var target = ban["banMap"]?["0"];
+        return new MobBanishInfo(
+            GetString(ban, "banMsg"),
+            GetInt(target, "field", -1),
+            GetString(target, "portal", "sp"));
     }
 
     /// <summary>P122：對照 Java <c>MapleLifeFactory</c>：info/skill/{i}/skill、level，i 從 0 連續遞增到缺號為止。</summary>

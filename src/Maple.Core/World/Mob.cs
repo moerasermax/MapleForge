@@ -28,12 +28,17 @@ public sealed record MobStats(
     // P114：WZ info/elemAttr 解析後的屬性抗性（null = 全 Normal）。
     IReadOnlyDictionary<Element, ElementalEffectiveness>? Resistances = null,
     // P122：WZ info/skill（Java MapleMonsterStats.getSkills）。
-    IReadOnlyList<MobSkillRef>? Skills = null)
+    IReadOnlyList<MobSkillRef>? Skills = null,
+    // P130：WZ info/ban（Java BanishInfo：banMsg、banMap/0/field、banMap/0/portal）。
+    MobBanishInfo? Banish = null)
 {
     /// <summary>對照 Java <c>MapleMonsterStats.getEffectiveness</c>：查無即 Normal。</summary>
     public ElementalEffectiveness GetEffectiveness(Element element)
         => Resistances is not null && Resistances.TryGetValue(element, out var value) ? value : ElementalEffectiveness.Normal;
 }
+
+/// <summary>P130：怪物放逐目的地（Java <c>BanishInfo</c>）。</summary>
+public sealed record MobBanishInfo(string Message, int MapId, string PortalName);
 
 /// <summary>單次怪物傷害套用結果。</summary>
 public sealed record MobDamageResult(

@@ -330,6 +330,70 @@ public sealed class MobSkillServiceTests
             Statups = [new Maple.Core.Skills.BuffStatValue(stat, 1)],
         };
 
+    // ── P130：放逐（Java case 129 → changeMapBanish）──
+
+    [Fact]
+    public void TryUseSkill_Banish_ReturnsDestinationForController()
+    {
+        var field = new FieldInstance(100000000);
+        var mob = new Mob(
+            new MapMonster { MonsterId = 100100, X = 0, Y = 0, Fh = 1 },
+            new MobStats(100100, 100, MaxMp: 100, Level: 1, Exp: 1, Skills: [new MobSkillRef(129, 1)], Banish: new MobBanishInfo("滾出去", 211000000, "sp")),
+            objectId: 100001);
+        field.Add(mob);
+        var controller = new Player(new Maple.Core.Characters.Character { Id = 9, Name = "Ctrl" }, new Position(0, 0, 0, 0));
+
+        var use = Service(Skill(129)).TryUseSkill(field, mob, T0, controller)!;
+
+        Assert.Equal(new MobBanishInfo("滾出去", 211000000, "sp"), use.Banish);
+    }
+
+    [Fact]
+    public void TryUseSkill_Banish_MobWithoutBanishInfo_NoBanish()
+    {
+        var (field, mob) = Setup([new MobSkillRef(129, 1)]);
+        var controller = new Player(new Maple.Core.Characters.Character { Id = 9, Name = "Ctrl" }, new Position(0, 0, 0, 0));
+
+        Assert.Null(Service(Skill(129)).TryUseSkill(field, mob, T0, controller)!.Banish);
+    }
+
+    [Fact]
+    public void MapService_LoadMobStats_ReadsBanInfo()
+    {
+        var stats = new Maple.Application.Maps.MapService(new BanProvider()).LoadMobStats(100100)!;
+
+        Assert.Equal(new MobBanishInfo("bye", 100000000, "out00"), stats.Banish);
+    }
+
+    private sealed class BanProvider : IDataProvider
+    {
+        public IDataNode GetRoot(string fileName) => new Node(fileName);
+
+        public IDataNode? GetAt(string fileName, string path) => (fileName, path) switch
+        {
+            ("Mob", "0100100.img") => new Node("0100100.img", children: new Dictionary<string, IDataNode>
+            {
+                ["info"] = new Node("info", children: new Dictionary<string, IDataNode>
+                {
+                    ["maxHP"] = new Node("maxHP", 10),
+                    ["ban"] = new Node("ban", children: new Dictionary<string, IDataNode>
+                    {
+                        ["banMsg"] = new Node("banMsg", "bye"),
+                        ["banMap"] = new Node("banMap", children: new Dictionary<string, IDataNode>
+                        {
+                            ["0"] = new Node("0", children: new Dictionary<string, IDataNode>
+                            {
+                                ["field"] = new Node("field", 100000000),
+                                ["portal"] = new Node("portal", "out00"),
+                            }),
+                        }),
+                    }),
+                }),
+            }),
+            _ => null,
+        };
+    }
+
     private static Mob AddMob(FieldInstance field, int objectId, short x, short y)
     {
         var mob = new Mob(

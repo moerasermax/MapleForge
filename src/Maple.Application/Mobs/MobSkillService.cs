@@ -15,7 +15,9 @@ public sealed record MobSkillUse(
     // P128：召喚出的怪物（已加入 field；呼叫端以技能 SpawnEffect 廣播 SPAWN_MONSTER）。
     IReadOnlyList<Mob>? Summoned = null,
     // P129：被驅散的控制者 buff（呼叫端送 CANCEL_BUFF 與 buff 連帶效果）。
-    IReadOnlyList<PlayerBuffCancellation>? DispelledBuffs = null);
+    IReadOnlyList<PlayerBuffCancellation>? DispelledBuffs = null,
+    // P130：控制者被放逐的目的地（呼叫端送提示並換圖）。
+    MobBanishInfo? Banish = null);
 
 /// <summary>P125：怪物補血（Java healMonster 廣播的 oid 與補血量）。</summary>
 public sealed record MobHeal(int ObjectId, int Amount);
@@ -82,8 +84,12 @@ public sealed class MobSkillService
         var dispelled = skill.SkillId == DispelSkillId && controller is not null && InRange(mob, skill, controller)
             ? controller.DispelSkillBuffs()
             : null;
+        // P130：Java case 129：怪物有 BanishInfo 時把（範圍內的）控制者 changeMapBanish；BossQuest 例外 MapleForge 無。
+        var banish = skill.SkillId == BanishSkillId && mob.Stats.Banish is { } info && controller is not null && InRange(mob, skill, controller)
+            ? info
+            : null;
         mob.ConsumeMp(skill.MpCon);
-        return new MobSkillUse(skill, buffs, heals, disease, summoned, dispelled is { Count: > 0 } ? dispelled : null);
+        return new MobSkillUse(skill, buffs, heals, disease, summoned, dispelled is { Count: > 0 } ? dispelled : null, banish);
     }
 
     /// <summary>
@@ -115,6 +121,7 @@ public sealed class MobSkillService
     public const int HealSkillId = 114;
     public const int SummonSkillId = 200;
     public const int DispelSkillId = 127;
+    public const int BanishSkillId = 129;
 
     /// <summary>Java <c>getPlayersInRange</c>（候選只有控制者）：無 lt/rb 時恆在範圍內。</summary>
     private static bool InRange(Mob mob, MobSkillDefinition skill, Player controller)

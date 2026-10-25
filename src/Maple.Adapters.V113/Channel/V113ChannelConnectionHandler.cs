@@ -642,7 +642,16 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
 
                     case V113ChannelRecvOp.MoveLife:
                         if (player is null || currentField is null) break;
-                        await HandleMoveLifeAsync(reader, player, currentField, s, token);
+                        if (await HandleMoveLifeAsync(reader, player, currentField, s, token) is { } banish)
+                        {
+                            // P130：Java changeMapBanish → dropMessage(5, msg) → changeMap(target, target.getPortal(portal))。
+                            await s.SendAsync(V113BroadcastPackets.ChatNotice(banish.Message), token);
+                            var banishPortal = _mapService.LoadMap(banish.MapId).Portals.FirstOrDefault(p => p.Name == banish.PortalName);
+                            currentField = await WarpAsync(
+                                player, currentField, npcOidToId, s,
+                                banish.MapId, sessionToken, token, banishPortal?.Id ?? 0);
+                        }
+
                         break;
 
                     case V113ChannelRecvOp.AutoAggro:
@@ -4255,7 +4264,8 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
     /// c2s MOVE_LIFE (0xB6)：怪物移動。解析 → 更新 mob 位置 → 回 response 給控制者 → 廣播給其他人。
     /// 對照 Java MobHandler.MoveMonster。
     /// </summary>
-    private async Task HandleMoveLifeAsync(PacketReader reader, Player player, FieldInstance field, MapleSession session, CancellationToken ct)
+    /// <returns>P130：怪物放逐了控制者時回傳目的地，由主迴圈換圖；否則 null。</returns>
+    private async Task<MobBanishInfo?> HandleMoveLifeAsync(PacketReader reader, Player player, FieldInstance field, MapleSession session, CancellationToken ct)
     {
         V113MoveLifeData data;
         try
@@ -4264,7 +4274,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
         }
         catch (InvalidDataException)
         {
-            return;
+            return null;
         }
 
         Mob? mob;
@@ -4273,7 +4283,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             mob = field.GetMob(data.ObjectId);
         }
 
-        if (mob is null || !mob.IsAlive) return;
+        if (mob is null || !mob.IsAlive) return null;
 
         // 嘗試從 raw movement 解析最終位置來更新 mob；失敗則 fallback 到 startPos
         try
@@ -4391,6 +4401,7 @@ public sealed class V113ChannelConnectionHandler : IChannelConnectionHandler
             data.ObjectId, data.UseSkill, data.SkillIndex, data.SkillData,
             data.StartX, data.StartY, data.RawMovement);
         await BroadcastPacketToOthersAsync(player.Character, broadcast, ct);
+        return skillUse?.Banish is { MapId: > 0 } banish ? banish : null;
     }
 
     /// <summary>
